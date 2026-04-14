@@ -1,0 +1,10 @@
+.env
+node_modules
+.DS_Store
+.idea
+*.jks
+drivedeck-android-tv/.gradle
+drivedeck-android-tv/build
+drivedeck-android-tv/app/build
+drivedeck-android-tv/local.properties
+drivedeck-android-tv/app/release

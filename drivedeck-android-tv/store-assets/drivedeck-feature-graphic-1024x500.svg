@@ -1,0 +1,42 @@
+<svg width="1024" height="500" viewBox="0 0 1024 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="20" x2="930" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17171D"/>
+      <stop offset="1" stop-color="#09090B"/>
+    </linearGradient>
+    <radialGradient id="glowLeft" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(196 256) rotate(90) scale(220 250)">
+      <stop stop-color="#EF3B36" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#EF3B36" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(860 80) rotate(90) scale(160 220)">
+      <stop stop-color="#EF3B36" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#EF3B36" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softBlur" x="0" y="0" width="1024" height="500" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="shadow" x="22" y="34" width="404" height="404" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="34" flood-color="#EF3B36" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="500" rx="40" fill="url(#bg)"/>
+  <ellipse cx="200" cy="250" rx="220" ry="220" fill="url(#glowLeft)" filter="url(#softBlur)"/>
+  <ellipse cx="860" cy="84" rx="160" ry="160" fill="url(#glowRight)" filter="url(#softBlur)"/>
+
+  <rect x="418" y="88" width="566" height="324" rx="32" fill="#131318" stroke="rgba(255,255,255,0.10)"/>
+  <rect x="432" y="102" width="538" height="296" rx="24" fill="rgba(255,255,255,0.02)"/>
+
+  <g filter="url(#shadow)">
+    <image href="drivedeck_tv_icon_art.png" x="90" y="100" width="268" height="268" preserveAspectRatio="xMidYMid meet"/>
+  </g>
+
+  <text x="470" y="172" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="76" font-weight="700">DriveDeck</text>
+  <text x="470" y="244" fill="#F0F0F3" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="400">Google Drive photos and videos,</text>
+  <text x="470" y="286" fill="#F0F0F3" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="400">beautifully on your TV.</text>
+
+  <rect x="470" y="336" width="196" height="46" rx="23" fill="#EF3B36"/>
+  <text x="499" y="367" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" letter-spacing="1.2">ANDROID TV</text>
+
+  <text x="688" y="366" fill="#B7B7BE" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400">Simple pairing. Clean slideshow.</text>
+</svg>

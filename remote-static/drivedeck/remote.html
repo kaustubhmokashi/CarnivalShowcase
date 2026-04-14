@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DriveDeck Remote</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="remote-page">
+      <section class="remote-shell">
+        <div class="remote-brand-row">
+          <p class="remote-eyebrow">DriveDeck Remote</p>
+        </div>
+
+        <div class="remote-hero">
+          <h1>DriveDeck Create pairing code.</h1>
+          <p class="remote-subtitle">
+            Paste your Google Drive folder link, create a code, and enter it on your TV.
+          </p>
+        </div>
+
+        <section id="remote-result-panel" class="remote-result-panel hidden" aria-live="polite">
+          <div class="remote-result-header">
+            <p class="remote-result-label">Your Pairing Code</p>
+            <div class="remote-result-actions">
+              <button id="share-code-button" type="button" class="remote-copy-button" aria-label="Share code">
+                Share
+              </button>
+              <button id="copy-code-button" type="button" class="remote-copy-button" aria-label="Copy code">
+                Copy
+              </button>
+            </div>
+          </div>
+          <p id="remote-code" class="remote-code">---------</p>
+          <p id="remote-result-note" class="remote-result-note">Enter this code on your TV.</p>
+        </section>
+
+        <form id="remote-form" class="remote-form">
+          <label for="remote-url">Google Drive folder link</label>
+          <textarea
+            id="remote-url"
+            name="remote-url"
+            rows="4"
+            placeholder="https://drive.google.com/drive/folders/..."
+            required
+          ></textarea>
+          <label class="remote-checkbox-option">
+            <input id="remote-permanent" type="checkbox" name="remote-permanent" />
+            <span>Create a permanent code</span>
+          </label>
+          <button type="submit">Create Code</button>
+        </form>
+
+        <form id="remote-delete-form" class="remote-form hidden">
+          <label for="delete-code">Code</label>
+          <input
+            id="delete-code"
+            name="delete-code"
+            class="remote-input"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="Enter the code"
+            required
+          />
+          <label for="delete-url">Original Google Drive folder link</label>
+          <textarea
+            id="delete-url"
+            name="delete-url"
+            rows="4"
+            placeholder="https://drive.google.com/drive/folders/..."
+            required
+          ></textarea>
+          <button type="submit">Delete Code</button>
+          <p id="delete-feedback" class="delete-feedback hidden"></p>
+        </form>
+
+        <button id="new-code-button" type="button" class="remote-tertiary-button hidden">
+          Create Another Code
+        </button>
+        <button id="delete-mode-button" type="button" class="remote-tertiary-button">
+          Delete a code
+        </button>
+        <button id="cancel-delete-button" type="button" class="remote-tertiary-button hidden">
+          Back to code creation
+        </button>
+
+        <div class="remote-footer">
+          <p class="remote-expiry-note">
+            Temporary codes stay active for 2 days. Permanent codes stay active until you delete or replace them.
+          </p>
+          <p id="remote-status" class="remote-status"></p>
+        </div>
+      </section>
+    </main>
+
+    <script src="./firebase-config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
