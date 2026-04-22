@@ -55,8 +55,7 @@ function loadEnvFile(filePath) {
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
-const API_KEY =
-  process.env.GOOGLE_DRIVE_API_KEY || "AIzaSyCPrDluLv5ryZ2f-5WRiSGokJHRVeuGqe8";
+const API_KEY = process.env.GOOGLE_DRIVE_API_KEY || "";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
@@ -701,6 +700,8 @@ async function readFolderTree(folderId, rootName = "Root Folder", includeVideos 
           name: file.name,
           mimeType: file.mimeType,
           path: current.path || "",
+          width: Number(file.imageMediaMetadata?.width) || null,
+          height: Number(file.imageMediaMetadata?.height) || null,
           url: createImageUrl(file.id, "full"),
           slideshowUrl: file.mimeType.startsWith(VIDEO_MIME_PREFIX)
             ? createImageUrl(file.id, "full")
@@ -962,11 +963,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/pairing-origin") {
-    await handlePairingOrigin(req, res);
-    return;
-  }
-
   const pathname =
     requestUrl.pathname === "/"
       ? "/index.html"
@@ -993,5 +989,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`DriveDeck running at http://${HOST}:${PORT}`);
+  console.log(`Gallery slideshow running at http://${HOST}:${PORT}`);
 });

@@ -1,16 +1,16 @@
 :root {
-  color-scheme: dark;
-  --bg: #050505;
-  --bg-soft: #0d0d0f;
-  --surface: rgba(19, 19, 22, 0.9);
-  --surface-strong: rgba(28, 28, 32, 0.96);
-  --line: rgba(255, 255, 255, 0.09);
-  --line-strong: rgba(255, 255, 255, 0.18);
-  --text: #f6f6f7;
-  --muted: #a1a1a8;
-  --accent: #e53935;
-  --accent-soft: rgba(229, 57, 53, 0.18);
-  --shadow: 0 40px 90px rgba(0, 0, 0, 0.45);
+  color-scheme: light;
+  --bg: #fffaf4;
+  --bg-soft: #fff4e8;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-strong: rgba(255, 250, 244, 0.98);
+  --line: rgba(223, 117, 0, 0.12);
+  --line-strong: rgba(223, 117, 0, 0.22);
+  --text: #1f1a14;
+  --muted: #6f6256;
+  --accent: #f47b20;
+  --accent-soft: rgba(244, 123, 32, 0.16);
+  --shadow: 0 40px 90px rgba(244, 123, 32, 0.12);
 }
 
 * {
@@ -25,9 +25,9 @@ body {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(229, 57, 53, 0.16), transparent 26%),
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.08), transparent 22%),
-    linear-gradient(180deg, #080809 0%, #040404 100%);
+    radial-gradient(circle at top left, rgba(244, 123, 32, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(255, 194, 127, 0.22), transparent 22%),
+    linear-gradient(180deg, #fffdf9 0%, #fff7ef 100%);
   color: var(--text);
   font-family: "Avenir Next", "Segoe UI", Inter, system-ui, sans-serif;
 }
@@ -57,7 +57,7 @@ input {
   border: 1px solid var(--line);
   border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.8), transparent 24%),
     var(--surface);
   box-shadow: var(--shadow);
   backdrop-filter: blur(16px);
@@ -139,12 +139,12 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 24px;
   background:
-    linear-gradient(180deg, rgba(229, 57, 53, 0.1), transparent 40%),
+    linear-gradient(180deg, rgba(244, 123, 32, 0.12), transparent 40%),
     var(--surface-strong);
 }
 
 .remote-result-label {
-  color: #f3cbc9;
+  color: #8f4300;
 }
 
 .remote-code {
@@ -152,7 +152,7 @@ h1 {
   line-height: 0.86;
   font-weight: 800;
   letter-spacing: 0.14em;
-  color: #fff;
+  color: #1f1a14;
 }
 
 .remote-form {
@@ -179,7 +179,7 @@ h1 {
   padding: 18px 18px 20px;
   border: 1px solid var(--line-strong);
   border-radius: 20px;
-  background: rgba(8, 8, 10, 0.88);
+  background: rgba(255, 255, 255, 0.96);
   color: var(--text);
   resize: vertical;
   outline: none;
@@ -188,14 +188,14 @@ h1 {
 
 .remote-form textarea::placeholder,
 .remote-input::placeholder {
-  color: #777780;
+  color: #b29f8a;
 }
 
 .remote-form textarea:focus,
 .remote-input:focus {
-  border-color: rgba(229, 57, 53, 0.9);
+  border-color: rgba(244, 123, 32, 0.9);
   box-shadow: 0 0 0 4px var(--accent-soft);
-  background: rgba(12, 12, 14, 0.96);
+  background: #ffffff;
 }
 
 .remote-input {
@@ -204,7 +204,7 @@ h1 {
   padding: 16px 18px;
   border: 1px solid var(--line-strong);
   border-radius: 20px;
-  background: rgba(8, 8, 10, 0.88);
+  background: rgba(255, 255, 255, 0.96);
   color: var(--text);
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
@@ -214,8 +214,8 @@ h1 {
   padding: 16px;
   border: 0;
   border-radius: 999px;
-  background: #f5f3f0;
-  color: #080808;
+  background: linear-gradient(180deg, #f9c48a 0%, #f47b20 100%);
+  color: #ffffff;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -227,9 +227,9 @@ h1 {
   padding: 0 14px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(244, 123, 32, 0.24);
   border-radius: 999px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.8);
   color: var(--text);
   font-size: 0.86rem;
   text-transform: uppercase;
@@ -253,7 +253,7 @@ h1 {
 }
 
 .remote-status.is-error {
-  color: #ffb4ac;
+  color: #d9480f;
 }
 
 .delete-feedback {
@@ -262,11 +262,11 @@ h1 {
 }
 
 .delete-feedback.is-success {
-  color: #4ade80;
+  color: #2f9e44;
 }
 
 .delete-feedback.is-error {
-  color: #ff6b6b;
+  color: #d9480f;
 }
 
 @media (max-width: 640px) {

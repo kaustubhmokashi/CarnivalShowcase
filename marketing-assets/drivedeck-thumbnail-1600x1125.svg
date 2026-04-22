@@ -1,0 +1,72 @@
+<svg width="1600" height="1125" viewBox="0 0 1600 1125" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="170" y1="120" x2="1430" y2="1010" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A1B23"/>
+      <stop offset="0.5" stop-color="#101116"/>
+      <stop offset="1" stop-color="#060708"/>
+    </linearGradient>
+    <radialGradient id="glowRed" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1200 280) rotate(130) scale(380 320)">
+      <stop stop-color="#FF5A4C" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FF5A4C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowMint" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(340 850) rotate(24) scale(420 300)">
+      <stop stop-color="#6FE2D8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#6FE2D8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="screen" x1="770" y1="256" x2="1258" y2="781" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#23302F"/>
+      <stop offset="0.35" stop-color="#456464"/>
+      <stop offset="0.7" stop-color="#D28B6E"/>
+      <stop offset="1" stop-color="#6E2231"/>
+    </linearGradient>
+    <linearGradient id="phoneScreen" x1="1064" y1="601" x2="1258" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17181D"/>
+      <stop offset="1" stop-color="#0E0F14"/>
+    </linearGradient>
+    <filter id="shadow" x="520" y="180" width="850" height="525" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="phoneShadow" x="948" y="488" width="396" height="544" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1125" rx="44" fill="url(#bg)"/>
+  <rect width="1600" height="1125" rx="44" fill="url(#glowRed)"/>
+  <rect width="1600" height="1125" rx="44" fill="url(#glowMint)"/>
+
+  <g opacity="0.92">
+    <path d="M95 128C95 109.775 109.775 95 128 95H414C432.225 95 447 109.775 447 128V164C447 182.225 432.225 197 414 197H128C109.775 197 95 182.225 95 164V128Z" fill="#111217" fill-opacity="0.78" stroke="white" stroke-opacity="0.08"/>
+    <text x="132" y="151" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="700">DriveDeck</text>
+    <text x="134" y="183" fill="#A8ABB5" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="2">GOOGLE DRIVE TV SLIDESHOW</text>
+  </g>
+
+  <text x="96" y="364" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="800">Turn your Google</text>
+  <text x="96" y="474" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="800">Drive folders into</text>
+  <text x="96" y="584" fill="#FF5A4C" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="800">a living-room gallery.</text>
+
+  <text x="99" y="688" fill="#C6C7CE" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="400">Pair your phone, browse a folder, and play a polished photo</text>
+  <text x="99" y="734" fill="#C6C7CE" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="400">slideshow built for TV screens, family moments, and events.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="560" y="220" width="760" height="445" rx="34" fill="#0B0C10"/>
+    <rect x="582" y="242" width="716" height="401" rx="24" fill="url(#screen)"/>
+    <path d="M610 590C698 530 775 503 842 508C915 514 975 585 1046 583C1113 581 1174 534 1270 445V643H582V338C621 357 664 378 709 401C781 438 846 438 907 410C961 386 1030 363 1114 374C1175 382 1234 418 1298 478V643H1220C1125 571 1048 548 989 555C932 561 871 599 796 606C730 612 668 593 610 590Z" fill="white" fill-opacity="0.18"/>
+    <rect x="612" y="270" width="146" height="32" rx="16" fill="#111217" fill-opacity="0.72"/>
+    <text x="636" y="292" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Slideshow</text>
+    <rect x="1190" y="270" width="78" height="32" rx="16" fill="#111217" fill-opacity="0.72"/>
+    <text x="1211" y="292" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">TV</text>
+  </g>
+
+  <g filter="url(#phoneShadow)">
+    <rect x="985" y="524" width="322" height="470" rx="42" fill="#15161B"/>
+    <rect x="1001" y="542" width="290" height="434" rx="30" fill="url(#phoneScreen)"/>
+    <text x="1032" y="612" fill="#A8ABB5" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="2.2">PAIRING CODE</text>
+    <text x="1026" y="760" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="126" font-weight="800">482193</text>
+    <rect x="1028" y="812" width="236" height="66" rx="33" fill="#F6F5F3"/>
+    <text x="1081" y="855" fill="#101116" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">Create code</text>
+    <text x="1030" y="912" fill="#A8ABB5" font-family="Arial, Helvetica, sans-serif" font-size="22">Enter on your TV to continue</text>
+  </g>
+
+  <text x="97" y="957" fill="#F6F5F3" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">Built for Android TV • Fire TV • events • family memories</text>
+</svg>

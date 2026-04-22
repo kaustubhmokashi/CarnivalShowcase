@@ -20,7 +20,7 @@ let isDeleteMode = false;
 
 function buildShareMessage() {
   const folderName = latestFolderName || "Google Drive folder";
-  return `Your DriveDeck pairing code for ${folderName} is *${latestCode}*`;
+  return `Your pairing code for ${folderName} is *${latestCode}*`;
 }
 
 function setRemoteStatus(message, isError = false) {

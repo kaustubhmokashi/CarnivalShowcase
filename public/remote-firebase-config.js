@@ -1,11 +1,11 @@
-window.DRIVEDECK_REMOTE_FIREBASE = {
+window.GALLERY_REMOTE_FIREBASE = {
   firebaseConfig: {
-    apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.firebasestorage.app",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID",
+    apiKey: "YOUR_NEW_FIREBASE_API_KEY",
+    authDomain: "YOUR_NEW_PROJECT.firebaseapp.com",
+    projectId: "YOUR_NEW_PROJECT_ID",
+    storageBucket: "YOUR_NEW_PROJECT.firebasestorage.app",
+    messagingSenderId: "YOUR_NEW_MESSAGING_SENDER_ID",
+    appId: "YOUR_NEW_APP_ID",
   },
   collectionName: "pairingCodes",
   validateFolderEndpoint: "/api/folder-meta",

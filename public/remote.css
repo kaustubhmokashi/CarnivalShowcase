@@ -1,10 +1,10 @@
 :root {
-  color-scheme: dark;
-  --bg: #0b0b0b;
-  --surface: #151515;
-  --text: #ffffff;
-  --muted: #9b9ba1;
-  --accent: #e53935;
+  color-scheme: light;
+  --bg: #fffaf4;
+  --surface: #ffffff;
+  --text: #1f1a14;
+  --muted: #6f6256;
+  --accent: #f47b20;
 }
 
 * {
@@ -14,7 +14,9 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(244, 123, 32, 0.12), transparent 28%),
+    var(--bg);
   color: var(--text);
   font-family: Inter, system-ui, sans-serif;
 }
@@ -111,7 +113,7 @@ input {
 .remote-form textarea {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(244, 123, 32, 0.22);
   background: var(--surface);
   color: var(--text);
   resize: vertical;
@@ -120,7 +122,7 @@ input {
 .remote-input {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(244, 123, 32, 0.22);
   background: var(--surface);
   color: var(--text);
 }
@@ -128,8 +130,8 @@ input {
 .remote-form button {
   padding: 16px;
   border: 0;
-  background: #f5f3f0;
-  color: #080808;
+  background: linear-gradient(180deg, #f9c48a 0%, #f47b20 100%);
+  color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.18em;
 }
@@ -140,7 +142,7 @@ input {
   padding: 0 14px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(244, 123, 32, 0.24);
   background: transparent;
   color: var(--text);
   font-size: 0.86rem;
@@ -178,9 +180,9 @@ input {
 }
 
 .delete-feedback.is-success {
-  color: #4ade80;
+  color: #2f9e44;
 }
 
 .delete-feedback.is-error {
-  color: #ff6b6b;
+  color: #d9480f;
 }

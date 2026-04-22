@@ -13,7 +13,7 @@ import {
   where,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-const remoteConfig = window.DRIVEDECK_REMOTE_FIREBASE || {};
+const remoteConfig = window.GALLERY_REMOTE_FIREBASE || {};
 const firebaseConfig = remoteConfig.firebaseConfig || {};
 const collectionName = remoteConfig.collectionName || "pairingCodes";
 const temporaryCodeExpiryMs = Number(remoteConfig.temporaryCodeExpiryDays || 2) * 24 * 60 * 60 * 1000;
@@ -122,7 +122,7 @@ function setDeleteMode(enabled) {
 
 function buildShareMessage() {
   const folderName = latestFolderName || "Google Drive folder";
-  return `Your DriveDeck pairing code for ${folderName} is *${latestCode}*`;
+  return `Your pairing code for ${folderName} is *${latestCode}*`;
 }
 
 function timestampToMs(value) {

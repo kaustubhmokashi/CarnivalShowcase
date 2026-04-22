@@ -1,6 +1,6 @@
-# DriveDeck Static Remote
+# Static Remote
 
-This folder is a standalone static remote page for DriveDeck.
+This folder is a standalone static remote page.
 
 You can upload this folder to:
 
@@ -9,7 +9,7 @@ You can upload this folder to:
 - Vercel static hosting
 - any plain static web host
 
-It does **not** depend on `https://drivedeck-app.onrender.com` for remote code creation.
+It does **not** depend on the hosted app for remote code creation.
 
 ## Files
 
