@@ -68,9 +68,12 @@ function focusElement(element) {
   }
 
   window.requestAnimationFrame(() => {
-    element.focus();
-    if (typeof element.scrollIntoView === "function") {
-      element.scrollIntoView({ block: "nearest" });
+    if (typeof element.focus === "function") {
+      try {
+        element.focus({ preventScroll: true });
+      } catch (error) {
+        element.focus();
+      }
     }
   });
 }
@@ -197,12 +200,12 @@ function moveGalleryFocus(direction) {
 
 function setStatus(message, isError = false) {
   directStatusEl.textContent = message;
-  directStatusEl.style.color = isError ? "#ffb4ac" : "";
+  directStatusEl.style.color = "#000000";
 }
 
 function setDirectStatus(message, isError = false) {
   directStatusEl.textContent = message;
-  directStatusEl.style.color = isError ? "#ffb4ac" : "";
+  directStatusEl.style.color = "#000000";
 }
 
 function clearLoadingTimer() {
@@ -289,6 +292,8 @@ function setActiveScreen(step, options = {}) {
   if (!skipHistory) {
     syncHistoryForStep(step, replaceState);
   }
+
+  window.scrollTo(0, 0);
 
   if (step === 1) {
     focusElement(directLinkInput);
@@ -854,6 +859,7 @@ closeGallerySettingsButton.addEventListener("click", () => {
 
 document.addEventListener("keydown", handleKeydown);
 window.addEventListener("resize", updateSlideshowActionVisibility);
+window.history.scrollRestoration = "manual";
 
 updateDurationControls();
 setActiveScreen(getStepForPath(window.location.pathname), { replaceState: true });

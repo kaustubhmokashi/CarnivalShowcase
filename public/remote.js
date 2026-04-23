@@ -25,7 +25,7 @@ function buildShareMessage() {
 
 function setRemoteStatus(message, isError = false) {
   remoteStatusEl.textContent = message;
-  remoteStatusEl.style.color = isError ? "#ffb4ac" : "";
+  remoteStatusEl.style.color = "#000000";
 }
 
 function setDeleteFeedback(message = "", tone = "") {

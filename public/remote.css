@@ -1,10 +1,12 @@
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap");
+
 :root {
   color-scheme: light;
-  --bg: #fffaf4;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --text: #1f1a14;
-  --muted: #6f6256;
-  --accent: #f47b20;
+  --text: #000000;
+  --muted: rgba(0, 0, 0, 0.72);
+  --accent: #000000;
 }
 
 * {
@@ -14,11 +16,9 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(244, 123, 32, 0.12), transparent 28%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
-  font-family: Inter, system-ui, sans-serif;
+  font-family: "Work Sans", sans-serif;
 }
 
 .remote-page {
@@ -113,8 +113,8 @@ input {
 .remote-form textarea {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(244, 123, 32, 0.22);
-  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ffffff;
   color: var(--text);
   resize: vertical;
 }
@@ -122,16 +122,16 @@ input {
 .remote-input {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(244, 123, 32, 0.22);
-  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ffffff;
   color: var(--text);
 }
 
 .remote-form button {
   padding: 16px;
   border: 0;
-  background: linear-gradient(180deg, #f9c48a 0%, #f47b20 100%);
-  color: #ffffff;
+  background: #ffffff;
+  color: #000000;
   text-transform: uppercase;
   letter-spacing: 0.18em;
 }
@@ -142,8 +142,8 @@ input {
   padding: 0 14px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(244, 123, 32, 0.24);
-  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ffffff;
   color: var(--text);
   font-size: 0.86rem;
   text-transform: uppercase;
@@ -153,7 +153,7 @@ input {
 .remote-tertiary-button {
   justify-self: center;
   padding: 0;
-  color: var(--muted);
+  color: #000000;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   text-decoration: underline;
@@ -180,9 +180,9 @@ input {
 }
 
 .delete-feedback.is-success {
-  color: #2f9e44;
+  color: #000000;
 }
 
 .delete-feedback.is-error {
-  color: #d9480f;
+  color: #000000;
 }

@@ -1,18 +1,18 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap");
 
 :root {
   color-scheme: light;
-  --bg: #fffaf4;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-low: #fff4e8;
-  --surface-high: #fff1df;
-  --line: rgba(223, 117, 0, 0.22);
-  --line-soft: rgba(223, 117, 0, 0.12);
-  --text: #1f1a14;
-  --muted: #6f6256;
-  --muted-soft: #9a8774;
-  --accent: #f47b20;
-  --accent-soft: #ffd3aa;
+  --surface-low: #ffffff;
+  --surface-high: #ffffff;
+  --line: rgba(0, 0, 0, 0.18);
+  --line-soft: rgba(0, 0, 0, 0.1);
+  --text: #000000;
+  --muted: rgba(0, 0, 0, 0.72);
+  --muted-soft: rgba(0, 0, 0, 0.56);
+  --accent: #000000;
+  --accent-soft: rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -23,12 +23,9 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(244, 123, 32, 0.14), transparent 30%),
-    radial-gradient(circle at top right, rgba(255, 194, 127, 0.28), transparent 24%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
-  font-family: "Inter", sans-serif;
+  font-family: "Work Sans", sans-serif;
 }
 
 body {
@@ -49,7 +46,7 @@ button {
 button:focus-visible,
 input:focus-visible,
 label:focus-within {
-  outline: 3px solid var(--accent);
+  outline: 3px solid #000000;
   outline-offset: 3px;
 }
 
@@ -106,7 +103,23 @@ label:focus-within {
 }
 
 .brand-lockup {
-  font-family: "Space Grotesk", sans-serif;
+  line-height: 0;
+}
+
+.brand-lockup-logo {
+  display: block;
+  width: clamp(140px, 18vw, 190px);
+  height: auto;
+}
+
+.panel-logo {
+  display: block;
+  width: clamp(150px, 20vw, 220px);
+  height: auto;
+}
+
+.brand-lockup {
+  font-family: "Work Sans", sans-serif;
   font-size: 0.92rem;
   font-weight: 700;
 }
@@ -174,7 +187,7 @@ label:focus-within {
   width: min(280px, 50vw);
   aspect-ratio: 1 / 1;
   object-fit: cover;
-  background: #fff;
+  background: #ffffff;
   padding: 14px;
   border: 1px solid var(--line);
 }
@@ -233,15 +246,15 @@ label:focus-within {
   padding: 26px 30px 24px;
   border: 1px solid var(--line);
   border-radius: 0;
-  background: #fff;
+  background: #ffffff;
   color: var(--text);
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: clamp(1.4rem, 3vw, 2.1rem);
   outline: none;
 }
 
 .link-form input::placeholder {
-  color: #baab99;
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .link-form input:focus {
@@ -280,7 +293,7 @@ label:focus-within {
 .loading-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(244, 123, 32, 0.2);
+  border: 2px solid rgba(0, 0, 0, 0.2);
   border-top-color: var(--accent);
   border-radius: 999px;
   animation: spin 0.9s linear infinite;
@@ -363,9 +376,7 @@ label:focus-within {
 .workspace-main {
   position: relative;
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0)),
-    var(--bg);
+  background: #ffffff;
 }
 
 .workspace-side {
@@ -414,7 +425,7 @@ label:focus-within {
 .folder-tab.selected,
 .folder-tab:hover,
 .folder-tab:focus-visible {
-  color: #8f4300;
+  color: #000000;
   text-decoration: underline;
   text-underline-offset: 7px;
   font-weight: 700;
@@ -422,7 +433,7 @@ label:focus-within {
 
 .display-title {
   margin: 10px 0 16px;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: clamp(3rem, 7vw, 5.6rem);
   line-height: 0.92;
   letter-spacing: -0.04em;
@@ -451,7 +462,7 @@ label:focus-within {
 }
 
 .folder-sequence::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: #ffffff;
 }
 
 .folder-choice {
@@ -460,7 +471,7 @@ label:focus-within {
   padding: 20px 22px;
   border: 1px solid transparent;
   border-left: 1px solid var(--line);
-  background: var(--surface);
+  background: #ffffff;
   text-align: left;
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
@@ -468,8 +479,8 @@ label:focus-within {
 .folder-choice:hover,
 .folder-choice:focus-visible,
 .folder-choice.selected {
-  background: var(--surface-high);
-  border-color: rgba(244, 123, 32, 0.5);
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.5);
   transform: translateY(-4px);
 }
 
@@ -479,7 +490,7 @@ label:focus-within {
   gap: 16px;
   align-items: start;
   margin-bottom: 10px;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 1.05rem;
   flex-direction: column;
 }
@@ -502,7 +513,7 @@ label:focus-within {
   min-height: 260px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #ffffff, #fff7ef);
+  background: #ffffff;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -519,7 +530,7 @@ label:focus-within {
 
 .side-title {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 1.1rem;
   line-height: 1.05;
   overflow-wrap: anywhere;
@@ -577,7 +588,7 @@ label:focus-within {
 .hud-link:focus-visible,
 .side-value-path:hover,
 .side-value-path:focus-visible {
-  color: var(--accent);
+  color: #000000;
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -586,8 +597,8 @@ label:focus-within {
   margin-top: auto;
   width: 100%;
   padding: 18px 20px;
-  background: linear-gradient(180deg, #f9c48a 0%, #f47b20 100%);
-  color: #ffffff;
+  background: #ffffff;
+  color: #000000;
   text-transform: uppercase;
   letter-spacing: 0.25em;
   font-size: 0.82rem;
@@ -599,7 +610,7 @@ label:focus-within {
   grid-auto-rows: auto;
   grid-auto-flow: row;
   align-items: start;
-  gap: 2px;
+  gap: 1px;
   width: 100%;
 }
 
@@ -610,21 +621,37 @@ label:focus-within {
   overflow: hidden;
 }
 
+.cover-logo {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 5;
+  width: clamp(160px, 20vw, 240px);
+  height: auto;
+  pointer-events: none;
+}
+
 .gallery-screen .hud-top {
   justify-content: flex-end;
   padding: 10px 18px 0;
 }
 
 .gallery-screen .workspace-stage {
-  padding-top: 18px;
+  --gallery-stage-inline-pad: 48px;
+  padding-top: 0;
   gap: 36px;
+}
+
+.gallery-screen .cover-photo {
+  width: calc(100% + (var(--gallery-stage-inline-pad) * 2));
+  margin-inline: calc(var(--gallery-stage-inline-pad) * -1);
 }
 
 .photo-card {
   position: relative;
   display: grid;
   gap: 0;
-  background: var(--surface);
+  background: #ffffff;
   text-align: left;
   overflow: hidden;
   height: auto;
@@ -645,12 +672,12 @@ label:focus-within {
 
 .photo-card:hover {
   transform: translateY(-4px);
-  background: var(--surface-high);
+  background: #ffffff;
 }
 
 .photo-card:focus-visible {
   transform: translateY(-4px);
-  background: var(--surface-high);
+  background: #ffffff;
 }
 
 .photo-card img {
@@ -658,7 +685,7 @@ label:focus-within {
   height: 100%;
   object-fit: contain;
   display: block;
-  background: #fffaf4;
+  background: #ffffff;
 }
 
 .photo-card-cover img {
@@ -667,16 +694,16 @@ label:focus-within {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: #fff8ef;
+  background: #ffffff;
 }
 
 .photo-card-cover {
-  background: #fff8ef;
+  background: #ffffff;
 }
 
 .photo-card-cover:hover {
   transform: none;
-  background: #fff8ef;
+  background: #ffffff;
 }
 
 .cover-photo .photo-card {
@@ -698,7 +725,7 @@ label:focus-within {
   align-items: flex-start;
   justify-content: flex-start;
   padding: 18px;
-  background: linear-gradient(180deg, rgba(255, 248, 239, 0.84) 0%, rgba(255, 248, 239, 0) 46%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 46%);
   pointer-events: none;
 }
 
@@ -710,7 +737,7 @@ label:focus-within {
   border: 0;
   background: transparent;
   color: #ffffff;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 0.8rem;
   letter-spacing: 0.18em;
   text-transform: none;
@@ -746,27 +773,27 @@ label:focus-within {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #111111;
+  color: #000000;
   font-size: 16px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 999px;
   box-shadow: 0 6px 20px rgba(31, 26, 20, 0.08);
 }
 
 .gallery-settings-button:hover,
 .gallery-settings-button:focus-visible {
-  color: #111111;
-  border-color: rgba(0, 0, 0, 0.12);
-  background: rgba(255, 255, 255, 0.98);
+  color: #000000;
+  border-color: rgba(0, 0, 0, 0.2);
+  background: #ffffff;
 }
 
 .gallery-settings-icon {
   font-size: 16px;
   line-height: 1;
-  color: var(--accent);
+  color: #000000;
 }
 
 .gallery-settings-text {
@@ -778,7 +805,7 @@ label:focus-within {
 .counter-button:focus-visible,
 .primary-cta:focus-visible {
   border-color: var(--accent);
-  background: rgba(229, 57, 53, 0.12);
+  background: #ffffff;
 }
 
 .hud-actions {
@@ -796,7 +823,7 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:checked {
-  background: var(--accent);
+  background: #000000;
 }
 
 .counter-control {
@@ -811,7 +838,7 @@ input[type="checkbox"]:checked {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 1.5rem;
 }
 
@@ -820,9 +847,9 @@ input[type="checkbox"]:checked {
   display: grid;
   place-items: center;
   border: 1px solid var(--line-soft);
-  background: #fff8ef;
+  background: #ffffff;
   color: var(--text);
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 1.05rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -832,7 +859,7 @@ input[type="checkbox"]:checked {
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgba(255, 250, 244, 0.98);
+  background: #ffffff;
 }
 
 .slideshow-frame {
@@ -851,7 +878,7 @@ input[type="checkbox"]:checked {
   display: block;
   margin: 0;
   filter: saturate(0.96) contrast(1.02);
-  background: #fffaf4;
+  background: #ffffff;
 }
 
 .slideshow-toast {
@@ -861,8 +888,8 @@ input[type="checkbox"]:checked {
   z-index: 3;
   transform: translateX(-50%);
   padding: 10px 16px;
-  border: 1px solid rgba(244, 123, 32, 0.22);
-  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ffffff;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -889,7 +916,7 @@ input[type="checkbox"]:checked {
   padding: 0;
   border-radius: 999px;
   background: #ffffff;
-  color: #111111;
+  color: #000000;
   box-shadow: 0 10px 24px rgba(31, 26, 20, 0.12);
 }
 
@@ -914,10 +941,10 @@ input[type="checkbox"]:checked {
   height: 64px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(244, 123, 32, 0.22);
-  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ffffff;
   color: var(--text);
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Work Sans", sans-serif;
   font-size: 2rem;
   line-height: 1;
   backdrop-filter: blur(12px);
@@ -935,7 +962,7 @@ input[type="checkbox"]:checked {
 .slideshow-nav:hover,
 .slideshow-nav:focus-visible {
   border-color: var(--accent);
-  background: #fff2e6;
+  background: #ffffff;
 }
 
 @media (hover: none) {
@@ -969,6 +996,10 @@ input[type="checkbox"]:checked {
   .workspace-stage {
     min-height: auto;
     padding: 96px 28px 56px;
+  }
+
+  .gallery-screen .workspace-stage {
+    --gallery-stage-inline-pad: 28px;
   }
 
   .workspace-side {
@@ -1029,6 +1060,10 @@ input[type="checkbox"]:checked {
     gap: 28px;
   }
 
+  .gallery-screen .workspace-stage {
+    --gallery-stage-inline-pad: 18px;
+  }
+
   .screen-hud {
     flex-direction: column;
     align-items: start;
@@ -1069,7 +1104,7 @@ input[type="checkbox"]:checked {
 
   .gallery-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px;
+    gap: 1px;
   }
 
   .folder-tabs-shell {
