@@ -2,23 +2,14 @@ const directLinkForm = document.getElementById("direct-link-form");
 const directLinkInput = document.getElementById("direct-link-input");
 const directStatusEl = document.getElementById("direct-status");
 const directLoadingIndicatorEl = document.getElementById("direct-loading-indicator");
-const directLoadingCopyEl = document.getElementById("direct-loading-copy");
+const directLoadingPercentEl = document.getElementById("direct-loading-percent");
+const directLoadingMessageEl = document.getElementById("direct-loading-message");
 
 const screenDirectLink = document.getElementById("screen-direct-link");
-const screenFolders = document.getElementById("screen-folders");
 const screenGallery = document.getElementById("screen-gallery");
 
-const folderTreeEl = document.getElementById("folder-tree");
 const folderCountEl = document.getElementById("folder-count");
 const folderPathStatusEl = document.getElementById("folder-path-status");
-const foldersTitleEl = document.getElementById("folders-title");
-const foldersSubtitleEl = document.getElementById("folders-subtitle");
-const toggleFolderPanelButton = document.getElementById("toggle-folder-panel");
-const closeFolderPanelButton = document.getElementById("close-folder-panel");
-const folderSidePanelEl = document.getElementById("folder-side-panel");
-const selectedFolderNameEl = document.getElementById("selected-folder-name");
-const selectedFolderPathEl = document.getElementById("selected-folder-path");
-const selectedFolderCountEl = document.getElementById("selected-folder-count");
 
 const galleryEl = document.getElementById("gallery");
 const coverPhotoEl = document.getElementById("cover-photo");
@@ -29,8 +20,6 @@ const folderTabsEl = document.getElementById("folder-tabs");
 const toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
 const closeGallerySettingsButton = document.getElementById("close-gallery-settings");
 
-const backToLinkButton = document.getElementById("back-to-link");
-const continueToGalleryButton = document.getElementById("continue-to-gallery");
 const startSlideshowButton = document.getElementById("start-slideshow");
 
 const durationReadoutEl = document.getElementById("duration-readout");
@@ -41,6 +30,8 @@ const loopInput = document.getElementById("loop-input");
 
 const slideshowEl = document.getElementById("slideshow");
 const slideImageEl = document.getElementById("slide-image");
+const slideImageFullEl = document.getElementById("slide-image-full");
+const slideshowLoaderEl = document.getElementById("slideshow-loader");
 const slideshowToastEl = document.getElementById("slideshow-toast");
 const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
@@ -55,8 +46,11 @@ let images = [];
 let currentSlideIndex = -1;
 let imageLoadFailures = 0;
 let slideshowPreloadCache = new Map();
+let slideshowImageLoadToken = 0;
 let loadTimer = null;
-let loadStartedAt = 0;
+let loadingProgress = 0;
+let loadingProgressTarget = 0;
+let loadingProgressMessage = "";
 let slideshowConfig = {
   duration: 8,
   loop: false,
@@ -76,6 +70,18 @@ function focusElement(element) {
       }
     }
   });
+}
+
+function isEditableTarget(target) {
+  if (!target || !(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 function slugifyFolderName(name) {
@@ -99,18 +105,6 @@ function getCurrentSlidePhoto() {
 function getGalleryPath() {
   const slug = slugifyFolderName(sharedFolderName);
   return slug ? `/${slug}` : "/gallery";
-}
-
-function moveFolderFocus(direction) {
-  const buttons = Array.from(folderTreeEl.querySelectorAll(".folder-choice"));
-  if (!buttons.length) {
-    return;
-  }
-
-  const currentIndex = buttons.findIndex((button) => button === document.activeElement);
-  const safeIndex = currentIndex === -1 ? 0 : currentIndex;
-  const nextIndex = Math.max(0, Math.min(buttons.length - 1, safeIndex + direction));
-  focusElement(buttons[nextIndex]);
 }
 
 function moveFocusByGeometry(elements, direction) {
@@ -161,14 +155,6 @@ function moveFocusByGeometry(elements, direction) {
   }
 }
 
-function getFolderCards() {
-  return Array.from(folderTreeEl.querySelectorAll(".folder-choice"));
-}
-
-function moveFolderGridFocus(direction) {
-  moveFocusByGeometry(getFolderCards(), direction);
-}
-
 function getFolderTabCards() {
   return Array.from(folderTabsEl.querySelectorAll(".folder-tab"));
 }
@@ -215,58 +201,102 @@ function clearLoadingTimer() {
   }
 }
 
-function formatElapsedCopy(baseMessage) {
-  if (!loadStartedAt) {
-    return baseMessage;
+function clampLoadingProgress(value) {
+  const number = Number(value);
+  if (Number.isNaN(number)) {
+    return 0;
   }
 
-  const elapsedSeconds = Math.max(1, Math.floor((Date.now() - loadStartedAt) / 1000));
-  return `${baseMessage} Elapsed time: ${elapsedSeconds}s.`;
+  return Math.max(0, Math.min(100, number));
+}
+
+function renderLoadingState() {
+  if (directLoadingPercentEl) {
+    directLoadingPercentEl.textContent = `${Math.round(loadingProgress)}%`;
+  }
+
+  if (directLoadingMessageEl) {
+    directLoadingMessageEl.textContent = loadingProgressMessage;
+  }
+}
+
+function tickLoadingProgress() {
+  const distance = loadingProgressTarget - loadingProgress;
+  if (Math.abs(distance) < 0.5) {
+    loadingProgress = loadingProgressTarget;
+    renderLoadingState();
+    if (screenGallery.classList.contains("loading") && loadingProgressTarget < 95) {
+      loadingProgressTarget = Math.min(95, loadingProgressTarget + 1);
+    }
+    return;
+  }
+
+  const step = Math.max(1, Math.ceil(Math.abs(distance) * 0.18));
+  loadingProgress += distance > 0 ? step : -step;
+  loadingProgress = clampLoadingProgress(loadingProgress);
+  renderLoadingState();
+  if (screenGallery.classList.contains("loading") && loadingProgressTarget < 95) {
+    loadingProgressTarget = Math.min(95, loadingProgressTarget + 1);
+  }
+}
+
+function startLoadingTimer() {
+  if (loadTimer) {
+    return;
+  }
+
+  loadTimer = window.setInterval(() => {
+    tickLoadingProgress();
+  }, 24);
 }
 
 function setLoadingState(isLoading, message = "", options = {}) {
-  const { preserveStartTime = false } = options;
+  const { progress } = options;
 
-  if (!directLoadingIndicatorEl || !directLoadingCopyEl) {
+  if (!directLoadingIndicatorEl || !directLoadingPercentEl || !directLoadingMessageEl) {
     return;
   }
 
   if (!isLoading) {
     directLoadingIndicatorEl.classList.add("hidden");
-    directLoadingCopyEl.textContent = "";
+    screenGallery.classList.remove("loading");
+    screenGallery.classList.add("revealed");
+    loadingProgress = 0;
+    loadingProgressTarget = 0;
+    loadingProgressMessage = "";
+    renderLoadingState();
     clearLoadingTimer();
-    loadStartedAt = 0;
     return;
   }
 
-  if (!preserveStartTime || !loadStartedAt) {
-    loadStartedAt = Date.now();
+  if (typeof progress === "number") {
+    loadingProgressTarget = clampLoadingProgress(progress);
+    loadingProgress = loadingProgressTarget;
+    renderLoadingState();
   }
 
-  const baseMessage =
-    message || "We’re opening your folder now. Larger collections can take around 10 to 30 seconds.";
-  directLoadingCopyEl.textContent = formatElapsedCopy(baseMessage);
+  loadingProgressMessage = message || loadingProgressMessage || "Opening your gallery vault.";
+  screenGallery.classList.remove("revealed");
+  screenGallery.classList.add("loading");
   directLoadingIndicatorEl.classList.remove("hidden");
-  clearLoadingTimer();
-  loadTimer = window.setInterval(() => {
-    directLoadingCopyEl.textContent = formatElapsedCopy(baseMessage);
-  }, 1000);
+  renderLoadingState();
+  startLoadingTimer();
 }
 
-function getStepForPath(pathname) {
-  if (pathname === "/" || pathname === "") {
-    return 1;
-  }
-
-  if (pathname === "/folders") {
-    return 2;
-  }
-
-  return 3;
+function resetGalleryLoadingShell() {
+  screenGallery.classList.add("loading");
+  screenGallery.classList.remove("revealed");
+  coverPhotoEl.innerHTML = "";
+  galleryEl.innerHTML = "";
+  folderTabsEl.innerHTML = "";
+  photoCountEl.textContent = "0";
+  galleryFolderPathEl.textContent = "PATH: //";
+  galleryFolderPathEl.href = "/";
+  selectedGridFolderEl.textContent = "";
 }
 
 function syncHistoryForStep(step, replaceState = false) {
-  const nextPath = step === 1 ? "/" : step === 2 ? "/folders" : getGalleryPath();
+  const nextPath = step === 1 ? "/" : getGalleryPath();
   if (window.location.pathname === nextPath) {
     return;
   }
@@ -278,12 +308,7 @@ function syncHistoryForStep(step, replaceState = false) {
 function setActiveScreen(step, options = {}) {
   const { replaceState = false, skipHistory = false } = options;
   screenDirectLink.classList.toggle("active", step === 1);
-  screenFolders.classList.toggle("active", step === 2);
   screenGallery.classList.toggle("active", step === 3);
-
-  if (step !== 2) {
-    screenFolders.classList.remove("panel-open");
-  }
 
   if (step !== 3) {
     screenGallery.classList.remove("panel-open");
@@ -297,10 +322,11 @@ function setActiveScreen(step, options = {}) {
 
   if (step === 1) {
     focusElement(directLinkInput);
-  } else if (step === 2) {
-    focusElement(folderTreeEl.querySelector(".folder-choice") || continueToGalleryButton);
   } else if (step === 3) {
-    focusElement(getFirstGalleryCard());
+    const firstGalleryCard = galleryEl.querySelector(".photo-card:not(.photo-card-cover)");
+    if (firstGalleryCard) {
+      focusElement(firstGalleryCard);
+    }
   }
 }
 
@@ -335,23 +361,7 @@ function getSelectedFolder() {
 
 function updateFolderSidePanel() {
   const folder = getSelectedFolder();
-  selectedFolderNameEl.textContent = folder ? folder.name : "Nothing selected yet";
-  if (folder) {
-    const shareLink = getFolderShareLink(folder);
-    selectedFolderPathEl.textContent = shareLink;
-    selectedFolderPathEl.href = shareLink;
-  } else {
-    selectedFolderPathEl.textContent = "/";
-    selectedFolderPathEl.href = "/";
-  }
-  selectedFolderCountEl.textContent = folder
-    ? `${folder.images.length} photo${folder.images.length === 1 ? "" : "s"}`
-    : "0 photos";
   folderPathStatusEl.textContent = folder ? `PATH: ${getFolderShareLink(folder)}` : "PATH: //";
-  foldersTitleEl.textContent = currentFolders.length > 1 ? "CHOOSE A FOLDER" : "FOLDER READY";
-  foldersSubtitleEl.textContent = folder
-    ? `You're all set to browse photos from ${folder.name}.`
-    : "Pick the folder you'd like to show on screen.";
 }
 
 function renderFolderTabs(folders) {
@@ -372,7 +382,6 @@ function renderFolderTabs(folders) {
       renderFolderTabs(currentFolders);
       updateFolderSidePanel();
       updateGalleryForSelectedFolder();
-      setActiveScreen(3);
     });
     button.addEventListener("focus", () => {
       button.scrollIntoView({ block: "nearest" });
@@ -583,13 +592,51 @@ function showSlide(index) {
 
   currentSlideIndex = (index + images.length) % images.length;
   const photo = images[currentSlideIndex];
+  const requestToken = ++slideshowImageLoadToken;
+  const previewSource = photo.thumbnailUrl || photo.url;
 
   slideImageEl.onerror = () => {
     setStatus(`Could not load "${photo.name}" in slideshow view.`, true);
   };
 
-  slideImageEl.src = photo.url;
+  slideImageEl.src = previewSource;
   slideImageEl.alt = photo.name;
+  if (slideImageFullEl) {
+    slideImageFullEl.classList.remove("loaded");
+    slideImageFullEl.removeAttribute("src");
+    slideImageFullEl.alt = photo.name;
+  }
+
+  if (slideshowLoaderEl) {
+    slideshowLoaderEl.classList.remove("hidden");
+  }
+
+  const fullImage = new Image();
+  fullImage.decoding = "async";
+  fullImage.onload = () => {
+    if (requestToken !== slideshowImageLoadToken) {
+      return;
+    }
+
+    if (slideImageFullEl) {
+      slideImageFullEl.src = photo.url;
+      slideImageFullEl.classList.add("loaded");
+    }
+
+    if (slideshowLoaderEl) {
+      slideshowLoaderEl.classList.add("hidden");
+    }
+  };
+  fullImage.onerror = () => {
+    if (requestToken !== slideshowImageLoadToken) {
+      return;
+    }
+
+    if (slideshowLoaderEl) {
+      slideshowLoaderEl.classList.add("hidden");
+    }
+  };
+  fullImage.src = photo.url;
   syncSlideshowPreloadWindow(currentSlideIndex);
 }
 
@@ -665,10 +712,18 @@ function openSlideshow(index = 0) {
 openSlideshow.toastTimer = null;
 
 function closeSlideshow() {
+  slideshowImageLoadToken += 1;
   slideshowEl.classList.add("hidden");
   slideshowEl.setAttribute("aria-hidden", "true");
   if (slideshowToastEl) {
     slideshowToastEl.classList.add("hidden");
+  }
+  if (slideshowLoaderEl) {
+    slideshowLoaderEl.classList.add("hidden");
+  }
+  if (slideImageFullEl) {
+    slideImageFullEl.classList.remove("loaded");
+    slideImageFullEl.removeAttribute("src");
   }
   window.clearTimeout(openSlideshow.toastTimer);
   openSlideshow.toastTimer = null;
@@ -677,13 +732,11 @@ function closeSlideshow() {
 }
 
 function handleKeydown(event) {
-  const isBackKey =
-    event.key === "Escape" ||
-    event.key === "Backspace" ||
-    event.key === "BrowserBack" ||
-    event.key === "GoBack";
+  if (isEditableTarget(event.target)) {
+    return;
+  }
 
-  if (isBackKey) {
+  if (event.key === "Escape") {
     if (!slideshowEl.classList.contains("hidden")) {
       event.preventDefault();
       closeSlideshow();
@@ -695,21 +748,7 @@ function handleKeydown(event) {
       if (screenGallery.classList.contains("panel-open")) {
         screenGallery.classList.remove("panel-open");
         focusElement(toggleGallerySettingsButton);
-      } else {
-        setActiveScreen(2);
       }
-      return;
-    }
-
-    if (screenDirectLink.classList.contains("active")) {
-      event.preventDefault();
-      setActiveScreen(1);
-      return;
-    }
-
-    if (screenFolders.classList.contains("active")) {
-      event.preventDefault();
-      setActiveScreen(1);
       return;
     }
   }
@@ -732,28 +771,27 @@ function handleKeydown(event) {
 
 async function loadFolder(folderUrl) {
   setStatus("Getting everything ready...");
-  setLoadingState(
-    true,
-    "We’re opening your folder now. Larger collections can take around 10 to 30 seconds.",
-    {}
-  );
+  setLoadingState(false);
 
   try {
+    let folderName = "";
+
     try {
       const metaResponse = await fetch(`/api/folder-meta?url=${encodeURIComponent(folderUrl)}`);
       const metaData = await metaResponse.json();
       if (metaResponse.ok && metaData.name) {
+        folderName = metaData.name;
         setStatus(`Connecting to "${metaData.name}"...`);
-        setLoadingState(
-          true,
-          `We’re connecting to "${metaData.name}" now. Larger collections can take around 10 to 30 seconds.`,
-          { preserveStartTime: true }
-        );
       }
     } catch (error) {
       // Keep the generic loading state if metadata lookup fails.
     }
 
+    setActiveScreen(3);
+    resetGalleryLoadingShell();
+    setLoadingState(true, "Loading your photos.", { progress: 0 });
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    setLoadingState(true, "Loading your photos.", { progress: 24 });
     const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}`);
     const data = await response.json();
 
@@ -770,12 +808,11 @@ async function loadFolder(folderUrl) {
     renderFolderTabs(currentFolders);
     updateFolderSidePanel();
     updateGalleryForSelectedFolder();
+    setLoadingState(true, "Loading your photos.", { progress: 100 });
 
     if (currentFolders.length > 1) {
-      setActiveScreen(3);
       setStatus(`You're in. We found ${currentFolders.length} folders to choose from.`);
     } else {
-      setActiveScreen(3);
       setStatus("Everything's ready. Your photos are waiting.");
     }
     setLoadingState(false);
@@ -787,7 +824,6 @@ async function loadFolder(folderUrl) {
     images = [];
     folderCountEl.textContent = "0";
     photoCountEl.textContent = "0";
-    folderTreeEl.innerHTML = '<div class="empty-sequence">We couldn\'t load the folders this time.</div>';
     galleryEl.innerHTML = '<div class="empty-sequence">We couldn\'t load the photos this time.</div>';
     setStatus(error.message, true);
     setLoadingState(false);
@@ -804,23 +840,6 @@ directLinkForm.addEventListener("submit", async (event) => {
 
   setDirectStatus("");
   await loadFolder(folderUrl);
-});
-
-toggleFolderPanelButton.addEventListener("click", () => {
-  screenFolders.classList.add("panel-open");
-  focusElement(closeFolderPanelButton || continueToGalleryButton);
-});
-
-closeFolderPanelButton.addEventListener("click", () => {
-  screenFolders.classList.remove("panel-open");
-  focusElement(folderTreeEl.querySelector(".folder-choice"));
-});
-
-backToLinkButton.addEventListener("click", () => setActiveScreen(1));
-
-continueToGalleryButton.addEventListener("click", () => {
-  updateGalleryForSelectedFolder();
-  setActiveScreen(3);
 });
 
 startSlideshowButton.addEventListener("click", () => openSlideshow(0));
@@ -862,10 +881,10 @@ window.addEventListener("resize", updateSlideshowActionVisibility);
 window.history.scrollRestoration = "manual";
 
 updateDurationControls();
-setActiveScreen(getStepForPath(window.location.pathname), { replaceState: true });
+setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
 
 window.addEventListener("popstate", () => {
-  setActiveScreen(getStepForPath(window.location.pathname), {
+  setActiveScreen(window.location.pathname === "/" ? 1 : 3, {
     skipHistory: true,
     replaceState: true,
   });

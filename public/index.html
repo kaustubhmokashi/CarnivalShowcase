@@ -4,14 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CarnivalShowcase</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg?v=20260423" type="image/svg+xml" />
+    <link rel="shortcut icon" href="/favicon.svg?v=20260423" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260423" />
   </head>
   <body>
     <div class="app-shell">
       <section id="screen-direct-link" class="screen active screen-link">
         <div class="screen-hud hud-top">
           <div class="brand-lockup">
-            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Stories" />
+            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
           </div>
         </div>
 
@@ -29,96 +31,25 @@
             Put your google drive Link here
           </p>
           <div id="direct-status" class="status-line"></div>
-          <div id="direct-loading-indicator" class="loading-indicator hidden">
-            <span class="loading-spinner" aria-hidden="true"></span>
-            <span id="direct-loading-copy">We’re getting everything ready. This can take a little while for larger folders.</span>
-          </div>
         </div>
-      </section>
-
-      <section id="screen-folders" class="screen workspace-screen folders-screen">
-        <div class="workspace-main">
-          <div class="screen-hud hud-top">
-            <div class="brand-lockup">
-              <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Stories" />
-            </div>
-            <div class="hud-actions">
-              <button id="toggle-folder-panel" type="button" class="icon-action" aria-label="Open folder details">⚙</button>
-              <button id="back-to-link" type="button" class="icon-action">←</button>
-            </div>
-          </div>
-
-          <div class="workspace-stage">
-            <div class="workspace-copy">
-              <p class="eyebrow-meta">GALLERY // FOLDER BROWSER</p>
-              <h1 id="folders-title" class="display-title">CHOOSE A FOLDER</h1>
-              <p id="folders-subtitle" class="workspace-subtitle">
-                Pick the folder you’d like to show on screen.
-              </p>
-            </div>
-
-            <div id="folder-tree" class="folder-sequence">
-              <div class="empty-sequence">Your folders will appear here in a moment.</div>
-            </div>
-          </div>
-
-          <div class="screen-hud hud-bottom">
-            <div class="hud-stat">
-              <span class="hud-label">CURRENT PATH</span>
-              <span id="folder-path-status" class="hud-value">PATH: //</span>
-            </div>
-            <div class="hud-stat">
-              <span class="hud-label">FOLDERS</span>
-              <span id="folder-count" class="hud-value">0</span>
-            </div>
-          </div>
-        </div>
-
-        <aside id="folder-side-panel" class="workspace-side">
-          <div class="side-panel">
-            <div class="slideshow-settings-head">
-              <button id="close-folder-panel" type="button" class="icon-action icon-action-close-panel" aria-label="Close folder details">
-                Close
-              </button>
-            </div>
-            <img class="panel-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Stories" />
-            <p class="side-subtitle">FOLDER PICKER</p>
-
-            <div class="side-group">
-              <div class="side-row">
-                <span class="side-key">Selected folder</span>
-                <span id="selected-folder-name" class="side-value">Nothing selected yet</span>
-              </div>
-              <div class="side-row">
-                <span class="side-key">Path</span>
-                <a id="selected-folder-path" class="side-value side-value-path" href="/" target="_blank" rel="noreferrer">/</a>
-              </div>
-              <div class="side-row">
-                <span class="side-key">Photos inside</span>
-                <span id="selected-folder-count" class="side-value">0 photos</span>
-              </div>
-            </div>
-
-            <div class="side-group side-group-compact">
-              <span class="side-key">What happens next</span>
-              <span class="side-value">Choose a folder, browse the grid, then start the slideshow</span>
-            </div>
-
-            <button id="continue-to-gallery" type="button" class="primary-cta">
-              Open Selected Folder
-            </button>
-          </div>
-        </aside>
       </section>
 
       <section id="screen-gallery" class="screen workspace-screen gallery-screen">
         <div class="workspace-main">
           <div class="screen-hud hud-top">
+            <div class="brand-lockup">
+            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
+            </div>
+          </div>
+
+          <div id="direct-loading-indicator" class="loading-indicator hidden" aria-live="polite">
+            <span id="direct-loading-percent" class="loading-percent">0%</span>
+            <span id="direct-loading-message" class="loading-message">Opening your gallery vault.</span>
           </div>
 
           <div class="workspace-stage">
             <div id="cover-photo" class="cover-photo">
-              <img class="cover-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Stories" />
+              <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
               <div class="empty-sequence">Your photos will show up here shortly.</div>
               <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
                 <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
@@ -154,7 +85,7 @@
                 Close
               </button>
             </div>
-            <img class="panel-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Stories" />
+            <img class="panel-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
             <p class="side-subtitle">SLIDESHOW SETUP</p>
 
             <div class="side-group">
@@ -206,11 +137,13 @@
         </div>
         <button id="prev-slide" type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous photo">←</button>
         <img id="slide-image" class="slide-image" alt="" />
+        <img id="slide-image-full" class="slide-image slide-image-full" alt="" />
+        <div id="slideshow-loader" class="slideshow-loader hidden" aria-hidden="true"></div>
         <button id="next-slide" type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next photo">→</button>
       </div>
     </div>
 
-    <script src="/qr.js"></script>
-    <script src="/app.js"></script>
+    <script src="/qr.js?v=20260423"></script>
+    <script src="/app.js?v=20260423"></script>
   </body>
 </html>
