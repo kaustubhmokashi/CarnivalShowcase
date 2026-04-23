@@ -269,7 +269,7 @@ function startLoadingTimer() {
 
   loadTimer = window.setInterval(() => {
     tickLoadingProgress();
-  }, 120);
+  }, 240);
 }
 
 function setLoadingState(isLoading, message = "", options = {}) {
