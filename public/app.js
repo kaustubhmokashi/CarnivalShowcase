@@ -12,6 +12,8 @@ const galleryEl = document.getElementById("gallery");
 const coverPhotoEl = document.getElementById("cover-photo");
 const galleryFolderPathEl = document.getElementById("gallery-folder-path");
 const photoCountEl = document.getElementById("photo-count");
+const galleryErrorStateEl = document.getElementById("gallery-error-state");
+const galleryErrorMessageEl = document.getElementById("gallery-error-message");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
 let toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
@@ -28,6 +30,12 @@ const loopInput = document.getElementById("loop-input");
 const slideshowEl = document.getElementById("slideshow");
 const slideImageEl = document.getElementById("slide-image");
 const slideImageFullEl = document.getElementById("slide-image-full");
+const slideVideoEl = document.getElementById("slide-video");
+const slideVideoOverlayEl = document.getElementById("slide-video-overlay");
+const slideVideoControlsEl = document.getElementById("slide-video-controls");
+const slideVideoToggleButton = document.getElementById("slide-video-toggle");
+const slideVideoToggleIconEl = document.getElementById("slide-video-toggle-icon");
+const slideVideoProgressEl = document.getElementById("slide-video-progress");
 const slideshowLoaderEl = document.getElementById("slideshow-loader");
 const slideshowToastEl = document.getElementById("slideshow-toast");
 const shareSlideButton = document.getElementById("share-slide");
@@ -49,6 +57,7 @@ let slideshowImageLoadToken = 0;
 let loadTimer = null;
 let slideshowAdvanceTimer = null;
 let folderPreloadRunToken = 0;
+let activeVideoSlideLocked = false;
 let loadingProgress = 0;
 let loadingProgressTarget = 0;
 let loadingProgressMessageBase = "";
@@ -102,6 +111,56 @@ function getFolderShareLink(folder) {
 
 function getCurrentSlidePhoto() {
   return images[currentSlideIndex] || null;
+}
+
+function isVideoMedia(item) {
+  return Boolean(item?.mimeType && item.mimeType.startsWith("video/"));
+}
+
+function updateVideoToggleVisual(isPlaying) {
+  if (!slideVideoToggleIconEl || !slideVideoToggleButton) {
+    return;
+  }
+
+  slideVideoToggleIconEl.classList.toggle("is-play", !isPlaying);
+  slideVideoToggleIconEl.classList.toggle("is-pause", isPlaying);
+  slideVideoToggleButton.setAttribute("aria-label", isPlaying ? "Pause video" : "Play video");
+}
+
+function updateVideoProgress() {
+  if (!slideVideoEl || !slideVideoProgressEl) {
+    return;
+  }
+
+  const duration = Number(slideVideoEl.duration) || 0;
+  const currentTime = Number(slideVideoEl.currentTime) || 0;
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  slideVideoProgressEl.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+}
+
+async function toggleCurrentVideoPlayback() {
+  const media = getCurrentSlidePhoto();
+  if (!slideVideoEl || !media || !isVideoMedia(media)) {
+    return;
+  }
+
+  if (slideVideoEl.paused || slideVideoEl.ended) {
+    activeVideoSlideLocked = true;
+    clearSlideshowAdvanceTimer();
+    slideVideoOverlayEl?.classList.add("hidden");
+
+    try {
+      await slideVideoEl.play();
+    } catch (error) {
+      activeVideoSlideLocked = false;
+      slideVideoOverlayEl?.classList.remove("hidden");
+      updateVideoToggleVisual(false);
+      scheduleSlideshowAdvance();
+    }
+    return;
+  }
+
+  slideVideoEl.pause();
 }
 
 function getGalleryPath() {
@@ -215,6 +274,26 @@ function clearSlideshowAdvanceTimer() {
   }
 }
 
+function resetSlideshowVideoState() {
+  activeVideoSlideLocked = false;
+
+  if (!slideVideoEl || !slideVideoOverlayEl) {
+    return;
+  }
+
+  slideVideoEl.pause();
+  slideVideoEl.classList.add("hidden");
+  slideVideoEl.removeAttribute("src");
+  slideVideoEl.removeAttribute("poster");
+  slideVideoEl.load();
+  slideVideoOverlayEl.classList.add("hidden");
+  slideVideoControlsEl?.classList.add("hidden");
+  if (slideVideoProgressEl) {
+    slideVideoProgressEl.style.width = "0%";
+  }
+  updateVideoToggleVisual(false);
+}
+
 function clampLoadingProgress(value) {
   const number = Number(value);
   if (Number.isNaN(number)) {
@@ -235,9 +314,26 @@ function renderLoadingState() {
   }
 }
 
+function clearGalleryErrorState() {
+  screenGallery.classList.remove("error-state");
+  galleryErrorStateEl?.classList.add("hidden");
+}
+
+function setGalleryErrorState(message) {
+  if (galleryErrorMessageEl) {
+    galleryErrorMessageEl.textContent = String(message || "We couldn't load the photos this time.").toUpperCase();
+  }
+  screenGallery.classList.remove("loading");
+  screenGallery.classList.remove("revealed");
+  screenGallery.classList.add("error-state");
+  galleryErrorStateEl?.classList.remove("hidden");
+}
+
 function renderCoverChrome() {
   coverPhotoEl.innerHTML = `
-    <img class="cover-logo" src="${logoAssetPath}" alt="Carnival Stories" />
+    <a href="/" class="cover-logo-link" aria-label="Go to home page">
+      <img class="cover-logo" src="${logoAssetPath}" alt="Carnival Stories" />
+    </a>
     <div class="empty-sequence">Your photos will show up here shortly.</div>
     <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
       <span class="gallery-settings-text">Slideshow settings</span>
@@ -326,14 +422,19 @@ function setLoadingState(isLoading, message = "", options = {}) {
 }
 
 function resetGalleryLoadingShell() {
+  clearGalleryErrorState();
   screenGallery.classList.add("loading");
   screenGallery.classList.remove("revealed");
   renderCoverChrome();
   galleryEl.innerHTML = "";
   folderTabsEl.innerHTML = "";
-  photoCountEl.textContent = "0";
-  galleryFolderPathEl.textContent = "PATH: //";
-  galleryFolderPathEl.href = "/";
+  if (photoCountEl) {
+    photoCountEl.textContent = "0";
+  }
+  if (galleryFolderPathEl) {
+    galleryFolderPathEl.textContent = "PATH: //";
+    galleryFolderPathEl.href = "/";
+  }
   if (selectedGridFolderEl) {
     selectedGridFolderEl.textContent = "";
   }
@@ -459,6 +560,7 @@ function renderFolderTabs(folders) {
 }
 
 function renderGallery(photoItems) {
+  clearGalleryErrorState();
   galleryEl.innerHTML = "";
   renderCoverChrome();
   coverPhotoEl.style.backgroundImage = "none";
@@ -486,8 +588,12 @@ function renderGallery(photoItems) {
     coverPhotoEl.appendChild(card);
   }
 
+  if (!photoItems.length) {
+    setGalleryErrorState("This folder doesn't have any photos yet.");
+    return;
+  }
+
   if (!visiblePhotos.length) {
-    galleryEl.innerHTML = '<div class="empty-sequence">This folder doesn\'t have any photos yet.</div>';
     return;
   }
 
@@ -544,14 +650,20 @@ function renderGallery(photoItems) {
 function updateGalleryForSelectedFolder() {
   const selectedFolder = getSelectedFolder();
   images = selectedFolder ? selectedFolder.images : [];
-  photoCountEl.textContent = `${images.length}`;
+  if (photoCountEl) {
+    photoCountEl.textContent = `${images.length}`;
+  }
   if (selectedFolder) {
     const shareLink = getFolderShareLink(selectedFolder);
-    galleryFolderPathEl.textContent = `PATH: ${shareLink}`;
-    galleryFolderPathEl.href = shareLink;
+    if (galleryFolderPathEl) {
+      galleryFolderPathEl.textContent = `PATH: ${shareLink}`;
+      galleryFolderPathEl.href = shareLink;
+    }
   } else {
-    galleryFolderPathEl.textContent = "PATH: //";
-    galleryFolderPathEl.href = "/";
+    if (galleryFolderPathEl) {
+      galleryFolderPathEl.textContent = "PATH: //";
+      galleryFolderPathEl.href = "/";
+    }
   }
   if (selectedGridFolderEl) {
     selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
@@ -698,6 +810,10 @@ function scheduleSlideshowAdvance() {
     return;
   }
 
+  if (isVideoMedia(getCurrentSlidePhoto()) && activeVideoSlideLocked) {
+    return;
+  }
+
   const isLastSlide = currentSlideIndex >= images.length - 1;
   if (isLastSlide && !slideshowConfig.loop) {
     return;
@@ -723,22 +839,50 @@ function showSlide(index) {
   const photo = images[currentSlideIndex];
   const requestToken = ++slideshowImageLoadToken;
   const previewSource = photo.thumbnailUrl || photo.url;
+  const isVideo = isVideoMedia(photo);
+
+  clearSlideshowAdvanceTimer();
+  resetSlideshowVideoState();
 
   slideImageEl.onerror = () => {
     setStatus(`Could not load "${photo.name}" in slideshow view.`, true);
   };
 
+  slideImageEl.classList.remove("hidden");
   slideImageEl.src = previewSource;
   slideImageEl.alt = photo.name;
   if (slideImageFullEl) {
+    slideImageFullEl.classList.remove("hidden");
     slideImageFullEl.classList.remove("loaded");
     slideImageFullEl.removeAttribute("src");
     slideImageFullEl.alt = photo.name;
   }
 
-  if (slideshowLoaderEl) {
+  if (slideshowLoaderEl && !isVideo) {
     slideshowLoaderEl.classList.remove("hidden");
   }
+
+  if (isVideo) {
+    slideImageEl.classList.add("hidden");
+    slideImageFullEl?.classList.add("hidden");
+    if (slideVideoEl && slideVideoOverlayEl) {
+      slideVideoEl.src = photo.slideshowUrl || photo.url;
+      slideVideoEl.poster = previewSource;
+      slideVideoEl.classList.remove("hidden");
+      slideVideoOverlayEl.classList.remove("hidden");
+      updateVideoProgress();
+      updateVideoToggleVisual(false);
+    }
+
+    if (slideshowLoaderEl) {
+      slideshowLoaderEl.classList.add("hidden");
+    }
+
+    scheduleSlideshowAdvance();
+    return;
+  }
+
+  slideVideoEl?.classList.add("hidden");
 
   const fullImage = new Image();
   fullImage.decoding = "async";
@@ -755,6 +899,8 @@ function showSlide(index) {
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
     }
+
+    scheduleSlideshowAdvance();
   };
   fullImage.onerror = () => {
     if (requestToken !== slideshowImageLoadToken) {
@@ -764,10 +910,11 @@ function showSlide(index) {
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
     }
+
+    scheduleSlideshowAdvance();
   };
   fullImage.src = photo.url;
   syncSlideshowPreloadWindow(currentSlideIndex);
-  scheduleSlideshowAdvance();
 }
 
 function updateSlideshowActionVisibility() {
@@ -844,6 +991,7 @@ openSlideshow.toastTimer = null;
 function closeSlideshow() {
   clearSlideshowAdvanceTimer();
   slideshowImageLoadToken += 1;
+  resetSlideshowVideoState();
   slideshowEl.classList.add("hidden");
   slideshowEl.setAttribute("aria-hidden", "true");
   if (slideshowToastEl) {
@@ -922,7 +1070,7 @@ async function loadFolder(folderUrl) {
     resetGalleryLoadingShell();
     setLoadingState(true, "Loading your photos.", { progress: 0 });
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}`);
+    const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -952,8 +1100,10 @@ async function loadFolder(folderUrl) {
     coverPhoto = null;
     sharedFolderName = "";
     images = [];
-    photoCountEl.textContent = "0";
-    galleryEl.innerHTML = '<div class="empty-sequence">We couldn\'t load the photos this time.</div>';
+    if (photoCountEl) {
+      photoCountEl.textContent = "0";
+    }
+    setGalleryErrorState(error.message || "We couldn't load the photos this time.");
     setStatus(error.message, true);
     setLoadingState(false);
   }
@@ -989,6 +1139,28 @@ shareSlideButton?.addEventListener("click", () => {
   shareCurrentSlide().catch(() => {
     setStatus("Sharing isn’t available right now.", true);
   });
+});
+slideVideoOverlayEl?.addEventListener("click", async () => {
+  await toggleCurrentVideoPlayback();
+});
+slideVideoToggleButton?.addEventListener("click", async () => {
+  await toggleCurrentVideoPlayback();
+});
+slideVideoEl?.addEventListener("timeupdate", updateVideoProgress);
+slideVideoEl?.addEventListener("loadedmetadata", updateVideoProgress);
+slideVideoEl?.addEventListener("play", () => {
+  slideVideoControlsEl?.classList.remove("hidden");
+  updateVideoToggleVisual(true);
+  slideVideoOverlayEl?.classList.add("hidden");
+  updateVideoProgress();
+});
+slideVideoEl?.addEventListener("pause", () => {
+  updateVideoToggleVisual(false);
+  updateVideoProgress();
+});
+slideVideoEl?.addEventListener("ended", () => {
+  updateVideoToggleVisual(false);
+  updateVideoProgress();
 });
 
 bindCoverSettingsButton();
