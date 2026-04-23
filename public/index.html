@@ -36,12 +36,6 @@
 
       <section id="screen-gallery" class="screen workspace-screen gallery-screen">
         <div class="workspace-main">
-          <div class="screen-hud hud-top">
-            <div class="brand-lockup">
-            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
-            </div>
-          </div>
-
           <div id="direct-loading-indicator" class="loading-indicator hidden" aria-live="polite">
             <span id="direct-loading-percent" class="loading-percent">0%</span>
             <span id="direct-loading-message" class="loading-message">Opening your gallery vault.</span>
@@ -52,7 +46,6 @@
               <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
               <div class="empty-sequence">Your photos will show up here shortly.</div>
               <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-                <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
                 <span class="gallery-settings-text">Slideshow settings</span>
               </button>
             </div>
@@ -72,7 +65,7 @@
               <a id="gallery-folder-path" class="hud-value hud-link" href="/" target="_blank" rel="noreferrer">PATH: //</a>
             </div>
             <div class="hud-stat">
-              <span class="hud-label">MEDIA COUNT</span>
+              <span class="hud-label">PHOTO COUNT</span>
               <span id="photo-count" class="hud-value">0</span>
             </div>
           </div>
@@ -81,21 +74,21 @@
         <aside class="workspace-side">
           <div class="side-panel">
             <div class="slideshow-settings-head">
+              <img class="panel-favicon" src="/favicon.svg?v=20260423" alt="Carnival Stories" />
               <button id="close-gallery-settings" type="button" class="icon-action icon-action-close-panel" aria-label="Close slideshow settings">
-                Close
+                CLOSE
               </button>
             </div>
-            <img class="panel-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
             <p class="side-subtitle">SLIDESHOW SETUP</p>
 
             <div class="side-group">
               <div class="side-row">
                 <span class="side-key">Duration</span>
-                <span id="duration-readout" class="side-value">8.0s</span>
+                <span id="duration-readout" class="side-value">4.0s</span>
               </div>
               <div class="counter-control">
                 <button id="duration-decrease" type="button" class="counter-button" aria-label="Decrease duration">-</button>
-                <div id="duration-count" class="counter-value" aria-live="polite">8s</div>
+                <div id="duration-count" class="counter-value" aria-live="polite">4s</div>
                 <button id="duration-increase" type="button" class="counter-button" aria-label="Increase duration">+</button>
               </div>
             </div>
@@ -104,11 +97,6 @@
               <span class="side-key">Loop Slideshow</span>
               <input id="loop-input" type="checkbox" />
             </label>
-
-            <div class="side-group side-group-compact">
-              <span class="side-key">Current folder</span>
-              <span id="selected-grid-folder" class="side-value">No folder selected yet</span>
-            </div>
 
             <button id="start-slideshow" type="button" class="primary-cta">
               Start Slideshow

@@ -44,14 +44,17 @@ let images = [];
 let currentSlideIndex = -1;
 let imageLoadFailures = 0;
 let slideshowPreloadCache = new Map();
+let folderThumbnailPreloadCache = new Map();
 let slideshowImageLoadToken = 0;
 let loadTimer = null;
+let slideshowAdvanceTimer = null;
+let folderPreloadRunToken = 0;
 let loadingProgress = 0;
 let loadingProgressTarget = 0;
 let loadingProgressMessageBase = "";
 let loadingMessageDots = 0;
 let slideshowConfig = {
-  duration: 8,
+  duration: 4,
   loop: false,
   autoplay: false,
 };
@@ -205,6 +208,13 @@ function clearLoadingTimer() {
   }
 }
 
+function clearSlideshowAdvanceTimer() {
+  if (slideshowAdvanceTimer) {
+    window.clearTimeout(slideshowAdvanceTimer);
+    slideshowAdvanceTimer = null;
+  }
+}
+
 function clampLoadingProgress(value) {
   const number = Number(value);
   if (Number.isNaN(number)) {
@@ -230,7 +240,6 @@ function renderCoverChrome() {
     <img class="cover-logo" src="${logoAssetPath}" alt="Carnival Stories" />
     <div class="empty-sequence">Your photos will show up here shortly.</div>
     <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-      <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
       <span class="gallery-settings-text">Slideshow settings</span>
     </button>
   `;
@@ -325,7 +334,9 @@ function resetGalleryLoadingShell() {
   photoCountEl.textContent = "0";
   galleryFolderPathEl.textContent = "PATH: //";
   galleryFolderPathEl.href = "/";
-  selectedGridFolderEl.textContent = "";
+  if (selectedGridFolderEl) {
+    selectedGridFolderEl.textContent = "";
+  }
 }
 
 function syncHistoryForStep(step, replaceState = false) {
@@ -394,7 +405,9 @@ function getSelectedFolder() {
 
 function updateFolderSidePanel() {
   const folder = getSelectedFolder();
-  selectedGridFolderEl.textContent = folder ? folder.name : "Nothing selected yet";
+  if (selectedGridFolderEl) {
+    selectedGridFolderEl.textContent = folder ? folder.name : "Nothing selected yet";
+  }
 }
 
 function renderFolderTabs(folders) {
@@ -480,7 +493,7 @@ function renderGallery(photoItems) {
 
   visiblePhotos.forEach((photo, index) => {
     const card = document.createElement("button");
-    card.className = "photo-card";
+    card.className = "photo-card is-loading";
     card.type = "button";
     card.dataset.index = String(index);
 
@@ -491,7 +504,11 @@ function renderGallery(photoItems) {
     image.src = photo.thumbnailUrl || photo.url;
     image.alt = photo.name;
     image.loading = "lazy";
+    image.addEventListener("load", () => {
+      card.classList.remove("is-loading");
+    });
     image.addEventListener("error", () => {
+      card.classList.remove("is-loading");
       imageLoadFailures += 1;
       image.style.opacity = "0.14";
       setStatus(
@@ -536,8 +553,13 @@ function updateGalleryForSelectedFolder() {
     galleryFolderPathEl.textContent = "PATH: //";
     galleryFolderPathEl.href = "/";
   }
-  selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
+  if (selectedGridFolderEl) {
+    selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
+  }
   renderGallery(selectedFolder ? selectedFolder.images : []);
+  if (selectedFolder) {
+    startBackgroundFolderPreload(currentFolders, selectedFolder.id);
+  }
 }
 
 function updateDurationControls() {
@@ -556,6 +578,10 @@ function changeDuration(delta) {
   const nextValue = Math.max(2, Math.min(15, slideshowConfig.duration + delta));
   slideshowConfig.duration = nextValue;
   updateDurationControls();
+
+  if (!slideshowEl.classList.contains("hidden")) {
+    scheduleSlideshowAdvance();
+  }
 }
 
 function getWindowedSlideIndexes(centerIndex) {
@@ -603,6 +629,83 @@ function syncSlideshowPreloadWindow(centerIndex) {
     preloader.src = images[index].url;
     slideshowPreloadCache.set(index, preloader);
   });
+}
+
+function preloadImageSource(source) {
+  if (!source) {
+    return Promise.resolve();
+  }
+
+  const cachedPromise = folderThumbnailPreloadCache.get(source);
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
+  const preloadPromise = new Promise((resolve) => {
+    const preloader = new Image();
+    preloader.decoding = "async";
+    preloader.onload = () => resolve();
+    preloader.onerror = () => resolve();
+    preloader.src = source;
+  });
+
+  folderThumbnailPreloadCache.set(source, preloadPromise);
+  return preloadPromise;
+}
+
+function startBackgroundFolderPreload(folders, activeFolderId) {
+  const preloadToken = ++folderPreloadRunToken;
+  const sources = folders
+    .filter((folder) => folder.id !== activeFolderId)
+    .flatMap((folder) => folder.images.map((photo) => photo.thumbnailUrl || photo.url))
+    .filter(Boolean);
+
+  if (!sources.length) {
+    return;
+  }
+
+  const runPreload = () => {
+    let nextIndex = 0;
+    const workerCount = Math.min(3, sources.length);
+
+    const pump = () => {
+      if (preloadToken !== folderPreloadRunToken || nextIndex >= sources.length) {
+        return Promise.resolve();
+      }
+
+      const source = sources[nextIndex];
+      nextIndex += 1;
+      return preloadImageSource(source).then(pump);
+    };
+
+    for (let workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
+      void pump();
+    }
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(runPreload, { timeout: 500 });
+    return;
+  }
+
+  window.setTimeout(runPreload, 120);
+}
+
+function scheduleSlideshowAdvance() {
+  clearSlideshowAdvanceTimer();
+
+  if (slideshowEl.classList.contains("hidden") || images.length <= 1) {
+    return;
+  }
+
+  const isLastSlide = currentSlideIndex >= images.length - 1;
+  if (isLastSlide && !slideshowConfig.loop) {
+    return;
+  }
+
+  slideshowAdvanceTimer = window.setTimeout(() => {
+    showSlide(currentSlideIndex + 1);
+  }, slideshowConfig.duration * 1000);
 }
 
 function showSlide(index) {
@@ -664,6 +767,7 @@ function showSlide(index) {
   };
   fullImage.src = photo.url;
   syncSlideshowPreloadWindow(currentSlideIndex);
+  scheduleSlideshowAdvance();
 }
 
 function updateSlideshowActionVisibility() {
@@ -723,9 +827,9 @@ function openSlideshow(index = 0) {
   }
 
   updateSlideshowActionVisibility();
-  showSlide(index);
   slideshowEl.classList.remove("hidden");
   slideshowEl.setAttribute("aria-hidden", "false");
+  showSlide(index);
   if (slideshowToastEl) {
     slideshowToastEl.classList.remove("hidden");
     window.clearTimeout(openSlideshow.toastTimer);
@@ -738,6 +842,7 @@ function openSlideshow(index = 0) {
 openSlideshow.toastTimer = null;
 
 function closeSlideshow() {
+  clearSlideshowAdvanceTimer();
   slideshowImageLoadToken += 1;
   slideshowEl.classList.add("hidden");
   slideshowEl.setAttribute("aria-hidden", "true");
@@ -828,6 +933,7 @@ async function loadFolder(folderUrl) {
     selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
     coverPhoto = currentFolders[0]?.images?.[0] || null;
     sharedFolderName = data.tree?.name || "";
+    syncHistoryForStep(3, true);
     renderFolderTabs(currentFolders);
     updateFolderSidePanel();
     updateGalleryForSelectedFolder();
