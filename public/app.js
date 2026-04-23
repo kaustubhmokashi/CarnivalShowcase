@@ -8,16 +8,13 @@ const directLoadingMessageEl = document.getElementById("direct-loading-message")
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
 
-const folderCountEl = document.getElementById("folder-count");
-const folderPathStatusEl = document.getElementById("folder-path-status");
-
 const galleryEl = document.getElementById("gallery");
 const coverPhotoEl = document.getElementById("cover-photo");
 const galleryFolderPathEl = document.getElementById("gallery-folder-path");
 const photoCountEl = document.getElementById("photo-count");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
-const toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
+let toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
 const closeGallerySettingsButton = document.getElementById("close-gallery-settings");
 
 const startSlideshowButton = document.getElementById("start-slideshow");
@@ -37,6 +34,7 @@ const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
 const prevSlideButton = document.getElementById("prev-slide");
 const nextSlideButton = document.getElementById("next-slide");
+const logoAssetPath = "/assets/carnivalstories-logo.svg?v=20260423";
 
 let currentFolders = [];
 let selectedFolderId = null;
@@ -50,7 +48,8 @@ let slideshowImageLoadToken = 0;
 let loadTimer = null;
 let loadingProgress = 0;
 let loadingProgressTarget = 0;
-let loadingProgressMessage = "";
+let loadingProgressMessageBase = "";
+let loadingMessageDots = 0;
 let slideshowConfig = {
   duration: 8,
   loop: false,
@@ -216,28 +215,51 @@ function renderLoadingState() {
   }
 
   if (directLoadingMessageEl) {
-    directLoadingMessageEl.textContent = loadingProgressMessage;
+    const dots = loadingMessageDots > 0 ? ".".repeat(loadingMessageDots) : "";
+    directLoadingMessageEl.textContent = `${loadingProgressMessageBase}${dots}`;
   }
 }
 
-function tickLoadingProgress() {
-  const distance = loadingProgressTarget - loadingProgress;
-  if (Math.abs(distance) < 0.5) {
-    loadingProgress = loadingProgressTarget;
-    renderLoadingState();
-    if (screenGallery.classList.contains("loading") && loadingProgressTarget < 95) {
-      loadingProgressTarget = Math.min(95, loadingProgressTarget + 1);
-    }
+function renderCoverChrome() {
+  coverPhotoEl.innerHTML = `
+    <img class="cover-logo" src="${logoAssetPath}" alt="Carnival Stories" />
+    <div class="empty-sequence">Your photos will show up here shortly.</div>
+    <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
+      <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
+      <span class="gallery-settings-text">Slideshow settings</span>
+    </button>
+  `;
+  toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
+  bindCoverSettingsButton();
+}
+
+function bindCoverSettingsButton() {
+  if (!toggleGallerySettingsButton || toggleGallerySettingsButton.dataset.bound === "true") {
     return;
   }
 
-  const step = Math.max(1, Math.ceil(Math.abs(distance) * 0.18));
-  loadingProgress += distance > 0 ? step : -step;
-  loadingProgress = clampLoadingProgress(loadingProgress);
-  renderLoadingState();
-  if (screenGallery.classList.contains("loading") && loadingProgressTarget < 95) {
-    loadingProgressTarget = Math.min(95, loadingProgressTarget + 1);
+  toggleGallerySettingsButton.addEventListener("click", () => {
+    screenGallery.classList.toggle("panel-open");
+    focusElement(
+      screenGallery.classList.contains("panel-open")
+        ? durationDecreaseButton
+        : toggleGallerySettingsButton
+    );
+  });
+  toggleGallerySettingsButton.dataset.bound = "true";
+}
+
+function tickLoadingProgress() {
+  if (loadingProgressTarget >= 100) {
+    loadingProgress = clampLoadingProgress(loadingProgressTarget);
+    renderLoadingState();
+    return;
   }
+
+  loadingProgress = clampLoadingProgress(Math.min(98, loadingProgress + 1));
+  loadingProgressTarget = 98;
+  loadingMessageDots = (loadingMessageDots % 3) + 1;
+  renderLoadingState();
 }
 
 function startLoadingTimer() {
@@ -247,7 +269,7 @@ function startLoadingTimer() {
 
   loadTimer = window.setInterval(() => {
     tickLoadingProgress();
-  }, 24);
+  }, 120);
 }
 
 function setLoadingState(isLoading, message = "", options = {}) {
@@ -263,30 +285,36 @@ function setLoadingState(isLoading, message = "", options = {}) {
     screenGallery.classList.add("revealed");
     loadingProgress = 0;
     loadingProgressTarget = 0;
-    loadingProgressMessage = "";
+    loadingProgressMessageBase = "";
+    loadingMessageDots = 0;
     renderLoadingState();
     clearLoadingTimer();
     return;
   }
 
-  if (typeof progress === "number") {
-    loadingProgressTarget = clampLoadingProgress(progress);
-    loadingProgress = loadingProgressTarget;
-    renderLoadingState();
+  if (!loadTimer) {
+    startLoadingTimer();
   }
 
-  loadingProgressMessage = message || loadingProgressMessage || "Opening your gallery vault.";
+  if (typeof progress === "number") {
+    loadingProgressTarget = clampLoadingProgress(progress);
+    loadingProgress = loadingProgressTarget === 100 ? 100 : clampLoadingProgress(loadingProgressTarget);
+  }
+
+  loadingProgressMessageBase = String(message || loadingProgressMessageBase || "Opening your gallery vault.")
+    .replace(/\.+$/, "")
+    .trim();
+  loadingMessageDots = 0;
   screenGallery.classList.remove("revealed");
   screenGallery.classList.add("loading");
   directLoadingIndicatorEl.classList.remove("hidden");
   renderLoadingState();
-  startLoadingTimer();
 }
 
 function resetGalleryLoadingShell() {
   screenGallery.classList.add("loading");
   screenGallery.classList.remove("revealed");
-  coverPhotoEl.innerHTML = "";
+  renderCoverChrome();
   galleryEl.innerHTML = "";
   folderTabsEl.innerHTML = "";
   photoCountEl.textContent = "0";
@@ -361,7 +389,7 @@ function getSelectedFolder() {
 
 function updateFolderSidePanel() {
   const folder = getSelectedFolder();
-  folderPathStatusEl.textContent = folder ? `PATH: ${getFolderShareLink(folder)}` : "PATH: //";
+  selectedGridFolderEl.textContent = folder ? folder.name : "Nothing selected yet";
 }
 
 function renderFolderTabs(folders) {
@@ -414,7 +442,7 @@ function renderFolderTabs(folders) {
 
 function renderGallery(photoItems) {
   galleryEl.innerHTML = "";
-  coverPhotoEl.innerHTML = "";
+  renderCoverChrome();
   coverPhotoEl.style.backgroundImage = "none";
   imageLoadFailures = 0;
 
@@ -437,13 +465,6 @@ function renderGallery(photoItems) {
       );
     });
     card.appendChild(image);
-    const overlay = document.createElement("div");
-    overlay.className = "photo-card-overlay";
-    const label = document.createElement("span");
-    label.className = "photo-card-label";
-    label.textContent = "CarnivalShowcase";
-    overlay.appendChild(label);
-    card.appendChild(overlay);
     coverPhotoEl.appendChild(card);
   }
 
@@ -791,7 +812,6 @@ async function loadFolder(folderUrl) {
     resetGalleryLoadingShell();
     setLoadingState(true, "Loading your photos.", { progress: 0 });
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    setLoadingState(true, "Loading your photos.", { progress: 24 });
     const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}`);
     const data = await response.json();
 
@@ -803,12 +823,11 @@ async function loadFolder(folderUrl) {
     selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
     coverPhoto = currentFolders[0]?.images?.[0] || null;
     sharedFolderName = data.tree?.name || "";
-    folderCountEl.textContent = String(currentFolders.length);
-
     renderFolderTabs(currentFolders);
     updateFolderSidePanel();
     updateGalleryForSelectedFolder();
     setLoadingState(true, "Loading your photos.", { progress: 100 });
+    await new Promise((resolve) => window.setTimeout(resolve, 140));
 
     if (currentFolders.length > 1) {
       setStatus(`You're in. We found ${currentFolders.length} folders to choose from.`);
@@ -822,7 +841,6 @@ async function loadFolder(folderUrl) {
     coverPhoto = null;
     sharedFolderName = "";
     images = [];
-    folderCountEl.textContent = "0";
     photoCountEl.textContent = "0";
     galleryEl.innerHTML = '<div class="empty-sequence">We couldn\'t load the photos this time.</div>';
     setStatus(error.message, true);
@@ -862,14 +880,7 @@ shareSlideButton?.addEventListener("click", () => {
   });
 });
 
-toggleGallerySettingsButton.addEventListener("click", () => {
-  screenGallery.classList.toggle("panel-open");
-  focusElement(
-    screenGallery.classList.contains("panel-open")
-      ? durationDecreaseButton
-      : toggleGallerySettingsButton
-  );
-});
+bindCoverSettingsButton();
 
 closeGallerySettingsButton.addEventListener("click", () => {
   screenGallery.classList.remove("panel-open");
