@@ -1008,7 +1008,8 @@ function renderGallery(photoItems) {
   galleryEl.innerHTML = "";
   galleryEl.style.height = "0px";
   renderCoverChrome();
-  coverPhotoEl.style.backgroundImage = "none";
+  coverPhotoEl.style.removeProperty("--cover-image");
+  coverPhotoEl.classList.remove("has-cover-image");
   imageLoadFailures = 0;
 
   const visiblePhotos = photoItems.filter((photo) => photo !== coverPhoto);
@@ -1016,6 +1017,8 @@ function renderGallery(photoItems) {
   pendingGalleryThumbnailLoads = visiblePhotos.length;
 
   if (coverPhoto) {
+    coverPhotoEl.style.setProperty("--cover-image", `url("${coverPhoto.url}")`);
+    coverPhotoEl.classList.add("has-cover-image");
     const card = document.createElement("div");
     card.className = "photo-card photo-card-cover";
     const image = document.createElement("img");

@@ -756,6 +756,13 @@ label:focus-within {
   background-size: cover;
 }
 
+.cover-photo.has-cover-image {
+  background-image: var(--cover-image);
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
 .gallery-screen.loading.has-loading-cover .cover-photo::before {
   content: "";
   position: absolute;
@@ -786,22 +793,24 @@ label:focus-within {
 
 .cover-logo-link {
   position: absolute;
-  top: var(--brand-logo-top);
+  top: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
   left: var(--brand-logo-left);
   z-index: 5;
   display: flex;
   align-items: center;
+  min-height: var(--cover-header-height);
   width: var(--brand-logo-width);
   height: auto;
-  min-height: 0;
   max-width: calc(100% - (var(--brand-logo-left) * 2));
   overflow: visible;
   pointer-events: auto;
+  transform: translateY(-50%);
 }
 
 .cover-logo-link,
 .cover-settings-button {
-  --cover-header-center: calc(var(--brand-logo-top) + (var(--brand-logo-width) * 0.15));
+  --cover-header-height: clamp(24px, calc(var(--brand-logo-width) * 0.18), 40px);
+  --cover-header-center: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
 }
 
 .cover-logo {
@@ -1514,8 +1523,8 @@ input[type="checkbox"]:checked {
     height: 100svh;
   }
 
-  .cover-photo .photo-card-cover img {
-    object-position: center center;
+  .cover-photo.has-cover-image .photo-card-cover {
+    display: none;
   }
 
   .cover-story-copy {
