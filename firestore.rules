@@ -1,0 +1,71 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == "carnivalshowcase@gmail.com";
+    }
+
+    function canCreateLinks() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == "active";
+    }
+
+    match /users/{uid} {
+      allow list: if isAdmin();
+      allow read, update, delete: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && request.resource.data.uid == uid;
+
+      match /pages/{pageId} {
+        allow get: if true;
+        allow list: if false;
+        allow update, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && canCreateLinks()
+          && request.resource.data.ownerUid == uid;
+      }
+    }
+
+    match /studioNames/{studioSlug} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if isSignedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /publicPages/{pageSlug} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && canCreateLinks()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    match /pairingCodes/{code} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && canCreateLinks()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}

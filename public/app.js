@@ -7,6 +7,7 @@ const directLoadingMessageEl = document.getElementById("direct-loading-message")
 
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
+const workspaceMain = screenGallery?.querySelector(".workspace-main");
 
 const galleryEl = document.getElementById("gallery");
 const coverPhotoEl = document.getElementById("cover-photo");
@@ -16,6 +17,8 @@ const galleryErrorStateEl = document.getElementById("gallery-error-state");
 const galleryErrorMessageEl = document.getElementById("gallery-error-message");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
+const folderTabsShellEl = document.querySelector(".folder-tabs-shell");
+const scrollToTopButton = document.getElementById("scroll-to-top-button");
 let toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
 const closeGallerySettingsButton = document.getElementById("close-gallery-settings");
 
@@ -35,11 +38,15 @@ const slideVideoOverlayEl = document.getElementById("slide-video-overlay");
 const slideVideoControlsEl = document.getElementById("slide-video-controls");
 const slideVideoToggleButton = document.getElementById("slide-video-toggle");
 const slideVideoToggleIconEl = document.getElementById("slide-video-toggle-icon");
+const slideVideoTimelineEl = document.getElementById("slide-video-timeline");
 const slideVideoProgressEl = document.getElementById("slide-video-progress");
+const slideVideoTooltipEl = document.getElementById("slide-video-tooltip");
 const slideshowLoaderEl = document.getElementById("slideshow-loader");
 const slideshowToastEl = document.getElementById("slideshow-toast");
 const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
+const toggleSlideshowPlaybackButton = document.getElementById("toggle-slideshow-playback");
+const slideshowPlaybackIconEl = document.getElementById("slideshow-playback-icon");
 const prevSlideButton = document.getElementById("prev-slide");
 const nextSlideButton = document.getElementById("next-slide");
 const logoAssetPath = "/assets/carnivalstories-logo.svg?v=20260423";
@@ -47,6 +54,15 @@ const logoAssetPath = "/assets/carnivalstories-logo.svg?v=20260423";
 let currentFolders = [];
 let selectedFolderId = null;
 let coverPhoto = null;
+let coverTagline = "";
+let coverDateRange = "";
+let activeBranding = {
+  backgroundColor: "#FFFFFF",
+  accentColor: "#000000",
+  logoLink: "",
+  faviconLink: "",
+  homepageLink: "",
+};
 let sharedFolderName = "";
 let images = [];
 let currentSlideIndex = -1;
@@ -58,10 +74,16 @@ let loadTimer = null;
 let slideshowAdvanceTimer = null;
 let folderPreloadRunToken = 0;
 let activeVideoSlideLocked = false;
+let galleryLayoutFrame = null;
+let activeGalleryRenderToken = 0;
+let pendingGalleryThumbnailLoads = 0;
+let galleryRowObserver = null;
 let loadingProgress = 0;
 let loadingProgressTarget = 0;
 let loadingProgressMessageBase = "";
 let loadingMessageDots = 0;
+let loadingFadeTimer = null;
+let slideshowPaused = false;
 let slideshowConfig = {
   duration: 4,
   loop: false,
@@ -127,6 +149,32 @@ function updateVideoToggleVisual(isPlaying) {
   slideVideoToggleButton.setAttribute("aria-label", isPlaying ? "Pause video" : "Play video");
 }
 
+function updateSlideshowPlaybackVisual() {
+  if (!slideshowPlaybackIconEl || !toggleSlideshowPlaybackButton) {
+    return;
+  }
+
+  slideshowPlaybackIconEl.classList.toggle("is-play", slideshowPaused);
+  slideshowPlaybackIconEl.classList.toggle("is-pause", !slideshowPaused);
+  toggleSlideshowPlaybackButton.setAttribute("aria-label", slideshowPaused ? "Resume slideshow" : "Pause slideshow");
+}
+
+function setSlideshowPaused(nextPaused) {
+  slideshowPaused = Boolean(nextPaused);
+  updateSlideshowPlaybackVisual();
+
+  if (slideshowPaused) {
+    clearSlideshowAdvanceTimer();
+    return;
+  }
+
+  scheduleSlideshowAdvance();
+}
+
+function toggleSlideshowPlayback() {
+  setSlideshowPaused(!slideshowPaused);
+}
+
 function updateVideoProgress() {
   if (!slideVideoEl || !slideVideoProgressEl) {
     return;
@@ -136,6 +184,45 @@ function updateVideoProgress() {
   const currentTime = Number(slideVideoEl.currentTime) || 0;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   slideVideoProgressEl.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+}
+
+function formatMediaTime(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function updateTimelineTooltip(clientX) {
+  if (!slideVideoEl || !slideVideoTimelineEl || !slideVideoTooltipEl) {
+    return;
+  }
+
+  const rect = slideVideoTimelineEl.getBoundingClientRect();
+  if (!rect.width) {
+    return;
+  }
+
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const duration = Number(slideVideoEl.duration) || 0;
+  slideVideoTooltipEl.textContent = formatMediaTime(duration * ratio);
+  slideVideoTooltipEl.style.left = `${ratio * rect.width}px`;
+}
+
+function seekCurrentVideo(clientX) {
+  if (!slideVideoEl || !slideVideoTimelineEl) {
+    return;
+  }
+
+  const rect = slideVideoTimelineEl.getBoundingClientRect();
+  if (!rect.width) {
+    return;
+  }
+
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const duration = Number(slideVideoEl.duration) || 0;
+  slideVideoEl.currentTime = duration * ratio;
+  updateVideoProgress();
 }
 
 async function toggleCurrentVideoPlayback() {
@@ -238,6 +325,171 @@ function getMasonryTileSpan(photo, index) {
   };
 }
 
+function getGalleryColumnCount() {
+  const galleryWidth = galleryEl?.clientWidth || window.innerWidth;
+  const viewportWidth = window.innerWidth;
+  const gap = 1;
+
+  if (viewportWidth <= 720) {
+    const minimumTileWidth = 150;
+    const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
+    return Math.min(2, maxColumnsByWidth);
+  }
+
+  if (viewportWidth <= 1100) {
+    const minimumTileWidth = 180;
+    const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
+    return Math.min(3, maxColumnsByWidth);
+  }
+
+  const minimumTileWidth = 220;
+  const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
+  return Math.min(4, maxColumnsByWidth);
+}
+
+function getCardAspectRatio(card) {
+  const cardRatio = Number(card.dataset.aspectRatio);
+  return Number.isFinite(cardRatio) && cardRatio > 0 ? cardRatio : 1;
+}
+
+function layoutGalleryMasonry() {
+  if (!galleryEl || !galleryEl.children.length) {
+    clearGalleryRowObserver();
+    return;
+  }
+
+  const cards = Array.from(galleryEl.querySelectorAll(".photo-card"));
+  if (!cards.length) {
+    galleryEl.style.height = "0px";
+    clearGalleryRowObserver();
+    return;
+  }
+
+  const columnCount = getGalleryColumnCount();
+  const gap = 1;
+  const galleryWidth = galleryEl.clientWidth;
+  if (!galleryWidth) {
+    return;
+  }
+
+  const columnWidth = (galleryWidth - gap * (columnCount - 1)) / columnCount;
+  const columnHeights = Array(columnCount).fill(0);
+
+  cards.forEach((card, index) => {
+    const ratio = getCardAspectRatio(card);
+    const height = columnWidth / ratio;
+    const columnIndex = index < columnCount ? index : columnHeights.indexOf(Math.min(...columnHeights));
+    const x = columnIndex * (columnWidth + gap);
+    const y = columnHeights[columnIndex];
+
+    card.style.position = "absolute";
+    card.style.width = `${columnWidth}px`;
+    card.style.left = `${x}px`;
+    card.style.top = `${y}px`;
+    card.style.height = `${height}px`;
+
+    columnHeights[columnIndex] = y + height + gap;
+  });
+
+  galleryEl.style.height = `${Math.max(...columnHeights) - gap}px`;
+  setupGalleryRowReveal();
+}
+
+function queueGalleryLayout() {
+  if (galleryLayoutFrame) {
+    window.cancelAnimationFrame(galleryLayoutFrame);
+  }
+
+  galleryLayoutFrame = window.requestAnimationFrame(() => {
+    galleryLayoutFrame = null;
+    layoutGalleryMasonry();
+  });
+}
+
+function clearGalleryRowObserver() {
+  if (!galleryRowObserver) {
+    return;
+  }
+
+  galleryRowObserver.disconnect();
+  galleryRowObserver = null;
+}
+
+function revealGalleryRow(cards) {
+  cards.forEach((card) => {
+    card.classList.remove("row-pending");
+    card.classList.add("row-visible");
+  });
+}
+
+function setupGalleryRowReveal() {
+  clearGalleryRowObserver();
+
+  if (!screenGallery.classList.contains("revealed")) {
+    return;
+  }
+
+  const cards = Array.from(galleryEl.querySelectorAll(".photo-card:not(.photo-card-cover)"));
+  if (!cards.length) {
+    return;
+  }
+
+  const rowGroups = [];
+  const rowTolerance = 3;
+
+  cards.forEach((card) => {
+    const top = Number.parseFloat(card.style.top || "0");
+    let row = rowGroups.find((group) => Math.abs(group.top - top) <= rowTolerance);
+    if (!row) {
+      row = { top, cards: [] };
+      rowGroups.push(row);
+      rowGroups.sort((a, b) => a.top - b.top);
+    }
+    row.cards.push(card);
+  });
+
+  rowGroups.forEach((row, rowIndex) => {
+    const alreadyVisible = row.cards.some((card) => card.classList.contains("row-visible"));
+    row.cards.forEach((card) => {
+      card.dataset.rowIndex = String(rowIndex);
+      if (alreadyVisible) {
+        card.classList.remove("row-pending");
+        card.classList.add("row-visible");
+      } else {
+        card.classList.add("row-pending");
+        card.classList.remove("row-visible");
+      }
+    });
+  });
+
+  galleryRowObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) {
+        return;
+      }
+
+      const rowIndex = Number(entry.target.dataset.rowIndex);
+      const row = rowGroups[rowIndex];
+      if (!row) {
+        return;
+      }
+
+      revealGalleryRow(row.cards);
+      galleryRowObserver?.unobserve(entry.target);
+    });
+  }, {
+    root: null,
+    rootMargin: "0px 0px -12% 0px",
+    threshold: 0.08,
+  });
+
+  rowGroups.forEach((row) => {
+    if (!row.cards.some((card) => card.classList.contains("row-visible"))) {
+      galleryRowObserver.observe(row.cards[0]);
+    }
+  });
+}
+
 function getGalleryCards() {
   return Array.from(galleryEl.querySelectorAll(".photo-card:not(.photo-card-cover)"));
 }
@@ -329,13 +581,173 @@ function setGalleryErrorState(message) {
   galleryErrorStateEl?.classList.remove("hidden");
 }
 
+function showGalleryError(message) {
+  setActiveScreen(3, { skipHistory: true });
+  setGalleryErrorState(message);
+}
+
+function showGalleryLoading(message = "Loading your albums.") {
+  setActiveScreen(3, { skipHistory: true });
+  resetGalleryLoadingShell();
+  setLoadingState(true, message, { progress: 0 });
+}
+
+function showGalleryLoadingPreview(options = {}) {
+  coverTagline = String(options.tagline || "").trim();
+  coverDateRange = String(options.eventDateRange || "").trim();
+  setActiveBranding(options.branding || {});
+  setLoadingCoverBackground(options.coverImageUrl || options.coverThumbnailUrl || "");
+  setActiveScreen(3, { skipHistory: true });
+  resetGalleryLoadingShell();
+  setLoadingState(true, options.message || "Loading your albums.", { progress: options.progress ?? 0 });
+}
+
+function escapeMarkup(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function normalizeBrandColor(value, fallback) {
+  const cleaned = String(value || "").trim().replace(/^#/, "").toUpperCase();
+  return /^[0-9A-F]{6}$/.test(cleaned) ? `#${cleaned}` : fallback;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeBrandColor(value, "#000000").replace("#", "");
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function getReadableColor(hexColor) {
+  const { r, g, b } = hexToRgb(hexColor);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#000000" : "#ffffff";
+}
+
+function extractDriveFileId(input) {
+  const value = String(input || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(value)) {
+    return value;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    const fileMatch = parsedUrl.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileMatch) {
+      return fileMatch[1];
+    }
+
+    return parsedUrl.searchParams.get("id") || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function resolveBrandLogoSource(logoLink) {
+  const fileId = extractDriveFileId(logoLink);
+  if (fileId) {
+    return `/api/image?id=${encodeURIComponent(fileId)}&mode=screen`;
+  }
+
+  return String(logoLink || "").trim() || logoAssetPath;
+}
+
+function resolveBrandImageSource(imageLink) {
+  const fileId = extractDriveFileId(imageLink);
+  if (fileId) {
+    return `/api/image?id=${encodeURIComponent(fileId)}&mode=screen`;
+  }
+
+  return String(imageLink || "").trim();
+}
+
+function setDocumentFavicon(faviconLink) {
+  const faviconSource = resolveBrandImageSource(faviconLink) || window.CarnivalDefaultFavicon || "/favicon.svg?v=20260423";
+  document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
+    link.href = faviconSource;
+  });
+}
+
+function setLoadingCoverBackground(imageLink = "") {
+  const resolvedSource = resolveBrandImageSource(imageLink);
+  if (resolvedSource) {
+    workspaceMain?.style.setProperty("--loading-cover-image", `url("${resolvedSource}")`);
+    coverPhotoEl?.style.setProperty("--loading-cover-image", `url("${resolvedSource}")`);
+    coverPhotoEl?.classList.add("has-loading-background");
+    screenGallery?.classList.add("has-loading-cover");
+    return;
+  }
+
+  workspaceMain?.style.removeProperty("--loading-cover-image");
+  coverPhotoEl?.style.removeProperty("--loading-cover-image");
+  coverPhotoEl?.classList.remove("has-loading-background");
+  screenGallery?.classList.remove("has-loading-cover");
+}
+
+function setActiveBranding(branding = {}) {
+  activeBranding = {
+    backgroundColor: normalizeBrandColor(branding.backgroundColor, "#FFFFFF"),
+    accentColor: normalizeBrandColor(branding.accentColor, "#000000"),
+    logoLink: String(branding.logoLink || "").trim(),
+    faviconLink: String(branding.faviconLink || "").trim(),
+    homepageLink: String(branding.homepageLink || "").trim(),
+  };
+  const backgroundRgb = hexToRgb(activeBranding.backgroundColor);
+  const accentRgb = hexToRgb(activeBranding.accentColor);
+  const backgroundRgbValue = `${backgroundRgb.r}, ${backgroundRgb.g}, ${backgroundRgb.b}`;
+  const accentRgbValue = `${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}`;
+  document.documentElement.style.setProperty("--bg", activeBranding.backgroundColor);
+  document.documentElement.style.setProperty("--surface", activeBranding.backgroundColor);
+  document.documentElement.style.setProperty("--accent", activeBranding.accentColor);
+  document.documentElement.style.setProperty("--template-bg", activeBranding.backgroundColor);
+  document.documentElement.style.setProperty("--template-bg-rgb", backgroundRgbValue);
+  document.documentElement.style.setProperty("--template-bg-strong", `rgba(${backgroundRgbValue}, 0.92)`);
+  document.documentElement.style.setProperty("--template-bg-soft", `rgba(${backgroundRgbValue}, 0.62)`);
+  document.documentElement.style.setProperty("--template-accent", activeBranding.accentColor);
+  document.documentElement.style.setProperty("--template-accent-rgb", accentRgbValue);
+  document.documentElement.style.setProperty("--template-on-accent", getReadableColor(activeBranding.accentColor));
+  document.documentElement.style.setProperty("--template-accent-muted", `rgba(${accentRgbValue}, 0.72)`);
+  document.documentElement.style.setProperty("--template-accent-soft", `rgba(${accentRgbValue}, 0.1)`);
+  document.documentElement.style.setProperty("--template-accent-line", `rgba(${accentRgbValue}, 0.18)`);
+  setDocumentFavicon(activeBranding.faviconLink);
+}
+
 function renderCoverChrome() {
+  const brandLogoSource = resolveBrandLogoSource(activeBranding.logoLink);
+  const brandHomeLink = activeBranding.homepageLink || "/";
+  const logoMarkup = brandLogoSource
+    ? `
+      <a href="${escapeMarkup(brandHomeLink)}" class="cover-logo-link" aria-label="Go to home page">
+        <img class="cover-logo" src="${escapeMarkup(brandLogoSource)}" alt="Carnival Stories" />
+      </a>
+    `
+    : "";
+  const coverCopy = coverTagline || coverDateRange
+    ? `
+      <div class="cover-story-copy" aria-label="Event details">
+        ${coverDateRange ? `<p class="cover-date-range">${escapeMarkup(coverDateRange)}</p>` : ""}
+        ${coverTagline ? `<p class="cover-tagline">${escapeMarkup(coverTagline)}</p>` : ""}
+      </div>
+    `
+    : "";
+
   coverPhotoEl.innerHTML = `
-    <a href="/" class="cover-logo-link" aria-label="Go to home page">
-      <img class="cover-logo" src="${logoAssetPath}" alt="Carnival Stories" />
-    </a>
+    ${logoMarkup}
     <div class="empty-sequence">Your photos will show up here shortly.</div>
+    ${coverCopy}
     <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
+      <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
       <span class="gallery-settings-text">Slideshow settings</span>
     </button>
   `;
@@ -390,18 +802,29 @@ function setLoadingState(isLoading, message = "", options = {}) {
   }
 
   if (!isLoading) {
-    directLoadingIndicatorEl.classList.add("hidden");
     screenGallery.classList.remove("loading");
+    screenGallery.classList.add("loading-fading");
     screenGallery.classList.add("revealed");
-    loadingProgress = 0;
-    loadingProgressTarget = 0;
-    loadingProgressMessageBase = "";
-    loadingMessageDots = 0;
-    renderLoadingState();
     clearLoadingTimer();
+    window.clearTimeout(loadingFadeTimer);
+    loadingFadeTimer = window.setTimeout(() => {
+      directLoadingIndicatorEl.classList.add("hidden");
+      screenGallery.classList.remove("loading-fading");
+      loadingProgress = 0;
+      loadingProgressTarget = 0;
+      loadingProgressMessageBase = "";
+      loadingMessageDots = 0;
+      renderLoadingState();
+      loadingFadeTimer = null;
+    }, 1000);
+    window.requestAnimationFrame(() => {
+      setupGalleryRowReveal();
+    });
     return;
   }
 
+  window.clearTimeout(loadingFadeTimer);
+  loadingFadeTimer = null;
   if (!loadTimer) {
     startLoadingTimer();
   }
@@ -416,6 +839,7 @@ function setLoadingState(isLoading, message = "", options = {}) {
     .trim();
   loadingMessageDots = 0;
   screenGallery.classList.remove("revealed");
+  screenGallery.classList.remove("loading-fading");
   screenGallery.classList.add("loading");
   directLoadingIndicatorEl.classList.remove("hidden");
   renderLoadingState();
@@ -464,6 +888,7 @@ function setActiveScreen(step, options = {}) {
   }
 
   window.scrollTo(0, 0);
+  updateScrollTopButtonVisibility();
 
   if (step === 1) {
     focusElement(directLinkInput);
@@ -473,6 +898,22 @@ function setActiveScreen(step, options = {}) {
       focusElement(firstGalleryCard);
     }
   }
+}
+
+function updateScrollTopButtonVisibility() {
+  if (!scrollToTopButton) {
+    return;
+  }
+
+  const galleryIsActive = screenGallery.classList.contains("active");
+  const slideshowIsOpen = !slideshowEl.classList.contains("hidden");
+  const galleryIsLoading = screenGallery.classList.contains("loading");
+  const galleryHasError = screenGallery.classList.contains("error-state");
+  const tabsRect = folderTabsShellEl?.getBoundingClientRect();
+  const passedCoverAndTabs = Boolean(tabsRect && tabsRect.bottom <= 0);
+
+  const shouldShow = galleryIsActive && !slideshowIsOpen && !galleryIsLoading && !galleryHasError && passedCoverAndTabs;
+  scrollToTopButton.classList.toggle("hidden", !shouldShow);
 }
 
 function collectFolders(node, parentPath = "") {
@@ -560,14 +1001,19 @@ function renderFolderTabs(folders) {
 }
 
 function renderGallery(photoItems) {
+  const renderToken = ++activeGalleryRenderToken;
+  cancelBackgroundFolderPreload();
+  clearGalleryRowObserver();
   clearGalleryErrorState();
   galleryEl.innerHTML = "";
+  galleryEl.style.height = "0px";
   renderCoverChrome();
   coverPhotoEl.style.backgroundImage = "none";
   imageLoadFailures = 0;
 
   const visiblePhotos = photoItems.filter((photo) => photo !== coverPhoto);
   const slideshowIndexOffset = photoItems[0] === coverPhoto ? 1 : 0;
+  pendingGalleryThumbnailLoads = visiblePhotos.length;
 
   if (coverPhoto) {
     const card = document.createElement("div");
@@ -576,6 +1022,7 @@ function renderGallery(photoItems) {
     image.src = coverPhoto.url;
     image.alt = coverPhoto.name;
     image.loading = "lazy";
+    image.fetchPriority = "high";
     image.addEventListener("error", () => {
       imageLoadFailures += 1;
       image.style.opacity = "0.14";
@@ -589,38 +1036,59 @@ function renderGallery(photoItems) {
   }
 
   if (!photoItems.length) {
+    pendingGalleryThumbnailLoads = 0;
     setGalleryErrorState("This folder doesn't have any photos yet.");
     return;
   }
 
   if (!visiblePhotos.length) {
+    pendingGalleryThumbnailLoads = 0;
+    maybeStartBackgroundPreload(renderToken);
     return;
   }
 
   visiblePhotos.forEach((photo, index) => {
     const card = document.createElement("button");
-    card.className = "photo-card is-loading";
+    card.className = "photo-card is-loading row-pending";
     card.type = "button";
     card.dataset.index = String(index);
 
     const span = getMasonryTileSpan(photo, index);
-    card.style.aspectRatio = String(span.aspectRatio);
+    card.dataset.aspectRatio = String(span.aspectRatio);
 
     const image = document.createElement("img");
     image.src = photo.thumbnailUrl || photo.url;
     image.alt = photo.name;
     image.loading = "lazy";
+    image.fetchPriority = "high";
     image.addEventListener("load", () => {
+      if (renderToken !== activeGalleryRenderToken) {
+        return;
+      }
+
+      const naturalRatio = image.naturalWidth > 0 && image.naturalHeight > 0
+        ? image.naturalWidth / image.naturalHeight
+        : span.aspectRatio;
+      card.dataset.aspectRatio = String(naturalRatio > 0 ? naturalRatio : span.aspectRatio);
       card.classList.remove("is-loading");
+      pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
+      queueGalleryLayout();
+      maybeStartBackgroundPreload(renderToken);
     });
     image.addEventListener("error", () => {
+      if (renderToken !== activeGalleryRenderToken) {
+        return;
+      }
+
       card.classList.remove("is-loading");
+      pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
       imageLoadFailures += 1;
       image.style.opacity = "0.14";
       setStatus(
         `${imageLoadFailures} image${imageLoadFailures === 1 ? "" : "s"} failed to load. Direct Drive media access may be restricted for some files.`,
         true
       );
+      maybeStartBackgroundPreload(renderToken);
     });
 
     card.appendChild(image);
@@ -645,6 +1113,8 @@ function renderGallery(photoItems) {
     });
     galleryEl.appendChild(card);
   });
+
+  queueGalleryLayout();
 }
 
 function updateGalleryForSelectedFolder() {
@@ -669,9 +1139,6 @@ function updateGalleryForSelectedFolder() {
     selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
   }
   renderGallery(selectedFolder ? selectedFolder.images : []);
-  if (selectedFolder) {
-    startBackgroundFolderPreload(currentFolders, selectedFolder.id);
-  }
 }
 
 function updateDurationControls() {
@@ -736,9 +1203,13 @@ function syncSlideshowPreloadWindow(centerIndex) {
       return;
     }
 
+    if (isVideoMedia(images[index])) {
+      return;
+    }
+
     const preloader = new Image();
     preloader.decoding = "async";
-    preloader.src = images[index].url;
+    preloader.src = images[index].slideshowUrl || images[index].url;
     slideshowPreloadCache.set(index, preloader);
   });
 }
@@ -756,6 +1227,7 @@ function preloadImageSource(source) {
   const preloadPromise = new Promise((resolve) => {
     const preloader = new Image();
     preloader.decoding = "async";
+    preloader.fetchPriority = "low";
     preloader.onload = () => resolve();
     preloader.onerror = () => resolve();
     preloader.src = source;
@@ -765,11 +1237,38 @@ function preloadImageSource(source) {
   return preloadPromise;
 }
 
+function cancelBackgroundFolderPreload() {
+  folderPreloadRunToken += 1;
+}
+
+function maybeStartBackgroundPreload(renderToken = activeGalleryRenderToken) {
+  if (renderToken !== activeGalleryRenderToken) {
+    return;
+  }
+
+  if (pendingGalleryThumbnailLoads > 0 || !slideshowEl.classList.contains("hidden")) {
+    return;
+  }
+
+  const selectedFolder = getSelectedFolder();
+  if (!selectedFolder) {
+    return;
+  }
+
+  startBackgroundFolderPreload(currentFolders, selectedFolder.id);
+}
+
 function startBackgroundFolderPreload(folders, activeFolderId) {
   const preloadToken = ++folderPreloadRunToken;
   const sources = folders
     .filter((folder) => folder.id !== activeFolderId)
-    .flatMap((folder) => folder.images.map((photo) => photo.thumbnailUrl || photo.url))
+    .flatMap((folder) =>
+      folder.images
+        .filter((photo) => !isVideoMedia(photo))
+        .slice(0, 4)
+        .map((photo) => photo.thumbnailUrl || photo.url)
+    )
+    .slice(0, 16)
     .filter(Boolean);
 
   if (!sources.length) {
@@ -778,7 +1277,7 @@ function startBackgroundFolderPreload(folders, activeFolderId) {
 
   const runPreload = () => {
     let nextIndex = 0;
-    const workerCount = Math.min(3, sources.length);
+    const workerCount = Math.min(1, sources.length);
 
     const pump = () => {
       if (preloadToken !== folderPreloadRunToken || nextIndex >= sources.length) {
@@ -796,17 +1295,21 @@ function startBackgroundFolderPreload(folders, activeFolderId) {
   };
 
   if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(runPreload, { timeout: 500 });
+    window.requestIdleCallback(runPreload, { timeout: 2000 });
     return;
   }
 
-  window.setTimeout(runPreload, 120);
+  window.setTimeout(runPreload, 1800);
 }
 
 function scheduleSlideshowAdvance() {
   clearSlideshowAdvanceTimer();
 
   if (slideshowEl.classList.contains("hidden") || images.length <= 1) {
+    return;
+  }
+
+  if (slideshowPaused) {
     return;
   }
 
@@ -841,6 +1344,7 @@ function showSlide(index) {
   const previewSource = photo.thumbnailUrl || photo.url;
   const isVideo = isVideoMedia(photo);
 
+  cancelBackgroundFolderPreload();
   clearSlideshowAdvanceTimer();
   resetSlideshowVideoState();
 
@@ -849,12 +1353,14 @@ function showSlide(index) {
   };
 
   slideImageEl.classList.remove("hidden");
+  slideImageEl.fetchPriority = "high";
   slideImageEl.src = previewSource;
   slideImageEl.alt = photo.name;
   if (slideImageFullEl) {
     slideImageFullEl.classList.remove("hidden");
     slideImageFullEl.classList.remove("loaded");
     slideImageFullEl.removeAttribute("src");
+    slideImageFullEl.fetchPriority = "high";
     slideImageFullEl.alt = photo.name;
   }
 
@@ -866,6 +1372,7 @@ function showSlide(index) {
     slideImageEl.classList.add("hidden");
     slideImageFullEl?.classList.add("hidden");
     if (slideVideoEl && slideVideoOverlayEl) {
+      slideVideoEl.preload = "auto";
       slideVideoEl.src = photo.slideshowUrl || photo.url;
       slideVideoEl.poster = previewSource;
       slideVideoEl.classList.remove("hidden");
@@ -973,6 +1480,9 @@ function openSlideshow(index = 0) {
     return;
   }
 
+  cancelBackgroundFolderPreload();
+  slideshowPaused = false;
+  updateSlideshowPlaybackVisual();
   updateSlideshowActionVisibility();
   slideshowEl.classList.remove("hidden");
   slideshowEl.setAttribute("aria-hidden", "false");
@@ -991,6 +1501,8 @@ openSlideshow.toastTimer = null;
 function closeSlideshow() {
   clearSlideshowAdvanceTimer();
   slideshowImageLoadToken += 1;
+  slideshowPaused = false;
+  updateSlideshowPlaybackVisual();
   resetSlideshowVideoState();
   slideshowEl.classList.add("hidden");
   slideshowEl.setAttribute("aria-hidden", "true");
@@ -1007,6 +1519,7 @@ function closeSlideshow() {
   window.clearTimeout(openSlideshow.toastTimer);
   openSlideshow.toastTimer = null;
   slideshowPreloadCache.clear();
+  maybeStartBackgroundPreload();
   focusElement(getFirstGalleryCard());
 }
 
@@ -1048,9 +1561,15 @@ function handleKeydown(event) {
   }
 }
 
-async function loadFolder(folderUrl) {
+async function loadFolder(folderUrl, options = {}) {
   setStatus("Getting everything ready...");
-  setLoadingState(false);
+  coverTagline = String(options.tagline || "").trim();
+  coverDateRange = String(options.eventDateRange || "").trim();
+  setActiveBranding(options.branding || {});
+  setLoadingCoverBackground(options.coverImageUrl || options.coverThumbnailUrl || "");
+  if (!options.keepLoading) {
+    setLoadingState(false);
+  }
 
   try {
     let folderName = "";
@@ -1066,9 +1585,9 @@ async function loadFolder(folderUrl) {
       // Keep the generic loading state if metadata lookup fails.
     }
 
-    setActiveScreen(3);
+    setActiveScreen(3, { skipHistory: Boolean(options.preservePath) });
     resetGalleryLoadingShell();
-    setLoadingState(true, "Loading your photos.", { progress: 0 });
+    setLoadingState(true, "Loading your albums.", { progress: 0 });
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
     const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`);
     const data = await response.json();
@@ -1079,13 +1598,28 @@ async function loadFolder(folderUrl) {
 
     currentFolders = collectFolders(data.tree);
     selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
-    coverPhoto = currentFolders[0]?.images?.[0] || null;
+    const allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
+    coverPhoto = options.coverFileId
+      ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
+      : currentFolders[0]?.images?.[0] || null;
+    if (coverPhoto) {
+      setLoadingState(true, "Loading your albums.", { progress: 62 });
+      setLoadingCoverBackground(coverPhoto.url || coverPhoto.thumbnailUrl || "");
+      const coverPreloader = new Image();
+      coverPreloader.src = coverPhoto.url;
+      await new Promise((resolve) => {
+        coverPreloader.onload = resolve;
+        coverPreloader.onerror = resolve;
+      });
+    }
     sharedFolderName = data.tree?.name || "";
-    syncHistoryForStep(3, true);
+    if (!options.preservePath) {
+      syncHistoryForStep(3, true);
+    }
     renderFolderTabs(currentFolders);
     updateFolderSidePanel();
     updateGalleryForSelectedFolder();
-    setLoadingState(true, "Loading your photos.", { progress: 100 });
+    setLoadingState(true, "Loading your albums.", { progress: 100 });
     await new Promise((resolve) => window.setTimeout(resolve, 140));
 
     if (currentFolders.length > 1) {
@@ -1098,6 +1632,10 @@ async function loadFolder(folderUrl) {
     currentFolders = [];
     selectedFolderId = null;
     coverPhoto = null;
+    coverTagline = "";
+    coverDateRange = "";
+    setActiveBranding();
+    setLoadingCoverBackground("");
     sharedFolderName = "";
     images = [];
     if (photoCountEl) {
@@ -1111,14 +1649,19 @@ async function loadFolder(folderUrl) {
 
 directLinkForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const folderUrl = directLinkInput.value.trim();
-  if (!folderUrl) {
-    setDirectStatus("Paste a Google Drive folder link and we’ll open it for you.", true);
+  const pairingCode = directLinkInput.value.trim();
+  if (!pairingCode) {
+    setDirectStatus("Enter a pairing code and we’ll open it for you.", true);
     return;
   }
 
   setDirectStatus("");
-  await loadFolder(folderUrl);
+  if (window.CarnivalPairing?.openPairingCode) {
+    await window.CarnivalPairing.openPairingCode(pairingCode);
+    return;
+  }
+
+  showGalleryError("Either the pairing code does not exist or has been deleted.");
 });
 
 startSlideshowButton.addEventListener("click", () => openSlideshow(0));
@@ -1135,6 +1678,7 @@ loopInput.addEventListener("change", () =>
 prevSlideButton.addEventListener("click", () => showSlide(currentSlideIndex - 1));
 nextSlideButton.addEventListener("click", () => showSlide(currentSlideIndex + 1));
 downloadSlideButton.addEventListener("click", downloadCurrentSlide);
+toggleSlideshowPlaybackButton?.addEventListener("click", toggleSlideshowPlayback);
 shareSlideButton?.addEventListener("click", () => {
   shareCurrentSlide().catch(() => {
     setStatus("Sharing isn’t available right now.", true);
@@ -1162,6 +1706,20 @@ slideVideoEl?.addEventListener("ended", () => {
   updateVideoToggleVisual(false);
   updateVideoProgress();
 });
+slideVideoTimelineEl?.addEventListener("pointermove", (event) => {
+  slideVideoTooltipEl?.classList.remove("hidden");
+  updateTimelineTooltip(event.clientX);
+});
+slideVideoTimelineEl?.addEventListener("pointerenter", (event) => {
+  slideVideoTooltipEl?.classList.remove("hidden");
+  updateTimelineTooltip(event.clientX);
+});
+slideVideoTimelineEl?.addEventListener("pointerleave", () => {
+  slideVideoTooltipEl?.classList.add("hidden");
+});
+slideVideoTimelineEl?.addEventListener("click", (event) => {
+  seekCurrentVideo(event.clientX);
+});
 
 bindCoverSettingsButton();
 
@@ -1170,14 +1728,37 @@ closeGallerySettingsButton.addEventListener("click", () => {
   focusElement(toggleGallerySettingsButton);
 });
 
+scrollToTopButton?.addEventListener("click", () => {
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth",
+  });
+});
+
 document.addEventListener("keydown", handleKeydown);
 window.addEventListener("resize", updateSlideshowActionVisibility);
+window.addEventListener("resize", queueGalleryLayout);
+window.addEventListener("resize", updateScrollTopButtonVisibility);
+window.addEventListener("scroll", updateScrollTopButtonVisibility, { passive: true });
 window.history.scrollRestoration = "manual";
 
+window.CarnivalGallery = {
+  loadFolder,
+  showError: showGalleryError,
+  showLoading: showGalleryLoading,
+  showLoadingPreview: showGalleryLoadingPreview,
+};
+
 updateDurationControls();
-setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
+if (!window.CarnivalStudioPublicRoute && window.location.pathname !== "/studio") {
+  setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
+}
 
 window.addEventListener("popstate", () => {
+  if (window.CarnivalStudioPublicRoute || window.location.pathname === "/studio") {
+    return;
+  }
+
   setActiveScreen(window.location.pathname === "/" ? 1 : 3, {
     skipHistory: true,
     replaceState: true,

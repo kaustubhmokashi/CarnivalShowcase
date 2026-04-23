@@ -4,8 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CarnivalShowcase</title>
-    <link rel="icon" href="/favicon.svg?v=20260423" type="image/svg+xml" />
-    <link rel="shortcut icon" href="/favicon.svg?v=20260423" type="image/svg+xml" />
+    <script>
+      window.CarnivalStudioPublicRoute =
+        !window.location.pathname.startsWith("/studio") &&
+        /^\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
+      window.CarnivalDefaultFavicon = "/favicon.svg?v=20260423";
+    </script>
+    <link id="app-favicon" rel="icon" type="image/svg+xml" />
+    <link id="app-favicon-shortcut" rel="shortcut icon" type="image/svg+xml" />
+    <script>
+      if (!window.CarnivalStudioPublicRoute) {
+        document.getElementById("app-favicon").href = window.CarnivalDefaultFavicon;
+        document.getElementById("app-favicon-shortcut").href = window.CarnivalDefaultFavicon;
+      }
+    </script>
     <link rel="stylesheet" href="/styles.css?v=20260423" />
   </head>
   <body>
@@ -15,6 +27,9 @@
           <div class="brand-lockup">
             <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
           </div>
+          <button id="open-studio-login" type="button" class="studio-entry-button">
+            Studio login
+          </button>
         </div>
 
         <div class="link-stage">
@@ -22,16 +37,200 @@
             <input
               id="direct-link-input"
               name="direct-link-input"
-              type="url"
-              placeholder="PASTE YOUR GOOGLE DRIVE LINK HERE"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              placeholder="ENTER YOUR PAIRING CODE"
               required
             />
           </form>
           <p class="link-instruction">
-            Put your google drive Link here
+            Put your pairing code here
           </p>
           <div id="direct-status" class="status-line"></div>
         </div>
+      </section>
+
+      <section id="screen-studio" class="screen studio-screen">
+        <main class="studio-main">
+          <div class="studio-floating-actions">
+            <div class="studio-floating-action-row">
+              <span id="studio-user-label" class="studio-user-label"></span>
+              <button id="studio-sign-out" type="button" class="studio-text-button hidden">Sign out</button>
+            </div>
+            <p id="studio-sidebar-name" class="studio-sidebar-name">Studio</p>
+          </div>
+
+          <section id="studio-auth-panel" class="studio-panel studio-auth-panel">
+            <p class="studio-kicker">Studio access</p>
+            <h1>Sign in to manage your pages.</h1>
+            <p class="studio-copy">
+              Save Google Drive galleries, choose cover photos, and create reusable CarnivalStories pages.
+            </p>
+            <button id="google-login-button" type="button" class="studio-primary-button">
+              Continue with Google
+            </button>
+            <p id="studio-auth-status" class="studio-status" aria-live="polite"></p>
+          </section>
+
+          <section id="studio-name-panel" class="studio-panel studio-name-panel hidden">
+            <p class="studio-kicker">New studio</p>
+            <h1>Create your studio name.</h1>
+            <p class="studio-copy">
+              Pick a unique name for this account. You can create multiple gallery pages under it.
+            </p>
+            <form id="studio-name-form" class="studio-form">
+              <input id="studio-name-input" type="text" placeholder="STUDIO NAME" autocomplete="organization" required />
+              <button type="submit" class="studio-primary-button">Save studio</button>
+            </form>
+            <p id="studio-name-status" class="studio-status" aria-live="polite"></p>
+          </section>
+
+          <section id="studio-admin-panel" class="studio-admin hidden">
+            <div class="studio-dashboard-head">
+              <h1>Accounts</h1>
+              <button id="admin-save-accounts" type="button" class="studio-primary-button">Save Changes</button>
+            </div>
+            <div class="admin-tabs" aria-label="Account status">
+              <button type="button" class="admin-tab active" data-admin-filter="active">Active</button>
+              <button type="button" class="admin-tab" data-admin-filter="inactive">Inactive</button>
+              <button type="button" class="admin-tab" data-admin-filter="new">New accounts</button>
+            </div>
+            <div id="admin-accounts-list" class="admin-accounts-list"></div>
+            <p id="admin-accounts-status" class="studio-status" aria-live="polite"></p>
+          </section>
+
+          <section id="studio-dashboard-panel" class="studio-dashboard hidden">
+            <aside class="studio-sidebar" aria-label="Studio options">
+              <a id="studio-sidebar-logo-link" href="/" class="studio-sidebar-logo-link is-empty" aria-label="Studio homepage">
+                <img id="studio-sidebar-logo" class="studio-sidebar-logo" alt="" />
+              </a>
+              <nav class="studio-sidebar-nav">
+                <button type="button" class="studio-sidebar-tab active" data-studio-section="pages">My Pages</button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="branding">Branding</button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="account">Account</button>
+              </nav>
+              <img class="studio-sidebar-favicon" src="/favicon.svg?v=20260423" alt="Carnival Stories" />
+            </aside>
+
+            <div class="studio-dashboard-content">
+              <section id="studio-pages-section" class="studio-dashboard-section active">
+                <div class="studio-dashboard-head">
+                  <h1>My Pages</h1>
+                  <button id="create-page-button" type="button" class="studio-primary-button">Create link</button>
+                </div>
+                <p id="link-approval-notice" class="studio-approval-notice hidden"></p>
+
+                <div id="saved-pages-table" class="saved-pages-grid">
+                  <p class="studio-empty">No pages yet.</p>
+                </div>
+              </section>
+
+              <section id="studio-branding-section" class="studio-dashboard-section">
+                <div class="studio-dashboard-head">
+                  <h1>Branding</h1>
+                </div>
+                <form id="studio-branding-form" class="studio-panel studio-settings-form">
+                  <label class="studio-field-row">
+                    <span>Background color</span>
+                    <input id="branding-background-picker" type="color" value="#ffffff" />
+                    <input id="branding-background-hex" type="text" value="FFFFFF" maxlength="7" />
+                  </label>
+                  <label class="studio-field-row">
+                    <span>Accent color</span>
+                    <input id="branding-accent-picker" type="color" value="#000000" />
+                    <input id="branding-accent-hex" type="text" value="000000" maxlength="7" />
+                  </label>
+                  <label>
+                    <span>Studio Logo</span>
+                    <input id="branding-logo-link" type="url" placeholder="GOOGLE DRIVE LINK FOR LOGO" />
+                  </label>
+                  <label>
+                    <span>Favicon</span>
+                    <input id="branding-favicon-link" type="url" placeholder="GOOGLE DRIVE LINK FOR FAVICON" />
+                  </label>
+                  <label>
+                    <span>Homepage link</span>
+                    <input id="branding-homepage-link" type="url" placeholder="WHERE LOGO SHOULD OPEN" />
+                  </label>
+                  <button type="submit" class="studio-primary-button">Save branding</button>
+                  <p id="studio-branding-status" class="studio-status" aria-live="polite"></p>
+                </form>
+              </section>
+
+              <section id="studio-account-section" class="studio-dashboard-section">
+                <div class="studio-dashboard-head">
+                  <h1>Account</h1>
+                </div>
+                <form id="studio-account-form" class="studio-panel studio-settings-form">
+                  <label>
+                    <span>Studio name</span>
+                    <input id="account-studio-name" type="text" placeholder="STUDIO NAME" autocomplete="organization" required />
+                  </label>
+                  <button type="submit" class="studio-primary-button">Update studio</button>
+                  <p id="studio-account-status" class="studio-status" aria-live="polite"></p>
+                </form>
+              </section>
+            </div>
+          </section>
+
+          <section id="create-page-panel" class="studio-wizard hidden" aria-live="polite">
+            <div class="studio-wizard-head">
+              <p id="wizard-step-label" class="studio-kicker">Step 1 of 4</p>
+              <button id="close-create-page" type="button" class="studio-text-button">Back</button>
+            </div>
+
+            <form id="wizard-drive-form" class="studio-panel wizard-step">
+              <h2>Paste the Google Drive link.</h2>
+              <input id="wizard-drive-link" type="url" placeholder="GOOGLE DRIVE LINK" required />
+              <button type="submit" class="studio-primary-button">Next</button>
+              <p id="wizard-drive-status" class="studio-status"></p>
+            </form>
+
+            <div id="wizard-media-step" class="studio-panel wizard-step hidden">
+              <h2>Choose the cover photo.</h2>
+              <input id="wizard-media-search" type="search" placeholder="SEARCH FOLDERS AND PHOTOS" />
+              <div id="wizard-media-list" class="media-picker-list"></div>
+              <button id="wizard-media-next" type="button" class="studio-primary-button">Next</button>
+              <p id="wizard-media-status" class="studio-status"></p>
+            </div>
+
+            <form id="wizard-page-form" class="studio-panel wizard-step hidden">
+              <h2>Name this page.</h2>
+              <input id="wizard-page-name" type="text" placeholder="PAGE NAME" required />
+              <button type="submit" class="studio-primary-button">Submit</button>
+              <p id="wizard-page-status" class="studio-status"></p>
+            </form>
+
+            <form id="wizard-details-form" class="studio-panel wizard-step hidden">
+              <h2>Add page details.</h2>
+              <input id="wizard-tagline" type="text" placeholder="TAGLINE" />
+              <div class="date-range-fields">
+                <label>
+                  <span>Event start date</span>
+                  <input id="wizard-event-start" type="date" />
+                </label>
+                <label>
+                  <span>Event end date</span>
+                  <input id="wizard-event-end" type="date" />
+                </label>
+              </div>
+              <button type="submit" class="studio-primary-button">Next</button>
+              <p id="wizard-details-status" class="studio-status"></p>
+            </form>
+
+            <div id="wizard-template-step" class="studio-panel wizard-step hidden">
+              <h2>Select a template.</h2>
+              <button id="template-one-card" type="button" class="template-card selected" aria-pressed="true">
+                <span>Template 1</span>
+                <small>Current full-width cover and packed grid layout.</small>
+              </button>
+              <button id="wizard-create-page" type="button" class="studio-primary-button">Create page</button>
+              <p id="wizard-template-status" class="studio-status"></p>
+            </div>
+          </section>
+        </main>
+        <div id="studio-toast" class="studio-toast hidden" aria-live="polite"></div>
       </section>
 
       <section id="screen-gallery" class="screen workspace-screen gallery-screen">
@@ -53,6 +252,7 @@
               </a>
               <div class="empty-sequence">Your photos will show up here shortly.</div>
               <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
+                <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
                 <span class="gallery-settings-text">Slideshow settings</span>
               </button>
             </div>
@@ -100,6 +300,10 @@
             </button>
           </div>
         </aside>
+
+        <button id="scroll-to-top-button" type="button" class="scroll-top-button hidden" aria-label="Scroll to top">
+          ↑
+        </button>
       </section>
     </div>
 
@@ -119,6 +323,9 @@
               <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Zm-6 15a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Zm0 0a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/>
             </svg>
           </button>
+          <button id="toggle-slideshow-playback" type="button" class="slideshow-action" aria-label="Pause slideshow">
+            <span id="slideshow-playback-icon" class="slideshow-playback-icon is-pause" aria-hidden="true"></span>
+          </button>
         </div>
         <button id="prev-slide" type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous photo">←</button>
         <img id="slide-image" class="slide-image" alt="" />
@@ -131,8 +338,9 @@
           <button id="slide-video-toggle" type="button" class="slide-video-toggle" aria-label="Play video">
             <span id="slide-video-toggle-icon" class="slide-video-toggle-icon is-play" aria-hidden="true"></span>
           </button>
-          <div class="slide-video-timeline" aria-hidden="true">
+          <div id="slide-video-timeline" class="slide-video-timeline" aria-hidden="true">
             <div id="slide-video-progress" class="slide-video-progress"></div>
+            <div id="slide-video-tooltip" class="slide-video-tooltip hidden">0:00</div>
           </div>
         </div>
         <div id="slideshow-loader" class="slideshow-loader hidden" aria-hidden="true"></div>
@@ -141,6 +349,8 @@
     </div>
 
     <script src="/qr.js?v=20260423"></script>
+    <script src="/firebase-config.js?v=20260423"></script>
     <script src="/app.js?v=20260423"></script>
+    <script type="module" src="/studio.js?v=20260423"></script>
   </body>
 </html>

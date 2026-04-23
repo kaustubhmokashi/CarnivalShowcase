@@ -545,6 +545,40 @@ function sanitizePathname(pathname) {
   return resolvedPath;
 }
 
+function resolveStaticPathname(pathname) {
+  const pathSegments = pathname.split("/").filter(Boolean);
+
+  if (pathname.startsWith("/assets/")) {
+    return pathname;
+  }
+
+  if (
+    pathname === "/" ||
+    pathname === "/direct" ||
+    pathname === "/studio" ||
+    pathname.startsWith("/studio/") ||
+    pathname === "/folders" ||
+    pathname === "/gallery" ||
+    pathSegments.length === 2
+  ) {
+    return "/index.html";
+  }
+
+  if (pathname === "/privacy-policy") {
+    return "/privacy-policy.html";
+  }
+
+  if (pathname === "/remote") {
+    return "/remote.html";
+  }
+
+  if (pathname === "/remote-tv") {
+    return "/remote-tv.html";
+  }
+
+  return pathname;
+}
+
 function extractFolderId(input) {
   if (!input) {
     return null;
@@ -968,22 +1002,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const pathname =
-    requestUrl.pathname === "/"
-      ? "/index.html"
-      : requestUrl.pathname === "/direct"
-        ? "/index.html"
-        : requestUrl.pathname === "/folders"
-          ? "/index.html"
-          : requestUrl.pathname === "/gallery"
-            ? "/index.html"
-      : requestUrl.pathname === "/privacy-policy"
-        ? "/privacy-policy.html"
-      : requestUrl.pathname === "/remote"
-        ? "/remote.html"
-        : requestUrl.pathname === "/remote-tv"
-          ? "/remote-tv.html"
-        : requestUrl.pathname;
+  const pathname = resolveStaticPathname(requestUrl.pathname);
   const filePath = sanitizePathname(pathname);
   if (!filePath) {
     sendJson(res, 400, { error: "Invalid path." });
