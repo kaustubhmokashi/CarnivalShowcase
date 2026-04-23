@@ -103,7 +103,12 @@ function getCurrentSlidePhoto() {
 
 function getGalleryPath() {
   const slug = slugifyFolderName(sharedFolderName);
-  return slug ? `/${slug}` : "/gallery";
+  if (slug) {
+    return `/${slug}`;
+  }
+
+  const currentPath = window.location.pathname || "/";
+  return currentPath !== "/" ? currentPath : "/";
 }
 
 function moveFocusByGeometry(elements, direction) {
