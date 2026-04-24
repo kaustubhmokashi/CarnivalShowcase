@@ -847,11 +847,21 @@ function buildPageMetaTags(req, pageRecord) {
   const pageName = String(pageRecord?.pageName || "").trim();
   const studioName = String(pageRecord?.studioName || "").trim();
   const tagline = String(pageRecord?.tagline || "").trim();
-  const title = tagline || pageName || "CarnivalShowcase";
-  const description =
-    tagline ||
-    [pageName, studioName].filter(Boolean).join(" · ") ||
-    "View this gallery on CarnivalShowcase.";
+  const pairingCode = String(pageRecord?.pairingCode || "").trim();
+  const title = [pageName || tagline, studioName].filter(Boolean).join(" | ") || "CarnivalShowcase";
+  const descriptionParts = [];
+  if (tagline) {
+    descriptionParts.push(tagline);
+  } else if (pageName) {
+    descriptionParts.push(pageName);
+  }
+  if (studioName) {
+    descriptionParts.push(`Studio: ${studioName}`);
+  }
+  if (pairingCode) {
+    descriptionParts.push(`Pairing code: ${pairingCode}`);
+  }
+  const description = descriptionParts.join(" · ") || "View this gallery on CarnivalShowcase.";
   const imageUrl = buildAbsoluteUrl(
     req,
     pageRecord?.coverImageUrl || pageRecord?.coverThumbnailUrl || ""
