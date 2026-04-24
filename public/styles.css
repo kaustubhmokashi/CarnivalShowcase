@@ -1754,7 +1754,7 @@ input[type="checkbox"]:checked {
 
   .cover-tagline {
     width: 100%;
-    max-width: calc(100vw - 32px);
+    max-width: 100%;
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -2741,7 +2741,7 @@ input[type="checkbox"]:checked {
 
   .studio-sidebar-name {
     justify-self: center;
-    width: calc(100vw - 32px);
+    width: min(100%, 720px);
     max-width: 720px;
     text-align: center;
   }
@@ -2807,7 +2807,8 @@ input[type="checkbox"]:checked {
   .studio-dashboard-content,
   .studio-admin,
   .studio-wizard {
-    width: calc(100vw - 32px);
+    width: min(100%, 720px);
+    max-width: 100%;
     margin: 0 auto;
   }
 
