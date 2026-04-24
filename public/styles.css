@@ -1934,11 +1934,13 @@ input[type="checkbox"]:checked {
   .cover-date-range {
     font-size: 11px;
     letter-spacing: 0.12em;
+    width: 100%;
+    text-align: center;
   }
 
   .cover-tagline {
-    font-size: clamp(36px, 12vw, 52px);
-    line-height: 1;
+    font-size: var(--cover-tagline-size);
+    line-height: 1.15;
   }
 
   .cover-story-copy {
