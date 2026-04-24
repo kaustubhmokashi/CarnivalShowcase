@@ -21,6 +21,7 @@ const folderTabsEl = document.getElementById("folder-tabs");
 const folderTabsShellEl = document.querySelector(".folder-tabs-shell");
 const scrollToTopButton = document.getElementById("scroll-to-top-button");
 let toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
+const toggleSlideshowSettingsButton = document.getElementById("toggle-slideshow-settings");
 const closeGallerySettingsButton = document.getElementById("close-gallery-settings");
 
 const startSlideshowButton = document.getElementById("start-slideshow");
@@ -44,6 +45,7 @@ const slideVideoProgressEl = document.getElementById("slide-video-progress");
 const slideVideoTooltipEl = document.getElementById("slide-video-tooltip");
 const slideshowLoaderEl = document.getElementById("slideshow-loader");
 const slideshowToastEl = document.getElementById("slideshow-toast");
+const closeSlideshowMobileButton = document.getElementById("close-slideshow-mobile");
 const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
 const toggleSlideshowPlaybackButton = document.getElementById("toggle-slideshow-playback");
@@ -817,13 +819,8 @@ function renderCoverChrome() {
     ${logoMarkup}
     <div class="empty-sequence">Your photos will show up here shortly.</div>
     ${coverCopy}
-    <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-      <span class="gallery-settings-icon" aria-hidden="true"></span>
-      <span class="gallery-settings-text">Slideshow settings</span>
-    </button>
   `;
   toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
-  bindCoverSettingsButton();
   window.requestAnimationFrame(() => {
     updateCoverStoryLayout();
   });
@@ -842,35 +839,11 @@ function updateCoverStoryLayout() {
   }
 
   coverTaglineEl.style.removeProperty("--cover-tagline-size");
+  coverCopyEl.style.removeProperty("--cover-copy-width");
+  coverTaglineEl.style.removeProperty("width");
   if (!window.matchMedia("(max-width: 900px)").matches) {
     return;
   }
-
-  const baseFontSize =
-    Number.parseFloat(coverTaglineEl.dataset.baseFontSize || "") ||
-    Number.parseFloat(window.getComputedStyle(coverTaglineEl).fontSize) ||
-    80;
-  coverTaglineEl.dataset.baseFontSize = String(baseFontSize);
-
-  const mobileHorizontalPadding = 16;
-  const availableWidth = Math.max(
-    Math.min(
-      coverCopyEl.clientWidth,
-      (coverPhotoEl?.clientWidth || coverCopyEl.clientWidth) - mobileHorizontalPadding * 2
-    ),
-    0
-  );
-  if (!availableWidth) {
-    return;
-  }
-
-  const measuredWidth = coverTaglineEl.scrollWidth;
-  if (!measuredWidth) {
-    return;
-  }
-
-  const fittedFontSize = Math.max(24, Math.floor(baseFontSize * Math.min(1, availableWidth / measuredWidth)));
-  coverTaglineEl.style.setProperty("--cover-tagline-size", `${fittedFontSize}px`);
 }
 
 function bindCoverSettingsButton() {
@@ -887,6 +860,16 @@ function bindCoverSettingsButton() {
     );
   });
   toggleGallerySettingsButton.dataset.bound = "true";
+}
+
+function openGallerySettingsPanel() {
+  screenGallery.classList.add("panel-open");
+  focusElement(durationDecreaseButton);
+}
+
+function closeGallerySettingsPanel() {
+  screenGallery.classList.remove("panel-open");
+  focusElement(toggleSlideshowSettingsButton || getFirstGalleryCard());
 }
 
 function tickLoadingProgress() {
@@ -1672,12 +1655,14 @@ function openSlideshow(index = 0) {
   slideshowEl.classList.remove("hidden");
   slideshowEl.setAttribute("aria-hidden", "false");
   showSlide(index);
-  if (slideshowToastEl) {
+  if (slideshowToastEl && !window.matchMedia("(max-width: 900px)").matches) {
     slideshowToastEl.classList.remove("hidden");
     window.clearTimeout(openSlideshow.toastTimer);
     openSlideshow.toastTimer = window.setTimeout(() => {
       slideshowToastEl.classList.add("hidden");
     }, 3000);
+  } else if (slideshowToastEl) {
+    slideshowToastEl.classList.add("hidden");
   }
   focusElement(nextSlideButton);
 }
@@ -1723,8 +1708,7 @@ function handleKeydown(event) {
     if (screenGallery.classList.contains("active")) {
       event.preventDefault();
       if (screenGallery.classList.contains("panel-open")) {
-        screenGallery.classList.remove("panel-open");
-        focusElement(toggleGallerySettingsButton);
+        closeGallerySettingsPanel();
       }
       return;
     }
@@ -1913,6 +1897,7 @@ loopInput.addEventListener("change", () =>
 
 prevSlideButton.addEventListener("click", () => showSlide(currentSlideIndex - 1));
 nextSlideButton.addEventListener("click", () => showSlide(currentSlideIndex + 1));
+closeSlideshowMobileButton?.addEventListener("click", closeSlideshow);
 downloadSlideButton.addEventListener("click", downloadCurrentSlide);
 toggleSlideshowPlaybackButton?.addEventListener("click", toggleSlideshowPlayback);
 shareSlideButton?.addEventListener("click", () => {
@@ -1958,10 +1943,10 @@ slideVideoTimelineEl?.addEventListener("click", (event) => {
 });
 
 bindCoverSettingsButton();
+toggleSlideshowSettingsButton?.addEventListener("click", openGallerySettingsPanel);
 
 closeGallerySettingsButton.addEventListener("click", () => {
-  screenGallery.classList.remove("panel-open");
-  focusElement(toggleGallerySettingsButton);
+  closeGallerySettingsPanel();
 });
 
 scrollToTopButton?.addEventListener("click", () => {

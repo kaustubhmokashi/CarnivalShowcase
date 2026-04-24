@@ -40,6 +40,9 @@ const openStudioLoginButton = document.getElementById("open-studio-login");
 const googleLoginButton = document.getElementById("google-login-button");
 const studioSignOutButton = document.getElementById("studio-sign-out");
 const studioUserLabel = document.getElementById("studio-user-label");
+const studioSidebarToggleButton = document.getElementById("studio-sidebar-toggle");
+const studioSidebarCloseButton = document.getElementById("studio-sidebar-close");
+const studioSidebarScrim = document.getElementById("studio-sidebar-scrim");
 const studioAuthPanel = document.getElementById("studio-auth-panel");
 const studioNamePanel = document.getElementById("studio-name-panel");
 const studioNameForm = document.getElementById("studio-name-form");
@@ -52,6 +55,7 @@ const adminAccountsStatus = document.getElementById("admin-accounts-status");
 const adminSaveAccountsButton = document.getElementById("admin-save-accounts");
 const adminTabs = Array.from(document.querySelectorAll("[data-admin-filter]"));
 const studioDashboardPanel = document.getElementById("studio-dashboard-panel");
+const studioSidebar = document.getElementById("studio-sidebar");
 const studioSidebarName = document.getElementById("studio-sidebar-name");
 const studioSidebarLogoLink = document.getElementById("studio-sidebar-logo-link");
 const studioSidebarLogo = document.getElementById("studio-sidebar-logo");
@@ -120,6 +124,29 @@ let wizardState = createEmptyWizardState();
 let authHasResolved = false;
 let currentWizardStep = 1;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
+
+function isMobileStudioViewport() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function closeStudioSidebarDrawer({ restoreFocus = false } = {}) {
+  studioDashboardPanel?.classList.remove("sidebar-open");
+  studioSidebarToggleButton?.setAttribute("aria-expanded", "false");
+  studioSidebarScrim?.classList.add("hidden");
+  if (restoreFocus) {
+    studioSidebarToggleButton?.focus();
+  }
+}
+
+function openStudioSidebarDrawer() {
+  if (!isMobileStudioViewport() || !studioSidebar || studioDashboardPanel?.classList.contains("hidden")) {
+    return;
+  }
+  studioDashboardPanel?.classList.add("sidebar-open");
+  studioSidebarToggleButton?.setAttribute("aria-expanded", "true");
+  studioSidebarScrim?.classList.remove("hidden");
+  studioSidebarCloseButton?.focus();
+}
 
 function hasFirebaseConfig() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
@@ -544,6 +571,9 @@ function showStudioDashboardSection(section) {
   studioPagesSection?.classList.toggle("active", activeSection === "pages");
   studioBrandingSection?.classList.toggle("active", activeSection === "branding");
   studioAccountSection?.classList.toggle("active", activeSection === "account");
+  if (isMobileStudioViewport()) {
+    closeStudioSidebarDrawer();
+  }
 }
 
 function getDomainPreviewPath() {
@@ -604,6 +634,7 @@ function showStudioView(view) {
   createPagePanel.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
   studioSidebarName?.classList.toggle("hidden", view === "admin");
+  closeStudioSidebarDrawer();
   if (view === "dashboard") {
     showStudioDashboardSection("pages");
   }
@@ -704,13 +735,13 @@ function renderSavedPagesTable() {
         <p class="saved-page-pairing">${escapeMarkup(page.pairingCode || "")}</p>
         <div class="saved-page-actions" aria-label="Page actions">
           <button type="button" class="saved-page-icon-button" data-action="copy" aria-label="Copy page link">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm2 1h3a3 3 0 0 1 3 3v3h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v1Zm-3 2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Z"/></svg>
+            <span class="saved-page-icon icon-mask icon-copy" aria-hidden="true"></span>
           </button>
           <button type="button" class="saved-page-icon-button" data-action="edit" aria-label="Edit page">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.25V20h2.75L17.81 8.94l-2.75-2.75L4 17.25Zm15.71-11.04a1 1 0 0 0 0-1.42l-.5-.5a1 1 0 0 0-1.42 0l-1.32 1.32 2.75 2.75 1.49-1.49Z"/></svg>
+            <span class="saved-page-icon icon-mask icon-edit" aria-hidden="true"></span>
           </button>
           <button type="button" class="saved-page-icon-button danger" data-action="delete" aria-label="Delete page">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Zm3 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/></svg>
+            <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
           </button>
         </div>
       </div>
@@ -1884,6 +1915,22 @@ studioSidebarTabs.forEach((tab) => {
   });
 });
 
+studioSidebarToggleButton?.addEventListener("click", () => {
+  if (studioDashboardPanel?.classList.contains("sidebar-open")) {
+    closeStudioSidebarDrawer({ restoreFocus: true });
+    return;
+  }
+  openStudioSidebarDrawer();
+});
+
+studioSidebarCloseButton?.addEventListener("click", () => {
+  closeStudioSidebarDrawer({ restoreFocus: true });
+});
+
+studioSidebarScrim?.addEventListener("click", () => {
+  closeStudioSidebarDrawer({ restoreFocus: true });
+});
+
 adminTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     activeAdminFilter = tab.dataset.adminFilter || "active";
@@ -2086,8 +2133,13 @@ googleLoginButton?.addEventListener("click", async () => {
 
 studioSignOutButton?.addEventListener("click", async () => {
   await signOut(auth);
+  currentProfile = null;
   savedPages = [];
+  studioUserLabel.textContent = "";
+  setStudioStatus(studioAuthStatus, "");
+  showStudioView("auth");
   renderSavedPagesTable();
+  setStudioScreen(false);
 });
 
 studioNameForm?.addEventListener("submit", async (event) => {
@@ -2106,9 +2158,22 @@ createPageButton?.addEventListener("click", openCreateWizard);
 closeCreatePageButton?.addEventListener("click", goBackInWizard);
 
 window.addEventListener("popstate", () => {
+  closeStudioSidebarDrawer();
   if (window.location.pathname.startsWith("/studio") && currentProfile?.studioName) {
     setStudioScreen(true);
     applyStudioRoute();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (!isMobileStudioViewport()) {
+    closeStudioSidebarDrawer();
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && studioDashboardPanel?.classList.contains("sidebar-open")) {
+    closeStudioSidebarDrawer({ restoreFocus: true });
   }
 });
 

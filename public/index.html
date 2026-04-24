@@ -58,6 +58,16 @@
         <main class="studio-main">
           <div class="studio-floating-actions">
             <div class="studio-floating-action-row">
+              <button
+                id="studio-sidebar-toggle"
+                type="button"
+                class="studio-sidebar-toggle"
+                aria-label="Open studio menu"
+                aria-controls="studio-sidebar"
+                aria-expanded="false"
+              >
+                <span class="icon-mask icon-hamburger" aria-hidden="true"></span>
+              </button>
               <span id="studio-user-label" class="studio-user-label"></span>
               <button id="studio-sign-out" type="button" class="studio-text-button hidden">Sign out</button>
             </div>
@@ -65,6 +75,13 @@
           </div>
 
           <section id="studio-auth-panel" class="studio-panel studio-auth-panel">
+            <div class="studio-auth-header">
+              <img
+                class="studio-auth-logo"
+                src="/assets/carnivalstories-logo.svg?v=20260424b"
+                alt="Carnival Stories"
+              />
+            </div>
             <p class="studio-kicker">Studio access</p>
             <h1>Sign in to manage your pages.</h1>
             <p class="studio-copy">
@@ -104,7 +121,16 @@
           </section>
 
           <section id="studio-dashboard-panel" class="studio-dashboard hidden">
-            <aside class="studio-sidebar" aria-label="Studio options">
+            <button id="studio-sidebar-scrim" type="button" class="studio-sidebar-scrim hidden" aria-label="Close studio menu"></button>
+            <aside id="studio-sidebar" class="studio-sidebar" aria-label="Studio options">
+              <button
+                id="studio-sidebar-close"
+                type="button"
+                class="studio-sidebar-close"
+                aria-label="Close studio menu"
+              >
+                <span class="icon-mask icon-close" aria-hidden="true"></span>
+              </button>
               <a id="studio-sidebar-logo-link" href="/" class="studio-sidebar-logo-link is-empty" aria-label="Studio homepage">
                 <img id="studio-sidebar-logo" class="studio-sidebar-logo" alt="" />
               </a>
@@ -300,10 +326,6 @@
                 <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
               </a>
               <div class="empty-sequence">Your photos will show up here shortly.</div>
-              <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-                <span class="gallery-settings-icon" aria-hidden="true"></span>
-                <span class="gallery-settings-text">Slideshow settings</span>
-              </button>
             </div>
 
             <div class="folder-tabs-shell">
@@ -351,37 +373,41 @@
         </aside>
 
         <button id="scroll-to-top-button" type="button" class="scroll-top-button hidden" aria-label="Scroll to top">
-          ↑
+          <span class="icon-mask icon-arrow-up" aria-hidden="true"></span>
         </button>
       </section>
     </div>
 
     <div id="slideshow" class="slideshow hidden" aria-hidden="true">
       <div class="slideshow-frame">
+        <button id="close-slideshow-mobile" type="button" class="slideshow-close-mobile" aria-label="Close slideshow">
+          <span class="icon-mask icon-close" aria-hidden="true"></span>
+        </button>
         <div id="slideshow-toast" class="slideshow-toast" aria-live="polite">
           Use arrow keys to go through photos
         </div>
         <div class="slideshow-actions" aria-label="Photo actions">
+          <button id="toggle-slideshow-settings" type="button" class="slideshow-action" aria-label="Open slideshow settings">
+            <span class="gallery-settings-icon slideshow-settings-icon icon-mask icon-settings" aria-hidden="true"></span>
+          </button>
           <button id="share-slide" type="button" class="slideshow-action slideshow-action-share" aria-label="Share photo">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="slideshow-action-icon">
-              <path d="M16 8a3 3 0 1 0-2.83-4H13a3 3 0 0 0 .17 1L8.91 8.25A3 3 0 0 0 6 7a3 3 0 1 0 2.83 4h.17a3 3 0 0 0-.17-1l4.26-3.25A3 3 0 0 0 16 8Zm-10 1a1 1 0 1 1 1-1 1 1 0 0 1-1 1Zm10-5a1 1 0 1 1-1 1 1 1 0 0 1 1-1ZM6 17a1 1 0 1 1 1 1 1 1 0 0 1-1-1Zm10-5a3 3 0 0 0-2.09.84l-4.26-3.25a3 3 0 0 0 .17-1h-.17A3 3 0 1 0 6 14a3 3 0 0 0 2.83-2h.17a3 3 0 0 0-.17-1l4.26 3.25A3 3 0 1 0 16 12Zm0 5a1 1 0 1 1 1-1 1 1 0 0 1-1 1Z"/>
-            </svg>
+            <span class="slideshow-action-icon icon-mask icon-share" aria-hidden="true"></span>
           </button>
           <button id="download-slide" type="button" class="slideshow-action" aria-label="Download photo">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="slideshow-action-icon">
-              <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Zm-6 15a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Zm0 0a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/>
-            </svg>
+            <span class="slideshow-action-icon icon-mask icon-download" aria-hidden="true"></span>
           </button>
           <button id="toggle-slideshow-playback" type="button" class="slideshow-action" aria-label="Pause slideshow">
             <span id="slideshow-playback-icon" class="slideshow-playback-icon is-pause" aria-hidden="true"></span>
           </button>
         </div>
-        <button id="prev-slide" type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous photo">←</button>
+        <button id="prev-slide" type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous photo">
+          <span class="slideshow-nav-icon icon-mask icon-arrow-left" aria-hidden="true"></span>
+        </button>
         <img id="slide-image" class="slide-image" alt="" />
         <img id="slide-image-full" class="slide-image slide-image-full" alt="" />
         <video id="slide-video" class="slide-video hidden" playsinline preload="metadata" aria-label="Video slide"></video>
         <button id="slide-video-overlay" type="button" class="slide-video-overlay hidden" aria-label="Play video">
-          <span class="slide-video-play-icon" aria-hidden="true"></span>
+          <span class="slide-video-play-icon icon-mask icon-play" aria-hidden="true"></span>
         </button>
         <div id="slide-video-controls" class="slide-video-controls hidden" aria-label="Video controls">
           <button id="slide-video-toggle" type="button" class="slide-video-toggle" aria-label="Play video">
@@ -393,7 +419,9 @@
           </div>
         </div>
         <div id="slideshow-loader" class="slideshow-loader hidden" aria-hidden="true"></div>
-        <button id="next-slide" type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next photo">→</button>
+        <button id="next-slide" type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next photo">
+          <span class="slideshow-nav-icon icon-mask icon-arrow-right" aria-hidden="true"></span>
+        </button>
       </div>
     </div>
 
