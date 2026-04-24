@@ -8,7 +8,7 @@
       window.CarnivalStudioPublicRoute =
         !window.location.pathname.startsWith("/studio") &&
         /^\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
-      window.CarnivalDefaultFavicon = "/favicon.svg?v=20260423";
+      window.CarnivalDefaultFavicon = "/favicon.svg?v=20260424b";
       if (window.CarnivalStudioPublicRoute) {
         document.documentElement.classList.add("public-page-shell");
       }
@@ -21,14 +21,14 @@
         document.getElementById("app-favicon-shortcut").href = window.CarnivalDefaultFavicon;
       }
     </script>
-    <link rel="stylesheet" href="/styles.css?v=20260423" />
+    <link rel="stylesheet" href="/styles.css?v=20260424b" />
   </head>
   <body>
     <div class="app-shell">
       <section id="screen-direct-link" class="screen active screen-link">
         <div class="screen-hud hud-top">
           <div class="brand-lockup">
-            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
+            <img class="brand-lockup-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
           </div>
           <button id="open-studio-login" type="button" class="studio-entry-button">
             Studio login
@@ -113,7 +113,7 @@
                 <button type="button" class="studio-sidebar-tab" data-studio-section="branding">Branding</button>
                 <button type="button" class="studio-sidebar-tab" data-studio-section="account">Account</button>
               </nav>
-              <img class="studio-sidebar-favicon" src="/favicon.svg?v=20260423" alt="Carnival Stories" />
+              <img class="studio-sidebar-favicon" src="/favicon.svg?v=20260424b" alt="Carnival Stories" />
             </aside>
 
             <div class="studio-dashboard-content">
@@ -290,18 +290,18 @@
           </div>
 
           <div id="gallery-error-state" class="gallery-error-state hidden" aria-live="polite">
-            <img class="gallery-error-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
+            <img class="gallery-error-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
             <p id="gallery-error-message" class="gallery-error-message">THIS FOLDER DOESN&apos;T HAVE ANY PHOTOS YET.</p>
           </div>
 
           <div class="workspace-stage">
             <div id="cover-photo" class="cover-photo">
               <a href="/" class="cover-logo-link" aria-label="Go to home page">
-                <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260423" alt="Carnival Stories" />
+                <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
               </a>
               <div class="empty-sequence">Your photos will show up here shortly.</div>
               <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-                <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
+                <span class="gallery-settings-icon" aria-hidden="true"></span>
                 <span class="gallery-settings-text">Slideshow settings</span>
               </button>
             </div>
@@ -320,7 +320,7 @@
         <aside class="workspace-side">
           <div class="side-panel">
             <div class="slideshow-settings-head">
-              <img class="panel-favicon" src="/favicon.svg?v=20260423" alt="Carnival Stories" />
+              <img class="panel-favicon" src="/favicon.svg?v=20260424b" alt="Carnival Stories" />
               <button id="close-gallery-settings" type="button" class="icon-action icon-action-close-panel" aria-label="Close slideshow settings">
                 CLOSE
               </button>
@@ -397,9 +397,9 @@
       </div>
     </div>
 
-    <script src="/qr.js?v=20260423"></script>
-    <script src="/firebase-config.js?v=20260423"></script>
-    <script src="/app.js?v=20260423"></script>
-    <script type="module" src="/studio.js?v=20260423"></script>
+    <script src="/qr.js?v=20260424b"></script>
+    <script src="/firebase-config.js?v=20260424b"></script>
+    <script src="/app.js?v=20260424b"></script>
+    <script type="module" src="/studio.js?v=20260424b"></script>
   </body>
 </html>
