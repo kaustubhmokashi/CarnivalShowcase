@@ -1288,7 +1288,7 @@ function initializeFirebase() {
   if (!hasFirebaseConfig()) {
     setStudioStatus(
       studioAuthStatus,
-      "Firebase web config is missing. Add your project values in /firebase-config.js.",
+      "Firebase web config is missing. Copy /public/firebase-config.example.js to /public/firebase-config.js and add your project values.",
       true
     );
     googleLoginButton.disabled = true;

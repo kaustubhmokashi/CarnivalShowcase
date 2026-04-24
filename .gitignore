@@ -3,6 +3,7 @@ node_modules
 .DS_Store
 .idea
 *.jks
+public/firebase-config.js
 drivedeck-android-tv/.gradle
 drivedeck-android-tv/build
 drivedeck-android-tv/app/build
