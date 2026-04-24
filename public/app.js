@@ -343,20 +343,14 @@ function getGalleryColumnCount() {
   const galleryWidth = galleryEl?.clientWidth || window.innerWidth;
   const viewportWidth = window.innerWidth;
   const gap = 1;
-
-  if (viewportWidth <= 720) {
-    const minimumTileWidth = 150;
-    const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
-    return Math.min(2, maxColumnsByWidth);
-  }
-
+  let minimumTileWidth = 220;
   if (viewportWidth <= 1100) {
-    const minimumTileWidth = 180;
-    const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
-    return Math.min(3, maxColumnsByWidth);
+    minimumTileWidth = 180;
+  }
+  if (viewportWidth <= 720) {
+    minimumTileWidth = 150;
   }
 
-  const minimumTileWidth = 220;
   const maxColumnsByWidth = Math.max(1, Math.floor((galleryWidth + gap) / (minimumTileWidth + gap)));
   return Math.min(4, maxColumnsByWidth);
 }

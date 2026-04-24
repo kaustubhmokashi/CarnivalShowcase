@@ -1857,6 +1857,19 @@ input[type="checkbox"]:checked {
 }
 
 @media (max-width: 720px) {
+  .workspace-main,
+  .workspace-stage,
+  .gallery-screen .workspace-stage,
+  .gallery-screen .cover-photo,
+  .gallery-grid,
+  .folder-tabs-shell,
+  .folder-tabs {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   .link-stage {
     min-height: 0;
     padding: 24px 18px 40px;
@@ -1887,11 +1900,16 @@ input[type="checkbox"]:checked {
   .folder-tabs-shell {
     margin-top: 0;
     padding: 10px 12px 8px;
+    overflow-x: clip;
   }
 
   .folder-tab {
     padding: 10px 14px;
     font-size: 0.7rem;
+  }
+
+  .folder-tabs {
+    padding-left: 0;
   }
 
   .slideshow-nav {
