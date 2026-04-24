@@ -841,7 +841,7 @@ function updateCoverStoryLayout() {
   coverTaglineEl.style.removeProperty("--cover-tagline-size");
   coverCopyEl.style.removeProperty("--cover-copy-width");
   coverTaglineEl.style.removeProperty("width");
-  if (!window.matchMedia("(max-width: 900px)").matches) {
+  if (!window.matchMedia("(max-width: 720px)").matches) {
     return;
   }
 
