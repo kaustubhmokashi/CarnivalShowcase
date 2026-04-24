@@ -900,6 +900,15 @@ function isSupportedMediaFile(file, includeVideos = false) {
     return false;
   }
 
+  const normalizedName = String(file.name || "").trim();
+  if (
+    !normalizedName ||
+    normalizedName.startsWith("._") ||
+    normalizedName === ".DS_Store"
+  ) {
+    return false;
+  }
+
   if (file.mimeType.startsWith(IMAGE_MIME_PREFIX)) {
     return true;
   }
