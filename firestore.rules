@@ -65,6 +65,12 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid;
       allow update, delete: if isSignedIn()
         && resource.data.ownerUid == request.auth.uid;
+
+      match /albumSnapshotChunks/{chunkId} {
+        allow get, list: if true;
+        allow create, update, delete: if isSignedIn()
+          && get(/databases/$(database)/documents/publicPages/$(pageSlug)).data.ownerUid == request.auth.uid;
+      }
     }
 
     match /pairingCodes/{code} {

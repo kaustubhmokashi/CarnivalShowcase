@@ -29,6 +29,9 @@ const collections = {
   pairingCodes: firebaseSettings.collections?.pairingCodes || "pairingCodes",
   customDomains: firebaseSettings.collections?.customDomains || "customDomains",
 };
+const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
+const ALBUM_SNAPSHOT_VERSION = 1;
+const ALBUM_SNAPSHOT_TARGET_CHARS = 240000;
 
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
@@ -1079,6 +1082,175 @@ function flattenDriveFolders(node, folderPath = "") {
   return folders;
 }
 
+function createSnapshotMediaItem(item) {
+  return {
+    id: item.id || "",
+    name: item.name || "",
+    mimeType: item.mimeType || "",
+    path: item.path || "",
+    folderPath: item.folderPath || item.path || "",
+    width: Number(item.width) || null,
+    height: Number(item.height) || null,
+    url: item.url || "",
+    slideshowUrl: item.slideshowUrl || "",
+    thumbnailUrl: item.thumbnailUrl || "",
+    webViewLink: item.webViewLink || "",
+  };
+}
+
+function createSnapshotFolder(folder) {
+  const images = (folder.images || []).map(createSnapshotMediaItem);
+  return {
+    id: folder.id || "",
+    name: folder.name || "",
+    path: folder.path || "",
+    photoCount: Number(folder.photoCount) || images.filter((item) => !item.mimeType?.startsWith("video/")).length,
+    mediaCount: Number(folder.mediaCount) || images.length,
+    images,
+  };
+}
+
+function buildAlbumSnapshot(tree) {
+  const folders = flattenDriveFolders(tree).map(createSnapshotFolder).filter((folder) => folder.images.length > 0);
+  const chunks = [];
+  let currentFolders = [];
+  let currentSize = 0;
+
+  folders.forEach((folder) => {
+    const folderSize = JSON.stringify(folder).length;
+    if (currentFolders.length > 0 && currentSize + folderSize > ALBUM_SNAPSHOT_TARGET_CHARS) {
+      chunks.push(currentFolders);
+      currentFolders = [];
+      currentSize = 0;
+    }
+
+    currentFolders.push(folder);
+    currentSize += folderSize;
+  });
+
+  if (currentFolders.length > 0) {
+    chunks.push(currentFolders);
+  }
+
+  return {
+    meta: {
+      version: ALBUM_SNAPSHOT_VERSION,
+      rootName: tree?.name || "",
+      folderCount: folders.length,
+      mediaCount: folders.reduce((sum, folder) => sum + folder.images.length, 0),
+      chunkCount: chunks.length,
+      generatedAt: new Date().toISOString(),
+    },
+    chunks,
+  };
+}
+
+async function replaceAlbumSnapshotChunks(pageRef, snapshot) {
+  const existingChunks = await getDocs(collection(pageRef, ALBUM_SNAPSHOT_SUBCOLLECTION));
+  const batch = writeBatch(db);
+
+  existingChunks.forEach((chunkDoc) => {
+    batch.delete(chunkDoc.ref);
+  });
+
+  snapshot.chunks.forEach((folders, index) => {
+    batch.set(doc(pageRef, ALBUM_SNAPSHOT_SUBCOLLECTION, String(index).padStart(4, "0")), {
+      index,
+      folders,
+    });
+  });
+
+  batch.set(
+    pageRef,
+    {
+      albumSnapshotVersion: snapshot.meta.version,
+      albumSnapshotRootName: snapshot.meta.rootName,
+      albumSnapshotFolderCount: snapshot.meta.folderCount,
+      albumSnapshotMediaCount: snapshot.meta.mediaCount,
+      albumSnapshotChunkCount: snapshot.meta.chunkCount,
+      albumSnapshotGeneratedAt: snapshot.meta.generatedAt,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+}
+
+async function saveAlbumSnapshotForPublicPages(publicPageIds, tree) {
+  if (!tree || !db) {
+    return;
+  }
+
+  const uniquePageIds = Array.from(new Set((publicPageIds || []).filter(Boolean)));
+  if (!uniquePageIds.length) {
+    return;
+  }
+
+  const snapshot = buildAlbumSnapshot(tree);
+  await Promise.all(
+    uniquePageIds.map((pageId) =>
+      replaceAlbumSnapshotChunks(doc(db, collections.publicPages, pageId), snapshot)
+    )
+  );
+}
+
+async function loadAlbumSnapshotFromPageRef(pageRef, pageData) {
+  const chunkCount = Number(pageData?.albumSnapshotChunkCount) || 0;
+  if (!chunkCount) {
+    return null;
+  }
+
+  const snapshotQuery = query(
+    collection(pageRef, ALBUM_SNAPSHOT_SUBCOLLECTION),
+    orderBy("index", "asc")
+  );
+  const snapshotDocs = await getDocs(snapshotQuery);
+  if (!snapshotDocs.size) {
+    return null;
+  }
+
+  return {
+    version: Number(pageData?.albumSnapshotVersion) || ALBUM_SNAPSHOT_VERSION,
+    rootName: pageData?.albumSnapshotRootName || "",
+    folderCount: Number(pageData?.albumSnapshotFolderCount) || 0,
+    mediaCount: Number(pageData?.albumSnapshotMediaCount) || 0,
+    generatedAt: pageData?.albumSnapshotGeneratedAt || "",
+    folders: snapshotDocs.docs.flatMap((snapshotDoc) => snapshotDoc.data()?.folders || []),
+  };
+}
+
+async function loadAvailableAlbumSnapshot(pageRef, pageData, publicPageRoute) {
+  const directSnapshot = await loadAlbumSnapshotFromPageRef(pageRef, pageData);
+  if (directSnapshot) {
+    return directSnapshot;
+  }
+
+  if (!publicPageRoute?.isCustomDomain || !pageData?.studioSlug || !pageData?.pageSlug) {
+    return null;
+  }
+
+  const primaryRef = doc(
+    db,
+    collections.publicPages,
+    getPrimaryPublicPageId({
+      studioSlug: pageData.studioSlug,
+      pageSlug: pageData.pageSlug,
+    })
+  );
+
+  if (primaryRef.id === pageRef.id) {
+    return null;
+  }
+
+  const primarySnapshot = await getDoc(primaryRef);
+  if (!primarySnapshot.exists()) {
+    return null;
+  }
+
+  return loadAlbumSnapshotFromPageRef(primaryRef, primarySnapshot.data());
+}
+
 function renderMediaPicker() {
   if (!wizardState.selectedMediaFolderId) {
     renderMediaFolderList();
@@ -1433,6 +1605,13 @@ async function createPageRecord() {
   };
 
   await reservePairingCode(pageRef, payload);
+  return {
+    pageId: pageRef.id,
+    publicPageIds: [
+      getPrimaryPublicPageId(payload),
+      payload.customDomain ? getCustomDomainPublicPageId(payload.customDomain, payload.pageSlug) : "",
+    ].filter(Boolean),
+  };
 }
 
 async function updatePageRecord() {
@@ -1517,8 +1696,16 @@ async function updatePageRecord() {
       template: payload.template,
       permanent: true,
       updatedAt: serverTimestamp(),
-    }, { merge: true });
+      }, { merge: true });
   });
+
+  return {
+    pageId: existingPage.id,
+    publicPageIds: [
+      getPrimaryPublicPageId(payload),
+      nextCustomDomain ? getCustomDomainPublicPageId(nextCustomDomain, payload.pageSlug) : "",
+    ].filter(Boolean),
+  };
 }
 
 async function deleteSavedPage(page) {
@@ -1635,6 +1822,7 @@ async function loadPublicStudioPage(publicPageRoute) {
     preservePath: true,
     keepLoading: true,
   });
+  const albumSnapshot = await loadAvailableAlbumSnapshot(pageSnapshot.ref, page, publicPageRoute).catch(() => null);
   const previewCoverSource = galleryOptions.coverImageUrl || galleryOptions.coverThumbnailUrl || "";
   if (previewCoverSource) {
     await new Promise((resolve) => {
@@ -1649,6 +1837,13 @@ async function loadPublicStudioPage(publicPageRoute) {
     message: "Loading your albums.",
     progress: 8,
   });
+
+  if (albumSnapshot?.folders?.length) {
+    await window.CarnivalGallery?.loadSnapshot?.(albumSnapshot, galleryOptions);
+    void window.CarnivalGallery?.revalidateFolder?.(page.driveLink, galleryOptions);
+    return;
+  }
+
   await window.CarnivalGallery?.loadFolder?.(page.driveLink, galleryOptions);
 }
 
@@ -1984,14 +2179,18 @@ wizardCreatePage?.addEventListener("click", async () => {
   try {
     const isEditMode = wizardState.mode === "edit";
     setStudioStatus(wizardTemplateStatus, isEditMode ? "Updating page..." : "Creating page...");
-    if (isEditMode) {
-      await updatePageRecord();
-    } else {
-      await createPageRecord();
+    const result = isEditMode
+      ? await updatePageRecord()
+      : await createPageRecord();
+
+    if (wizardState.folderTree) {
+      setStudioStatus(wizardTemplateStatus, "Caching album metadata...");
+      await saveAlbumSnapshotForPublicPages(result.publicPageIds, wizardState.folderTree);
     }
     setStudioStatus(wizardTemplateStatus, "");
     closeCreateWizard();
     await loadSavedPages();
+    showStudioToast(isEditMode ? "Page updated." : "Page created.");
   } catch (error) {
     setStudioStatus(wizardTemplateStatus, error.message, true);
   }

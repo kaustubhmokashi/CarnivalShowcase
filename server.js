@@ -80,11 +80,14 @@ const FIREBASE_COLLECTIONS = {
   customDomains: process.env.FIREBASE_CUSTOMDOMAINS_COLLECTION || "customDomains",
 };
 const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
+const FOLDER_CACHE_FRESH_MS = Number(process.env.FOLDER_CACHE_FRESH_MS || 5 * 60 * 1000);
+const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 60 * 1000);
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 let firestoreDb = null;
+const folderTreeCache = new Map();
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
@@ -976,6 +979,74 @@ async function readFolderTree(folderId, rootName = "Root Folder", includeVideos 
   };
 }
 
+function getFolderCacheKey(folderId, includeVideos) {
+  return `${folderId}:${includeVideos ? "videos" : "images"}`;
+}
+
+async function fetchFolderResult(folderId, includeVideos = false) {
+  const folderMeta = await driveGetFile(folderId);
+  if (folderMeta.mimeType !== FOLDER_MIME_TYPE) {
+    const error = new Error("The provided link does not point to a Google Drive folder.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return readFolderTree(folderId, folderMeta.name || "Root Folder", includeVideos);
+}
+
+function scheduleFolderCacheRefresh(cacheKey, folderId, includeVideos) {
+  const existingEntry = folderTreeCache.get(cacheKey) || {};
+  if (existingEntry.refreshPromise) {
+    return existingEntry.refreshPromise;
+  }
+
+  const refreshPromise = fetchFolderResult(folderId, includeVideos)
+    .then((result) => {
+      folderTreeCache.set(cacheKey, {
+        result,
+        fetchedAt: Date.now(),
+        refreshPromise: null,
+      });
+      return result;
+    })
+    .catch((error) => {
+      const currentEntry = folderTreeCache.get(cacheKey);
+      if (currentEntry) {
+        currentEntry.refreshPromise = null;
+        folderTreeCache.set(cacheKey, currentEntry);
+      }
+      throw error;
+    });
+
+  folderTreeCache.set(cacheKey, {
+    ...existingEntry,
+    refreshPromise,
+  });
+
+  return refreshPromise;
+}
+
+async function getFolderResultWithCache(folderId, includeVideos = false) {
+  const cacheKey = getFolderCacheKey(folderId, includeVideos);
+  const cacheEntry = folderTreeCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cacheEntry?.result && cacheEntry?.fetchedAt) {
+    const age = now - cacheEntry.fetchedAt;
+    if (age <= FOLDER_CACHE_FRESH_MS) {
+      return { result: cacheEntry.result, cacheStatus: "fresh" };
+    }
+
+    if (age <= FOLDER_CACHE_STALE_MS) {
+      scheduleFolderCacheRefresh(cacheKey, folderId, includeVideos).catch(() => {});
+      return { result: cacheEntry.result, cacheStatus: "stale" };
+    }
+  }
+
+  const result = await scheduleFolderCacheRefresh(cacheKey, folderId, includeVideos);
+  return { result, cacheStatus: "miss" };
+}
+
 async function handleApiFolder(req, res) {
   if (!API_KEY) {
     sendJson(res, 500, {
@@ -999,15 +1070,16 @@ async function handleApiFolder(req, res) {
   }
 
   try {
-    const folderMeta = await driveGetFile(folderId);
-    if (folderMeta.mimeType !== FOLDER_MIME_TYPE) {
-      sendJson(res, 400, { error: "The provided link does not point to a Google Drive folder." });
+    const { result, cacheStatus } = await getFolderResultWithCache(folderId, includeVideos);
+    sendJson(res, 200, {
+      ...result,
+      cacheStatus,
+    });
+  } catch (error) {
+    if (error?.statusCode === 400) {
+      sendJson(res, 400, { error: error.message });
       return;
     }
-
-    const result = await readFolderTree(folderId, folderMeta.name || "Root Folder", includeVideos);
-    sendJson(res, 200, result);
-  } catch (error) {
     sendJson(res, 500, {
       error: formatDriveAccessError(error),
     });

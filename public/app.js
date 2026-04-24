@@ -89,6 +89,8 @@ let slideshowConfig = {
   loop: false,
   autoplay: false,
 };
+const INITIAL_GALLERY_BATCH_SIZE = 36;
+const GALLERY_BATCH_SIZE = 48;
 function focusElement(element) {
   if (!element) {
     return;
@@ -137,6 +139,15 @@ function getCurrentSlidePhoto() {
 
 function isVideoMedia(item) {
   return Boolean(item?.mimeType && item.mimeType.startsWith("video/"));
+}
+
+function createImageUrl(fileId, mode = "full") {
+  const url = new URL("/api/image", window.location.origin);
+  url.searchParams.set("id", fileId);
+  if (mode === "thumb" || mode === "screen") {
+    url.searchParams.set("mode", mode === "screen" ? "screen" : "thumb");
+  }
+  return `${url.pathname}${url.search}`;
 }
 
 function updateVideoToggleVisual(isPlaying) {
@@ -602,6 +613,53 @@ function showGalleryLoadingPreview(options = {}) {
   setLoadingState(true, options.message || "Loading your albums.", { progress: options.progress ?? 0 });
 }
 
+function normalizeSnapshotMediaItem(item, folderPath = "") {
+  const mediaId = String(item?.id || "").trim();
+  const mimeType = String(item?.mimeType || "").trim();
+  const path = String(item?.path || item?.folderPath || folderPath || "").trim();
+  const fallbackFullUrl = mediaId ? createImageUrl(mediaId, "full") : "";
+  return {
+    id: mediaId,
+    name: String(item?.name || ""),
+    mimeType,
+    path,
+    folderPath: String(item?.folderPath || path || folderPath || "").trim(),
+    width: Number(item?.width) || null,
+    height: Number(item?.height) || null,
+    url: String(item?.url || fallbackFullUrl),
+    slideshowUrl: String(
+      item?.slideshowUrl ||
+        (mediaId
+          ? mimeType.startsWith("video/")
+            ? createImageUrl(mediaId, "full")
+            : createImageUrl(mediaId, "screen")
+          : fallbackFullUrl)
+    ),
+    thumbnailUrl: String(item?.thumbnailUrl || (mediaId ? createImageUrl(mediaId, "thumb") : fallbackFullUrl)),
+    webViewLink: String(item?.webViewLink || ""),
+  };
+}
+
+function normalizeSnapshotFolders(snapshot) {
+  const folders = Array.isArray(snapshot?.folders) ? snapshot.folders : [];
+  return folders
+    .map((folder) => {
+      const path = String(folder?.path || folder?.name || "").trim();
+      const images = Array.isArray(folder?.images)
+        ? folder.images.map((image) => normalizeSnapshotMediaItem(image, path)).filter((image) => image.id)
+        : [];
+      return {
+        id: String(folder?.id || ""),
+        name: String(folder?.name || ""),
+        path,
+        photoCount: Number(folder?.photoCount) || images.filter((image) => !isVideoMedia(image)).length,
+        mediaCount: Number(folder?.mediaCount) || images.length,
+        images,
+      };
+    })
+    .filter((folder) => folder.id && folder.images.length > 0);
+}
+
 function escapeMarkup(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -941,6 +999,25 @@ function collectFolders(node, parentPath = "") {
   return folders;
 }
 
+function applyFolderState(folders, options = {}) {
+  currentFolders = folders;
+  selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
+  const allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
+  coverPhoto = options.coverFileId
+    ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
+    : currentFolders[0]?.images?.[0] || null;
+  if (coverPhoto) {
+    setLoadingCoverBackground(coverPhoto.url || coverPhoto.thumbnailUrl || "");
+  }
+  sharedFolderName = options.rootName || "";
+  if (!options.preservePath) {
+    syncHistoryForStep(3, true);
+  }
+  renderFolderTabs(currentFolders);
+  updateFolderSidePanel();
+  updateGalleryForSelectedFolder();
+}
+
 function getSelectedFolder() {
   return currentFolders.find((folder) => folder.id === selectedFolderId) || null;
 }
@@ -1050,74 +1127,100 @@ function renderGallery(photoItems) {
     return;
   }
 
-  visiblePhotos.forEach((photo, index) => {
-    const card = document.createElement("button");
-    card.className = "photo-card is-loading row-pending";
-    card.type = "button";
-    card.dataset.index = String(index);
+  const appendPhotoBatch = (startIndex) => {
+    if (renderToken !== activeGalleryRenderToken) {
+      return;
+    }
 
-    const span = getMasonryTileSpan(photo, index);
-    card.dataset.aspectRatio = String(span.aspectRatio);
+    const batchSize = startIndex === 0 ? INITIAL_GALLERY_BATCH_SIZE : GALLERY_BATCH_SIZE;
+    const slice = visiblePhotos.slice(startIndex, startIndex + batchSize);
+    const fragment = document.createDocumentFragment();
 
-    const image = document.createElement("img");
-    image.src = photo.thumbnailUrl || photo.url;
-    image.alt = photo.name;
-    image.loading = "lazy";
-    image.fetchPriority = "high";
-    image.addEventListener("load", () => {
-      if (renderToken !== activeGalleryRenderToken) {
-        return;
-      }
+    slice.forEach((photo, offset) => {
+      const index = startIndex + offset;
+      const card = document.createElement("button");
+      card.className = "photo-card is-loading row-pending";
+      card.type = "button";
+      card.dataset.index = String(index);
 
-      const naturalRatio = image.naturalWidth > 0 && image.naturalHeight > 0
-        ? image.naturalWidth / image.naturalHeight
-        : span.aspectRatio;
-      card.dataset.aspectRatio = String(naturalRatio > 0 ? naturalRatio : span.aspectRatio);
-      card.classList.remove("is-loading");
-      pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
-      queueGalleryLayout();
-      maybeStartBackgroundPreload(renderToken);
+      const span = getMasonryTileSpan(photo, index);
+      card.dataset.aspectRatio = String(span.aspectRatio);
+
+      const image = document.createElement("img");
+      image.src = photo.thumbnailUrl || photo.url;
+      image.alt = photo.name;
+      image.loading = "lazy";
+      image.fetchPriority = index < INITIAL_GALLERY_BATCH_SIZE ? "high" : "low";
+      image.addEventListener("load", () => {
+        if (renderToken !== activeGalleryRenderToken) {
+          return;
+        }
+
+        const naturalRatio = image.naturalWidth > 0 && image.naturalHeight > 0
+          ? image.naturalWidth / image.naturalHeight
+          : span.aspectRatio;
+        card.dataset.aspectRatio = String(naturalRatio > 0 ? naturalRatio : span.aspectRatio);
+        card.classList.remove("is-loading");
+        pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
+        queueGalleryLayout();
+        maybeStartBackgroundPreload(renderToken);
+      });
+      image.addEventListener("error", () => {
+        if (renderToken !== activeGalleryRenderToken) {
+          return;
+        }
+
+        card.classList.remove("is-loading");
+        pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
+        imageLoadFailures += 1;
+        image.style.opacity = "0.14";
+        setStatus(
+          `${imageLoadFailures} image${imageLoadFailures === 1 ? "" : "s"} failed to load. Direct Drive media access may be restricted for some files.`,
+          true
+        );
+        maybeStartBackgroundPreload(renderToken);
+      });
+
+      card.appendChild(image);
+      card.addEventListener("click", () => openSlideshow(index + slideshowIndexOffset));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          moveGalleryFocus("left");
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          moveGalleryFocus("right");
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          moveGalleryFocus("up");
+        } else if (event.key === "ArrowDown") {
+          event.preventDefault();
+          moveGalleryFocus("down");
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openSlideshow(index + slideshowIndexOffset);
+        }
+      });
+      fragment.appendChild(card);
     });
-    image.addEventListener("error", () => {
-      if (renderToken !== activeGalleryRenderToken) {
-        return;
-      }
 
-      card.classList.remove("is-loading");
-      pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
-      imageLoadFailures += 1;
-      image.style.opacity = "0.14";
-      setStatus(
-        `${imageLoadFailures} image${imageLoadFailures === 1 ? "" : "s"} failed to load. Direct Drive media access may be restricted for some files.`,
-        true
-      );
-      maybeStartBackgroundPreload(renderToken);
-    });
+    galleryEl.appendChild(fragment);
+    queueGalleryLayout();
 
-    card.appendChild(image);
-    card.addEventListener("click", () => openSlideshow(index + slideshowIndexOffset));
-    card.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        moveGalleryFocus("left");
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        moveGalleryFocus("right");
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        moveGalleryFocus("up");
-      } else if (event.key === "ArrowDown") {
-        event.preventDefault();
-        moveGalleryFocus("down");
-      } else if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        openSlideshow(index + slideshowIndexOffset);
-      }
-    });
-    galleryEl.appendChild(card);
-  });
+    const nextIndex = startIndex + slice.length;
+    if (nextIndex >= visiblePhotos.length) {
+      return;
+    }
 
-  queueGalleryLayout();
+    const queueNextBatch = () => appendPhotoBatch(nextIndex);
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(queueNextBatch, { timeout: 250 });
+    } else {
+      window.setTimeout(queueNextBatch, 32);
+    }
+  };
+
+  appendPhotoBatch(0);
 }
 
 function updateGalleryForSelectedFolder() {
@@ -1599,12 +1702,12 @@ async function loadFolder(folderUrl, options = {}) {
       throw new Error(data.error || "Failed to load Google Drive folder.");
     }
 
-    currentFolders = collectFolders(data.tree);
-    selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
-    const allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
-    coverPhoto = options.coverFileId
-      ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
-      : currentFolders[0]?.images?.[0] || null;
+    const folders = collectFolders(data.tree);
+    applyFolderState(folders, {
+      coverFileId: options.coverFileId,
+      rootName: data.tree?.name || "",
+      preservePath: options.preservePath,
+    });
     if (coverPhoto) {
       setLoadingState(true, "Loading your albums.", { progress: 62 });
       setLoadingCoverBackground(coverPhoto.url || coverPhoto.thumbnailUrl || "");
@@ -1615,13 +1718,6 @@ async function loadFolder(folderUrl, options = {}) {
         coverPreloader.onerror = resolve;
       });
     }
-    sharedFolderName = data.tree?.name || "";
-    if (!options.preservePath) {
-      syncHistoryForStep(3, true);
-    }
-    renderFolderTabs(currentFolders);
-    updateFolderSidePanel();
-    updateGalleryForSelectedFolder();
     setLoadingState(true, "Loading your albums.", { progress: 100 });
     await new Promise((resolve) => window.setTimeout(resolve, 140));
 
@@ -1647,6 +1743,64 @@ async function loadFolder(folderUrl, options = {}) {
     setGalleryErrorState(error.message || "We couldn't load the photos this time.");
     setStatus(error.message, true);
     setLoadingState(false);
+  }
+}
+
+async function loadSnapshot(snapshot, options = {}) {
+  setStatus("Opening the saved album preview...");
+  coverTagline = String(options.tagline || "").trim();
+  coverDateRange = String(options.eventDateRange || "").trim();
+  setActiveBranding(options.branding || {});
+  setLoadingCoverBackground(options.coverImageUrl || options.coverThumbnailUrl || "");
+  setActiveScreen(3, { skipHistory: Boolean(options.preservePath) });
+  resetGalleryLoadingShell();
+  setLoadingState(true, "Opening your gallery preview.", { progress: 24 });
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+  const folders = normalizeSnapshotFolders(snapshot);
+  if (!folders.length) {
+    throw new Error("This gallery preview is still being prepared.");
+  }
+
+  applyFolderState(folders, {
+    coverFileId: options.coverFileId,
+    rootName: snapshot?.rootName || "",
+    preservePath: options.preservePath,
+  });
+  setLoadingState(true, "Opening your gallery preview.", { progress: 100 });
+  await new Promise((resolve) => window.setTimeout(resolve, 80));
+  setStatus("Loaded saved album preview.");
+  setLoadingState(false);
+}
+
+async function revalidateFolder(folderUrl, options = {}) {
+  try {
+    const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to refresh Google Drive folder.");
+    }
+
+    if (!screenGallery.classList.contains("active") || !slideshowEl.classList.contains("hidden")) {
+      return;
+    }
+
+    const previousSelectedFolderId = selectedFolderId;
+    const folders = collectFolders(data.tree);
+    applyFolderState(folders, {
+      coverFileId: options.coverFileId,
+      rootName: data.tree?.name || "",
+      preservePath: true,
+    });
+
+    if (previousSelectedFolderId && currentFolders.some((folder) => folder.id === previousSelectedFolderId)) {
+      selectedFolderId = previousSelectedFolderId;
+      renderFolderTabs(currentFolders);
+      updateFolderSidePanel();
+      updateGalleryForSelectedFolder();
+    }
+  } catch (error) {
+    console.warn(error);
   }
 }
 
@@ -1747,6 +1901,8 @@ window.history.scrollRestoration = "manual";
 
 window.CarnivalGallery = {
   loadFolder,
+  loadSnapshot,
+  revalidateFolder,
   showError: showGalleryError,
   showLoading: showGalleryLoading,
   showLoadingPreview: showGalleryLoadingPreview,
