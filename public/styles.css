@@ -2836,6 +2836,18 @@ input[type="checkbox"]:checked {
     width: min(100%, 720px);
     max-width: 100%;
     margin: 0 auto;
+    padding-left: 16px;
+    padding-right: 16px;
+    box-sizing: border-box;
+  }
+
+  .studio-auth-panel,
+  .studio-name-panel {
+    width: min(100%, 720px);
+    max-width: 100%;
+    padding-left: 16px;
+    padding-right: 16px;
+    box-sizing: border-box;
   }
 
   .studio-dashboard-content {
