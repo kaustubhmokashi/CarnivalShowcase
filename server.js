@@ -727,6 +727,173 @@ function getParentDomainRedirectHost(hostname) {
   return labels.slice(1).join(".");
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildAbsoluteUrl(req, value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return "";
+  }
+
+  try {
+    return new URL(rawValue).toString();
+  } catch (error) {
+    return new URL(rawValue, `${getRequestProtocol(req)}://${req.headers.host}`).toString();
+  }
+}
+
+function parsePublicPageRequest(pathname, requestHost) {
+  const normalizedHost = normalizeHostname(requestHost);
+  const pathSegments = String(pathname || "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => decodeURIComponent(segment));
+
+  if (!pathSegments.length || pathSegments[0] === "studio") {
+    return null;
+  }
+
+  if (pathSegments.length >= 2) {
+    const studioSlug = pathSegments[0];
+    const pageSlug = pathSegments[1];
+    return {
+      studioSlug,
+      pageSlug,
+      publicPageId: `${studioSlug}__${pageSlug}`,
+      isCustomDomain: false,
+    };
+  }
+
+  if (!normalizedHost || !pathSegments[0]) {
+    return null;
+  }
+
+  return {
+    customDomain: normalizedHost,
+    pageSlug: pathSegments[0],
+    publicPageId: `${normalizedHost}__${pathSegments[0]}`,
+    isCustomDomain: true,
+  };
+}
+
+async function getPublicPageRecordById(publicPageId) {
+  if (!publicPageId) {
+    return null;
+  }
+
+  const db = getFirestoreDb();
+  if (db) {
+    const snapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
+    return snapshot.exists ? snapshot.data() || null : null;
+  }
+
+  if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
+    return null;
+  }
+
+  const documentUrl = new URL(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      FIREBASE_WEB_CONFIG.projectId
+    )}/databases/(default)/documents/${FIREBASE_COLLECTIONS.publicPages}/${encodeURIComponent(publicPageId)}`
+  );
+  documentUrl.searchParams.set("key", FIREBASE_WEB_CONFIG.apiKey);
+
+  const response = await fetch(documentUrl);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Public page lookup failed (${response.status}): ${body}`);
+  }
+
+  const document = await response.json();
+  return parseFirestoreFields(document.fields || {});
+}
+
+async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
+  const route = parsePublicPageRequest(requestUrl.pathname, requestHost);
+  if (!route?.publicPageId) {
+    return null;
+  }
+
+  let pageRecord = await getPublicPageRecordById(route.publicPageId);
+  if (pageRecord) {
+    return pageRecord;
+  }
+
+  if (route.isCustomDomain && route.customDomain) {
+    const customDomainRecord = await getCustomDomainRecord(route.customDomain);
+    const studioSlug = String(customDomainRecord?.studioSlug || "").trim();
+    if (studioSlug) {
+      pageRecord = await getPublicPageRecordById(`${studioSlug}__${route.pageSlug}`);
+      if (pageRecord) {
+        return pageRecord;
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildPageMetaTags(req, pageRecord) {
+  const pageName = String(pageRecord?.pageName || "").trim();
+  const studioName = String(pageRecord?.studioName || "").trim();
+  const tagline = String(pageRecord?.tagline || "").trim();
+  const title = tagline || pageName || "CarnivalShowcase";
+  const description =
+    tagline ||
+    [pageName, studioName].filter(Boolean).join(" · ") ||
+    "View this gallery on CarnivalShowcase.";
+  const imageUrl = buildAbsoluteUrl(
+    req,
+    pageRecord?.coverImageUrl || pageRecord?.coverThumbnailUrl || ""
+  );
+  const pageUrl = buildAbsoluteUrl(req, req.url || "/");
+
+  const metaTags = [
+    ["description", description, "name"],
+    ["og:type", "website", "property"],
+    ["og:title", title, "property"],
+    ["og:description", description, "property"],
+    ["og:url", pageUrl, "property"],
+    ["twitter:card", imageUrl ? "summary_large_image" : "summary", "name"],
+    ["twitter:title", title, "name"],
+    ["twitter:description", description, "name"],
+  ];
+
+  if (imageUrl) {
+    metaTags.push(["og:image", imageUrl, "property"]);
+    metaTags.push(["twitter:image", imageUrl, "name"]);
+  }
+
+  return {
+    title,
+    tags: metaTags
+      .filter(([, content]) => String(content || "").trim())
+      .map(([key, content, attribute]) => `    <meta ${attribute}="${escapeHtml(key)}" content="${escapeHtml(content)}" />`)
+      .join("\n"),
+  };
+}
+
+function injectPageMetadata(html, metadata) {
+  if (!metadata?.title) {
+    return html;
+  }
+
+  const titleTag = `<title>${escapeHtml(metadata.title)}</title>`;
+  const withTitle = html.replace(/<title>[\s\S]*?<\/title>/i, titleTag);
+  const metaBlock = `${metadata.tags}\n${titleTag}`;
+  return withTitle.replace(titleTag, metaBlock);
+}
+
 function hasFirebaseWebConfigEnv() {
   return Boolean(
     FIREBASE_WEB_CONFIG.apiKey &&
@@ -894,6 +1061,23 @@ function sendFile(res, filePath) {
     });
     res.end(content);
   });
+}
+
+async function sendIndexWithPageMetadata(req, res, filePath, pageRecord) {
+  try {
+    const html = await fs.promises.readFile(filePath, "utf8");
+    const metadata = buildPageMetaTags(req, pageRecord);
+    const content = injectPageMetadata(html, metadata);
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+    res.end(content);
+  } catch (error) {
+    sendJson(res, 500, { error: "Could not render page metadata." });
+  }
 }
 
 function sanitizePathname(pathname) {
@@ -1572,6 +1756,14 @@ const server = http.createServer(async (req, res) => {
   if (!filePath) {
     sendJson(res, 400, { error: "Invalid path." });
     return;
+  }
+
+  if (pathname === "/index.html") {
+    const pageRecord = await getPublicPageRecordForRequest(req, requestUrl, requestHost);
+    if (pageRecord) {
+      await sendIndexWithPageMetadata(req, res, filePath, pageRecord);
+      return;
+    }
   }
 
   sendFile(res, filePath);
