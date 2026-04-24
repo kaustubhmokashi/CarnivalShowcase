@@ -9,6 +9,9 @@
         !window.location.pathname.startsWith("/studio") &&
         /^\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
       window.CarnivalDefaultFavicon = "/favicon.svg?v=20260423";
+      if (window.CarnivalStudioPublicRoute) {
+        document.documentElement.classList.add("public-page-shell");
+      }
     </script>
     <link id="app-favicon" rel="icon" type="image/svg+xml" />
     <link id="app-favicon-shortcut" rel="shortcut icon" type="image/svg+xml" />

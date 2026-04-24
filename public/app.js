@@ -15,6 +15,7 @@ const galleryFolderPathEl = document.getElementById("gallery-folder-path");
 const photoCountEl = document.getElementById("photo-count");
 const galleryErrorStateEl = document.getElementById("gallery-error-state");
 const galleryErrorMessageEl = document.getElementById("gallery-error-message");
+const panelFaviconEl = document.querySelector(".panel-favicon");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
 const folderTabsShellEl = document.querySelector(".folder-tabs-shell");
@@ -718,7 +719,12 @@ function resolveBrandLogoSource(logoLink) {
     return `/api/image?id=${encodeURIComponent(fileId)}&mode=screen`;
   }
 
-  return String(logoLink || "").trim() || logoAssetPath;
+  const explicitLogo = String(logoLink || "").trim();
+  if (explicitLogo) {
+    return explicitLogo;
+  }
+
+  return window.CarnivalStudioPublicRoute ? "" : logoAssetPath;
 }
 
 function resolveBrandImageSource(imageLink) {
@@ -735,6 +741,10 @@ function setDocumentFavicon(faviconLink) {
   document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
     link.href = faviconSource;
   });
+
+  if (panelFaviconEl) {
+    panelFaviconEl.src = faviconSource;
+  }
 }
 
 function setLoadingCoverBackground(imageLink = "") {
@@ -779,6 +789,9 @@ function setActiveBranding(branding = {}) {
   document.documentElement.style.setProperty("--template-accent-soft", `rgba(${accentRgbValue}, 0.1)`);
   document.documentElement.style.setProperty("--template-accent-line", `rgba(${accentRgbValue}, 0.18)`);
   setDocumentFavicon(activeBranding.faviconLink);
+  if (window.CarnivalStudioPublicRoute) {
+    document.documentElement.classList.add("public-page-brand-ready");
+  }
 }
 
 function renderCoverChrome() {

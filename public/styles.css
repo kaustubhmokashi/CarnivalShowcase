@@ -142,6 +142,12 @@ label:focus-within {
   object-fit: contain;
 }
 
+.public-page-shell:not(.public-page-brand-ready) .cover-logo-link,
+.public-page-shell:not(.public-page-brand-ready) .panel-favicon,
+.public-page-shell:not(.public-page-brand-ready) .gallery-error-logo {
+  opacity: 0;
+}
+
 .brand-lockup {
   font-family: "Work Sans", sans-serif;
   font-size: 0.92rem;
