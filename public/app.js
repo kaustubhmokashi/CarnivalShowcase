@@ -1035,6 +1035,14 @@ function getSelectedFolder() {
   return currentFolders.find((folder) => folder.id === selectedFolderId) || null;
 }
 
+function updateFolderTabsVisibility(folders = currentFolders) {
+  if (!folderTabsShellEl) {
+    return;
+  }
+
+  folderTabsShellEl.classList.toggle("hidden", (folders?.length || 0) <= 1);
+}
+
 function updateFolderSidePanel() {
   const folder = getSelectedFolder();
   if (selectedGridFolderEl) {
@@ -1043,9 +1051,10 @@ function updateFolderSidePanel() {
 }
 
 function renderFolderTabs(folders) {
+  updateFolderTabsVisibility(folders);
   folderTabsEl.innerHTML = "";
 
-  if (!folders.length) {
+  if (folders.length <= 1) {
     folderTabsEl.innerHTML = "";
     return;
   }
