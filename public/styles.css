@@ -1745,8 +1745,8 @@ input[type="checkbox"]:checked {
   .cover-story-copy {
     left: 50%;
     right: auto;
-    width: calc(100vw - 32px);
-    max-width: calc(100vw - 32px);
+    width: var(--cover-copy-width, calc(100% - 32px));
+    max-width: calc(100% - 32px);
     bottom: calc(50px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
     justify-items: center;
@@ -1910,8 +1910,8 @@ input[type="checkbox"]:checked {
   .cover-story-copy {
     left: 50%;
     right: auto;
-    width: calc(100vw - 32px);
-    max-width: calc(100vw - 32px);
+    width: var(--cover-copy-width, calc(100% - 32px));
+    max-width: calc(100% - 32px);
     bottom: calc(50px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
     gap: 18px;
