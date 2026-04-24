@@ -690,10 +690,13 @@ function renderSavedPagesTable() {
   savedPages.forEach((page) => {
     const card = document.createElement("article");
     card.className = "saved-page-card";
+    card.tabIndex = 0;
+    card.setAttribute("role", "link");
+    card.setAttribute("aria-label", `Open ${page.pageName || "page"} in a new tab`);
     const pageUrl = getPageUrl(page);
     const thumbnail = page.coverThumbnailUrl || page.coverImageUrl || "";
     card.innerHTML = `
-      <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" aria-label="Open ${escapeMarkup(page.pageName || "page")}">
+      <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">
         ${thumbnail ? `<img src="${escapeMarkup(thumbnail)}" alt="" loading="lazy" />` : ""}
       </a>
       <div class="saved-page-content">
@@ -712,6 +715,27 @@ function renderSavedPagesTable() {
         </div>
       </div>
     `;
+    const openPageInNewTab = () => {
+      window.open(pageUrl, "_blank", "noopener,noreferrer");
+    };
+    card.addEventListener("click", (event) => {
+      const interactiveTarget = event.target instanceof Element ? event.target.closest("button, a") : null;
+      if (interactiveTarget) {
+        return;
+      }
+      openPageInNewTab();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      const interactiveTarget = event.target instanceof Element ? event.target.closest("button, a") : null;
+      if (interactiveTarget) {
+        return;
+      }
+      event.preventDefault();
+      openPageInNewTab();
+    });
     card.querySelector('[data-action="copy"]')?.addEventListener("click", async () => {
       try {
         await copyTextToClipboard(pageUrl);
