@@ -842,6 +842,10 @@ function updateCoverStoryLayout() {
   }
 
   coverTaglineEl.style.removeProperty("--cover-tagline-size");
+  if (!window.matchMedia("(max-width: 900px)").matches) {
+    return;
+  }
+
   const baseFontSize =
     Number.parseFloat(coverTaglineEl.dataset.baseFontSize || "") ||
     Number.parseFloat(window.getComputedStyle(coverTaglineEl).fontSize) ||
