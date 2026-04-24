@@ -841,15 +841,6 @@ function updateCoverStoryLayout() {
   coverTaglineEl.style.removeProperty("--cover-tagline-size");
   coverCopyEl.style.removeProperty("--cover-copy-width");
   coverTaglineEl.style.removeProperty("width");
-  if (!window.matchMedia("(max-width: 720px)").matches) {
-    return;
-  }
-
-  const coverWidth = coverPhotoEl.clientWidth || coverPhotoEl.getBoundingClientRect().width || window.innerWidth;
-  const availableWidth = Math.max(0, Math.min(window.innerWidth, coverWidth) - 32);
-  if (availableWidth > 0) {
-    coverCopyEl.style.setProperty("--cover-copy-width", `${availableWidth}px`);
-  }
 }
 
 function bindCoverSettingsButton() {
