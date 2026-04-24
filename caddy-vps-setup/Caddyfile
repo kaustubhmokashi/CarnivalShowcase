@@ -1,0 +1,21 @@
+{
+	email admin@example.com
+
+	on_demand_tls {
+		ask http://127.0.0.1:3000/api/domain/allow
+	}
+}
+
+your-vps-domain.example.com {
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:3000
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:3000
+}

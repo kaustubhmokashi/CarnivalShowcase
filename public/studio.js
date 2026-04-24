@@ -1843,7 +1843,11 @@ connectDomainForm?.addEventListener("submit", async (event) => {
     hydrateStudioSettingsForms();
     updateDomainSummary();
     renderSavedPagesTable();
-    setStudioStatus(connectDomainStatus, "Domain saved.");
+    closeConnectDomainPage();
+    setStudioStatus(
+      studioAccountStatus,
+      "Custom domains take a few minutes to get activated"
+    );
   } catch (error) {
     setStudioStatus(connectDomainStatus, error.message || "Could not save domain.", true);
   }

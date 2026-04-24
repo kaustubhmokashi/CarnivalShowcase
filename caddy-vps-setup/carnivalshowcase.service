@@ -1,0 +1,18 @@
+[Unit]
+Description=CarnivalShowcase Node Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/carnivalshowcase
+EnvironmentFile=/etc/carnivalshowcase/carnivalshowcase.env
+ExecStart=/usr/bin/node /var/www/carnivalshowcase/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

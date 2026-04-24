@@ -209,6 +209,86 @@ function getFirestoreDb() {
   return firestoreDb;
 }
 
+function parseFirestoreValue(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  if ("stringValue" in value) {
+    return value.stringValue;
+  }
+  if ("booleanValue" in value) {
+    return Boolean(value.booleanValue);
+  }
+  if ("integerValue" in value) {
+    return Number(value.integerValue);
+  }
+  if ("doubleValue" in value) {
+    return Number(value.doubleValue);
+  }
+  if ("timestampValue" in value) {
+    return value.timestampValue;
+  }
+  if ("nullValue" in value) {
+    return null;
+  }
+  if ("mapValue" in value) {
+    return parseFirestoreFields(value.mapValue.fields || {});
+  }
+  if ("arrayValue" in value) {
+    return (value.arrayValue.values || []).map((entry) => parseFirestoreValue(entry));
+  }
+
+  return null;
+}
+
+function parseFirestoreFields(fields) {
+  return Object.fromEntries(
+    Object.entries(fields || {}).map(([key, value]) => [key, parseFirestoreValue(value)])
+  );
+}
+
+async function getCustomDomainRecord(domain) {
+  const normalizedDomain = normalizeHostname(domain);
+  if (!normalizedDomain) {
+    return null;
+  }
+
+  const db = getFirestoreDb();
+  if (db) {
+    const snapshot = await db.collection(FIREBASE_COLLECTIONS.customDomains).doc(normalizedDomain).get();
+    if (!snapshot.exists) {
+      return null;
+    }
+    return snapshot.data() || null;
+  }
+
+  if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
+    return null;
+  }
+
+  const documentUrl = new URL(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      FIREBASE_WEB_CONFIG.projectId
+    )}/databases/(default)/documents/${FIREBASE_COLLECTIONS.customDomains}/${encodeURIComponent(
+      normalizedDomain
+    )}`
+  );
+  documentUrl.searchParams.set("key", FIREBASE_WEB_CONFIG.apiKey);
+
+  const response = await fetch(documentUrl);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Custom domain lookup failed (${response.status}): ${body}`);
+  }
+
+  const document = await response.json();
+  return parseFirestoreFields(document.fields || {});
+}
+
 function isExpired(createdAt) {
   const timestamp = Date.parse(createdAt || "");
   if (Number.isNaN(timestamp)) {
@@ -1154,6 +1234,50 @@ async function handleDomainVerification(req, res) {
   }
 }
 
+async function handleDomainAllowance(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const domain = normalizeHostname(requestUrl.searchParams.get("domain") || "");
+  const expectedTarget = getExpectedCustomDomainTarget(req);
+
+  if (!domain) {
+    sendJson(res, 400, { ok: false, error: "Missing domain query parameter." });
+    return;
+  }
+
+  if (
+    domain === "localhost" ||
+    domain === "127.0.0.1" ||
+    domain === "0.0.0.0" ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(domain)
+  ) {
+    sendJson(res, 403, { ok: false, error: "Local or IP-based hosts are not eligible." });
+    return;
+  }
+
+  if (expectedTarget && domain === expectedTarget) {
+    sendJson(res, 200, { ok: true, domain, source: "platform-host" });
+    return;
+  }
+
+  try {
+    const record = await getCustomDomainRecord(domain);
+    if (!record) {
+      sendJson(res, 403, { ok: false, error: "Domain is not connected to any studio." });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      domain,
+      source: "custom-domain",
+      studioSlug: record.studioSlug || "",
+      uid: record.uid || "",
+    });
+  } catch (error) {
+    sendJson(res, 503, { ok: false, error: error.message || "Domain lookup failed." });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const requestHost = normalizeHostname((req.headers.host || "").split(":")[0]);
@@ -1195,6 +1319,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/domain/verify") {
     await handleDomainVerification(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/domain/allow") {
+    await handleDomainAllowance(req, res);
     return;
   }
 
