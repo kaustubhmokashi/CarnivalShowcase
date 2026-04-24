@@ -769,6 +769,11 @@ label:focus-within {
   background-size: cover;
 }
 
+.cover-photo.has-loading-background .empty-sequence,
+.cover-photo.has-cover-image .empty-sequence {
+  display: none;
+}
+
 .gallery-screen.loading.has-loading-cover .cover-photo::before {
   content: "";
   position: absolute;
@@ -865,6 +870,8 @@ label:focus-within {
   font-size: 80px;
   font-weight: 400;
   line-height: 1.05;
+  white-space: nowrap;
+  font-size: var(--cover-tagline-size, 80px);
 }
 
 .gallery-screen .hud-top {
@@ -1075,10 +1082,31 @@ label:focus-within {
   height: 14px;
   display: none;
   place-items: center;
+  position: relative;
   flex: 0 0 14px;
-  font-size: 14px;
-  line-height: 1;
   color: rgba(var(--template-accent-rgb), 0.72);
+}
+
+.gallery-settings-icon::before,
+.gallery-settings-icon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.gallery-settings-icon::before {
+  inset: 3px;
+  border: 1.6px solid currentColor;
+}
+
+.gallery-settings-icon::after {
+  inset: 0;
+  background:
+    linear-gradient(currentColor 0 0) center/1.5px 100% no-repeat,
+    linear-gradient(currentColor 0 0) center/100% 1.5px no-repeat,
+    linear-gradient(currentColor 0 0) center/1.5px 100% no-repeat;
+  transform: rotate(45deg);
 }
 
 .gallery-settings-text {
@@ -1536,9 +1564,9 @@ input[type="checkbox"]:checked {
   .cover-story-copy {
     left: 28px;
     right: 28px;
-    top: 50%;
-    bottom: auto;
-    transform: translateY(-50%);
+    top: auto;
+    bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+    transform: none;
     gap: 10px;
   }
 
@@ -1611,6 +1639,7 @@ input[type="checkbox"]:checked {
   .cover-story-copy {
     left: 24px;
     right: 24px;
+    bottom: calc(50px + env(safe-area-inset-bottom, 0px));
   }
 
   .cover-date-range {
@@ -1745,6 +1774,7 @@ input[type="checkbox"]:checked {
   .cover-story-copy {
     left: 18px;
     right: 18px;
+    bottom: calc(50px + env(safe-area-inset-bottom, 0px));
     gap: 8px;
   }
 

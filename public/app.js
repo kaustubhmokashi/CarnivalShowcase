@@ -818,12 +818,48 @@ function renderCoverChrome() {
     <div class="empty-sequence">Your photos will show up here shortly.</div>
     ${coverCopy}
     <button id="toggle-gallery-settings" type="button" class="icon-action gallery-settings-button cover-settings-button" aria-label="Open slideshow settings">
-      <span class="gallery-settings-icon" aria-hidden="true">⚙</span>
+      <span class="gallery-settings-icon" aria-hidden="true"></span>
       <span class="gallery-settings-text">Slideshow settings</span>
     </button>
   `;
   toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
   bindCoverSettingsButton();
+  window.requestAnimationFrame(() => {
+    updateCoverStoryLayout();
+  });
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(() => {
+      updateCoverStoryLayout();
+    });
+  }
+}
+
+function updateCoverStoryLayout() {
+  const coverCopyEl = coverPhotoEl?.querySelector(".cover-story-copy");
+  const coverTaglineEl = coverCopyEl?.querySelector(".cover-tagline");
+  if (!coverCopyEl || !coverTaglineEl) {
+    return;
+  }
+
+  coverTaglineEl.style.removeProperty("--cover-tagline-size");
+  const baseFontSize =
+    Number.parseFloat(coverTaglineEl.dataset.baseFontSize || "") ||
+    Number.parseFloat(window.getComputedStyle(coverTaglineEl).fontSize) ||
+    80;
+  coverTaglineEl.dataset.baseFontSize = String(baseFontSize);
+
+  const availableWidth = Math.max(coverCopyEl.clientWidth - 4, 0);
+  if (!availableWidth) {
+    return;
+  }
+
+  const measuredWidth = coverTaglineEl.scrollWidth;
+  if (!measuredWidth) {
+    return;
+  }
+
+  const fittedFontSize = Math.max(24, Math.floor(baseFontSize * Math.min(1, availableWidth / measuredWidth)));
+  coverTaglineEl.style.setProperty("--cover-tagline-size", `${fittedFontSize}px`);
 }
 
 function bindCoverSettingsButton() {
@@ -1928,6 +1964,7 @@ document.addEventListener("keydown", handleKeydown);
 window.addEventListener("resize", updateSlideshowActionVisibility);
 window.addEventListener("resize", queueGalleryLayout);
 window.addEventListener("resize", updateScrollTopButtonVisibility);
+window.addEventListener("resize", updateCoverStoryLayout);
 window.addEventListener("scroll", updateScrollTopButtonVisibility, { passive: true });
 window.history.scrollRestoration = "manual";
 
