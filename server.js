@@ -453,6 +453,44 @@ function getDomainHostLabel(domain) {
   return normalizedDomain ? normalizedDomain.split(".")[0] || "album" : "album";
 }
 
+function getRequestProtocol(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  if (forwardedProto) {
+    return forwardedProto;
+  }
+
+  const hostName = normalizeHostname((req.headers.host || "").split(":")[0]);
+  if (
+    hostName &&
+    hostName !== "localhost" &&
+    hostName !== "127.0.0.1" &&
+    hostName !== "0.0.0.0"
+  ) {
+    return "https";
+  }
+
+  return "http";
+}
+
+function getParentDomainRedirectHost(hostname) {
+  const normalizedHost = normalizeHostname(hostname);
+  if (
+    !normalizedHost ||
+    normalizedHost === "localhost" ||
+    normalizedHost === "127.0.0.1" ||
+    normalizedHost.endsWith(".onrender.com")
+  ) {
+    return "";
+  }
+
+  const labels = normalizedHost.split(".");
+  if (labels.length < 3) {
+    return "";
+  }
+
+  return labels.slice(1).join(".");
+}
+
 function hasFirebaseWebConfigEnv() {
   return Boolean(
     FIREBASE_WEB_CONFIG.apiKey &&
@@ -1116,6 +1154,7 @@ async function handleDomainVerification(req, res) {
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const requestHost = normalizeHostname((req.headers.host || "").split(":")[0]);
 
   if (requestUrl.pathname === "/firebase-config.js") {
     sendFirebaseConfigScript(res);
@@ -1155,6 +1194,16 @@ const server = http.createServer(async (req, res) => {
   if (requestUrl.pathname === "/api/domain/verify") {
     await handleDomainVerification(req, res);
     return;
+  }
+
+  if (requestUrl.pathname === "/") {
+    const parentDomainHost = getParentDomainRedirectHost(requestHost);
+    if (parentDomainHost) {
+      const redirectUrl = `${getRequestProtocol(req)}://${parentDomainHost}${requestUrl.search || ""}`;
+      res.writeHead(302, { Location: redirectUrl, "Cache-Control": "no-store" });
+      res.end();
+      return;
+    }
   }
 
   const pathname = resolveStaticPathname(requestUrl.pathname);
