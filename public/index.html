@@ -42,15 +42,20 @@
 
         <div class="link-stage">
           <form id="direct-link-form" class="link-form direct-link-form">
-            <input
-              id="direct-link-input"
-              name="direct-link-input"
-              type="text"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              placeholder="ENTER YOUR PAIRING CODE"
-              required
-            />
+            <div class="direct-link-control">
+              <input
+                id="direct-link-input"
+                name="direct-link-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                placeholder="ENTER YOUR PAIRING CODE"
+                required
+              />
+              <button type="submit" class="direct-link-submit" aria-label="Open gallery">
+                <span class="icon-mask icon-arrow-right" aria-hidden="true"></span>
+              </button>
+            </div>
           </form>
           <p class="link-instruction">
             Put your pairing code here
@@ -335,6 +340,9 @@
 
             <div class="folder-tabs-shell">
               <div id="folder-tabs" class="folder-tabs" aria-label="Folders"></div>
+            </div>
+            <div id="folder-tabs-sticky-shell" class="folder-tabs-sticky-shell hidden" aria-hidden="true">
+              <div id="folder-tabs-sticky" class="folder-tabs folder-tabs-sticky" aria-label="Folders"></div>
             </div>
 
             <div id="gallery" class="gallery-grid">

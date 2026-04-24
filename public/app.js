@@ -19,6 +19,8 @@ const panelFaviconEl = document.querySelector(".panel-favicon");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
 const folderTabsShellEl = document.querySelector(".folder-tabs-shell");
+const folderTabsStickyEl = document.getElementById("folder-tabs-sticky");
+const folderTabsStickyShellEl = document.getElementById("folder-tabs-sticky-shell");
 const scrollToTopButton = document.getElementById("scroll-to-top-button");
 let toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
 const toggleSlideshowSettingsButton = document.getElementById("toggle-slideshow-settings");
@@ -981,6 +983,7 @@ function setActiveScreen(step, options = {}) {
 
   window.scrollTo(0, 0);
   updateScrollTopButtonVisibility();
+  updateStickyFolderTabsVisibility();
 
   if (step === 1) {
     focusElement(directLinkInput);
@@ -1006,6 +1009,34 @@ function updateScrollTopButtonVisibility() {
 
   const shouldShow = galleryIsActive && !slideshowIsOpen && !galleryIsLoading && !galleryHasError && passedCoverPhoto;
   scrollToTopButton.classList.toggle("hidden", !shouldShow);
+}
+
+function isCompactGalleryViewport() {
+  return window.matchMedia("(max-width: 720px)").matches;
+}
+
+function updateStickyFolderTabsVisibility() {
+  if (!folderTabsStickyShellEl || !folderTabsShellEl) {
+    return;
+  }
+
+  const hasMultipleFolders = (currentFolders?.length || 0) > 1;
+  const galleryIsActive = screenGallery.classList.contains("active");
+  const slideshowIsOpen = !slideshowEl.classList.contains("hidden");
+  const galleryIsLoading = screenGallery.classList.contains("loading");
+  const galleryHasError = screenGallery.classList.contains("error-state");
+  const tabsRect = folderTabsShellEl.getBoundingClientRect();
+  const showStickyTabs =
+    isCompactGalleryViewport() &&
+    hasMultipleFolders &&
+    galleryIsActive &&
+    !slideshowIsOpen &&
+    !galleryIsLoading &&
+    !galleryHasError &&
+    tabsRect.bottom <= 0;
+
+  folderTabsStickyShellEl.classList.toggle("hidden", !showStickyTabs);
+  folderTabsStickyShellEl.setAttribute("aria-hidden", showStickyTabs ? "false" : "true");
 }
 
 function collectFolders(node, parentPath = "") {
@@ -1061,7 +1092,10 @@ function updateFolderTabsVisibility(folders = currentFolders) {
     return;
   }
 
-  folderTabsShellEl.classList.toggle("hidden", (folders?.length || 0) <= 1);
+  const shouldHide = (folders?.length || 0) <= 1;
+  folderTabsShellEl.classList.toggle("hidden", shouldHide);
+  folderTabsStickyShellEl?.classList.toggle("hidden", true);
+  folderTabsStickyShellEl?.setAttribute("aria-hidden", "true");
 }
 
 function updateFolderSidePanel() {
@@ -1071,53 +1105,66 @@ function updateFolderSidePanel() {
   }
 }
 
-function renderFolderTabs(folders) {
-  updateFolderTabsVisibility(folders);
-  folderTabsEl.innerHTML = "";
-
-  if (folders.length <= 1) {
-    folderTabsEl.innerHTML = "";
-    return;
-  }
-
-  folders.forEach((folder) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `folder-tab${folder.id === selectedFolderId ? " selected" : ""}`;
-    button.textContent = folder.name;
-    button.addEventListener("click", () => {
+function buildFolderTabButton(folder) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `folder-tab${folder.id === selectedFolderId ? " selected" : ""}`;
+  button.textContent = folder.name;
+  button.addEventListener("click", () => {
+    selectedFolderId = folder.id;
+    renderFolderTabs(currentFolders);
+    updateFolderSidePanel();
+    updateGalleryForSelectedFolder();
+  });
+  button.addEventListener("focus", () => {
+    button.scrollIntoView({ block: "nearest", inline: "center" });
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveFolderTabFocus("down");
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveFolderTabFocus("up");
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveFolderTabFocus("left");
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveFolderTabFocus("right");
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
       selectedFolderId = folder.id;
       renderFolderTabs(currentFolders);
       updateFolderSidePanel();
       updateGalleryForSelectedFolder();
-    });
-    button.addEventListener("focus", () => {
-      button.scrollIntoView({ block: "nearest" });
-    });
-    button.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        moveFolderTabFocus("down");
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        moveFolderTabFocus("up");
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        moveFolderTabFocus("left");
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        moveFolderTabFocus("right");
-      } else if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        selectedFolderId = folder.id;
-        renderFolderTabs(currentFolders);
-        updateFolderSidePanel();
-        updateGalleryForSelectedFolder();
-        setActiveScreen(3);
-      }
-    });
-    folderTabsEl.appendChild(button);
+      setActiveScreen(3);
+    }
   });
+  return button;
+}
+
+function renderFolderTabs(folders) {
+  updateFolderTabsVisibility(folders);
+  folderTabsEl.innerHTML = "";
+  if (folderTabsStickyEl) {
+    folderTabsStickyEl.innerHTML = "";
+  }
+
+  if (folders.length <= 1) {
+    folderTabsEl.innerHTML = "";
+    if (folderTabsStickyEl) {
+      folderTabsStickyEl.innerHTML = "";
+    }
+    return;
+  }
+
+  folders.forEach((folder) => {
+    folderTabsEl.appendChild(buildFolderTabButton(folder));
+    folderTabsStickyEl?.appendChild(buildFolderTabButton(folder));
+  });
+
+  updateStickyFolderTabsVisibility();
 }
 
 function renderGallery(photoItems) {
@@ -1645,6 +1692,7 @@ function openSlideshow(index = 0) {
   updateSlideshowActionVisibility();
   slideshowEl.classList.remove("hidden");
   slideshowEl.setAttribute("aria-hidden", "false");
+  updateStickyFolderTabsVisibility();
   showSlide(index);
   if (slideshowToastEl && !window.matchMedia("(max-width: 900px)").matches) {
     slideshowToastEl.classList.remove("hidden");
@@ -1667,6 +1715,7 @@ function closeSlideshow() {
   resetSlideshowVideoState();
   slideshowEl.classList.add("hidden");
   slideshowEl.setAttribute("aria-hidden", "true");
+  updateStickyFolderTabsVisibility();
   if (slideshowToastEl) {
     slideshowToastEl.classList.add("hidden");
   }
@@ -1953,6 +2002,8 @@ window.addEventListener("resize", queueGalleryLayout);
 window.addEventListener("resize", updateScrollTopButtonVisibility);
 window.addEventListener("resize", updateCoverStoryLayout);
 window.addEventListener("scroll", updateScrollTopButtonVisibility, { passive: true });
+window.addEventListener("scroll", updateStickyFolderTabsVisibility, { passive: true });
+window.addEventListener("resize", updateStickyFolderTabsVisibility);
 window.history.scrollRestoration = "manual";
 
 window.CarnivalGallery = {
