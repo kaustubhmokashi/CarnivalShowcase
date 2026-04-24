@@ -5,9 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CarnivalShowcase</title>
     <script>
-      window.CarnivalStudioPublicRoute =
-        !window.location.pathname.startsWith("/studio") &&
-        /^\/[^/]+\/[^/]+\/?$/.test(window.location.pathname);
+      (() => {
+        const pathSegments = window.location.pathname.split("/").filter(Boolean);
+        const firstSegment = pathSegments[0] || "";
+        const reservedRoutes = new Set(["studio", "privacy-policy", "remote", "remote-tv", "remote-firebase"]);
+        window.CarnivalStudioPublicRoute =
+          !reservedRoutes.has(firstSegment) &&
+          (pathSegments.length === 1 || pathSegments.length >= 2);
+      })();
       window.CarnivalDefaultFavicon = "/favicon.svg?v=20260424b";
       if (window.CarnivalStudioPublicRoute) {
         document.documentElement.classList.add("public-page-shell");
