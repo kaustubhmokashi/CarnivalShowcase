@@ -980,10 +980,10 @@ function updateScrollTopButtonVisibility() {
   const slideshowIsOpen = !slideshowEl.classList.contains("hidden");
   const galleryIsLoading = screenGallery.classList.contains("loading");
   const galleryHasError = screenGallery.classList.contains("error-state");
-  const tabsRect = folderTabsShellEl?.getBoundingClientRect();
-  const passedCoverAndTabs = Boolean(tabsRect && tabsRect.bottom <= 0);
+  const coverRect = coverPhotoEl?.getBoundingClientRect();
+  const passedCoverPhoto = Boolean(coverRect && coverRect.bottom <= 0);
 
-  const shouldShow = galleryIsActive && !slideshowIsOpen && !galleryIsLoading && !galleryHasError && passedCoverAndTabs;
+  const shouldShow = galleryIsActive && !slideshowIsOpen && !galleryIsLoading && !galleryHasError && passedCoverPhoto;
   scrollToTopButton.classList.toggle("hidden", !shouldShow);
 }
 
@@ -1173,6 +1173,10 @@ function renderGallery(photoItems) {
       image.alt = photo.name;
       image.loading = "lazy";
       image.fetchPriority = index < INITIAL_GALLERY_BATCH_SIZE ? "high" : "low";
+      const fallbackSources = [photo.thumbnailUrl, photo.slideshowUrl, photo.url]
+        .filter(Boolean)
+        .filter((source, sourceIndex, sources) => sources.indexOf(source) === sourceIndex);
+      let fallbackSourceIndex = 0;
       image.addEventListener("load", () => {
         if (renderToken !== activeGalleryRenderToken) {
           return;
@@ -1189,6 +1193,12 @@ function renderGallery(photoItems) {
       });
       image.addEventListener("error", () => {
         if (renderToken !== activeGalleryRenderToken) {
+          return;
+        }
+
+        if (fallbackSourceIndex < fallbackSources.length - 1) {
+          fallbackSourceIndex += 1;
+          image.src = fallbackSources[fallbackSourceIndex];
           return;
         }
 
