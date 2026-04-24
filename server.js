@@ -474,11 +474,13 @@ function getRequestProtocol(req) {
 
 function getParentDomainRedirectHost(hostname) {
   const normalizedHost = normalizeHostname(hostname);
+  const configuredTarget = normalizeHostname(CUSTOM_DOMAIN_CNAME_TARGET);
   if (
     !normalizedHost ||
     normalizedHost === "localhost" ||
     normalizedHost === "127.0.0.1" ||
-    normalizedHost.endsWith(".onrender.com")
+    normalizedHost.endsWith(".onrender.com") ||
+    (configuredTarget && normalizedHost === configuredTarget)
   ) {
     return "";
   }
