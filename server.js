@@ -1,4 +1,5 @@
 const http = require("http");
+const dns = require("dns").promises;
 const os = require("os");
 const fs = require("fs");
 const path = require("path");
@@ -78,6 +79,7 @@ const FIREBASE_COLLECTIONS = {
   pairingCodes: process.env.FIREBASE_PAIRINGCODES_COLLECTION || "pairingCodes",
   customDomains: process.env.FIREBASE_CUSTOMDOMAINS_COLLECTION || "customDomains",
 };
+const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
@@ -426,6 +428,29 @@ function sendJson(res, statusCode, payload) {
     "Content-Length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function normalizeHostname(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/:\d+$/, "")
+    .replace(/\.+$/, "");
+}
+
+function getExpectedCustomDomainTarget(req) {
+  const configuredTarget = normalizeHostname(CUSTOM_DOMAIN_CNAME_TARGET);
+  if (configuredTarget) {
+    return configuredTarget;
+  }
+
+  return normalizeHostname((req.headers.host || "").split(":")[0]);
+}
+
+function getDomainHostLabel(domain) {
+  const normalizedDomain = normalizeHostname(domain);
+  return normalizedDomain ? normalizedDomain.split(".")[0] || "album" : "album";
 }
 
 function hasFirebaseWebConfigEnv() {
@@ -1031,6 +1056,59 @@ async function handlePairingOrigin(req, res) {
   sendJson(res, 200, { origin });
 }
 
+async function handleDomainVerification(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const domain = normalizeHostname(requestUrl.searchParams.get("domain") || "");
+  const expectedTarget = getExpectedCustomDomainTarget(req);
+
+  if (!domain) {
+    sendJson(res, 200, {
+      ok: false,
+      domain: "",
+      host: "album",
+      expectedTarget,
+      message: "Enter your album domain to verify its DNS settings.",
+    });
+    return;
+  }
+
+  if (!expectedTarget || expectedTarget === "localhost" || expectedTarget === "127.0.0.1") {
+    sendJson(res, 200, {
+      ok: false,
+      domain,
+      host: getDomainHostLabel(domain),
+      expectedTarget,
+      message: "DNS verification is only available on your deployed environment.",
+    });
+    return;
+  }
+
+  try {
+    const cnameRecords = await dns.resolveCname(domain);
+    const normalizedRecords = cnameRecords.map((record) => normalizeHostname(record));
+    const isMatch = normalizedRecords.includes(expectedTarget);
+
+    sendJson(res, 200, {
+      ok: isMatch,
+      domain,
+      host: getDomainHostLabel(domain),
+      expectedTarget,
+      records: normalizedRecords,
+      message: isMatch
+        ? "DNS verified."
+        : `We found ${normalizedRecords.join(", ") || "no CNAME record"}, but this domain must point to ${expectedTarget}.`,
+    });
+  } catch (error) {
+    sendJson(res, 200, {
+      ok: false,
+      domain,
+      host: getDomainHostLabel(domain),
+      expectedTarget,
+      message: `We couldn't find a valid CNAME for ${domain} yet. Point it to ${expectedTarget} and try again.`,
+    });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
 
@@ -1066,6 +1144,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/remote/delete" && req.method === "POST") {
     await handleDeleteRemoteCode(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/domain/verify") {
+    await handleDomainVerification(req, res);
     return;
   }
 

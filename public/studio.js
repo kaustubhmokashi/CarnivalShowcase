@@ -68,7 +68,15 @@ const brandingCustomDomain = document.getElementById("branding-custom-domain");
 const studioBrandingStatus = document.getElementById("studio-branding-status");
 const studioAccountForm = document.getElementById("studio-account-form");
 const accountStudioName = document.getElementById("account-studio-name");
+const accountConnectDomainButton = document.getElementById("account-connect-domain");
+const studioDomainCopy = document.getElementById("studio-domain-copy");
 const studioAccountStatus = document.getElementById("studio-account-status");
+const connectDomainPanel = document.getElementById("connect-domain-panel");
+const connectDomainForm = document.getElementById("connect-domain-form");
+const connectDomainHost = document.getElementById("connect-domain-host");
+const connectDomainTarget = document.getElementById("connect-domain-target");
+const connectDomainStatus = document.getElementById("connect-domain-status");
+const closeConnectDomainButton = document.getElementById("close-connect-domain");
 const savedPagesTable = document.getElementById("saved-pages-table");
 const studioToast = document.getElementById("studio-toast");
 const createPageButton = document.getElementById("create-page-button");
@@ -454,6 +462,10 @@ function getStudioRoute() {
     return { name: "home" };
   }
 
+  if (pathSegments[1] === "connect-domain") {
+    return { name: "connect-domain" };
+  }
+
   if (pathSegments[1] === "create") {
     return { name: "create" };
   }
@@ -531,12 +543,63 @@ function showStudioDashboardSection(section) {
   studioAccountSection?.classList.toggle("active", activeSection === "account");
 }
 
+function getDomainPreviewPath() {
+  const customDomain = normalizeCustomDomain(brandingCustomDomain?.value || currentProfile?.branding?.customDomain || "");
+  if (customDomain) {
+    return `<strong>${escapeMarkup(customDomain)}/<span>Page Name</span></strong>`;
+  }
+
+  const platformHost = escapeMarkup(window.location.host);
+  const studioSlug = escapeMarkup(currentProfile?.studioSlug || "studioname");
+  return `<strong>${platformHost}/${studioSlug}/<span>Page Name</span></strong>`;
+}
+
+function getDomainConnectTarget() {
+  return connectDomainTarget?.dataset.expectedTarget || window.location.host;
+}
+
+function updateDomainSummary() {
+  if (studioDomainCopy) {
+    studioDomainCopy.innerHTML = `You are currently using<br>${getDomainPreviewPath()}`;
+  }
+
+  const customDomain = normalizeCustomDomain(brandingCustomDomain?.value || currentProfile?.branding?.customDomain || "");
+  if (accountConnectDomainButton) {
+    accountConnectDomainButton.textContent = customDomain ? "Remove domain" : "Connect your domain";
+    accountConnectDomainButton.dataset.mode = customDomain ? "remove" : "connect";
+  }
+  if (connectDomainHost) {
+    connectDomainHost.textContent = customDomain ? customDomain.split(".")[0] : "album";
+  }
+  if (connectDomainTarget) {
+    connectDomainTarget.textContent = getDomainConnectTarget();
+  }
+}
+
+async function refreshDomainVerificationPreview(domainValue = "") {
+  if (!connectDomainTarget || !connectDomainHost) {
+    return null;
+  }
+
+  const response = await fetch(`/api/domain/verify?domain=${encodeURIComponent(domainValue)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Could not verify domain settings.");
+  }
+
+  connectDomainHost.textContent = data.host || "album";
+  connectDomainTarget.dataset.expectedTarget = data.expectedTarget || "";
+  connectDomainTarget.textContent = data.expectedTarget || "";
+  return data;
+}
+
 function showStudioView(view) {
   studioAuthPanel.classList.toggle("hidden", view !== "auth");
   studioNamePanel.classList.toggle("hidden", view !== "name");
   studioAdminPanel?.classList.toggle("hidden", view !== "admin");
   studioDashboardPanel.classList.toggle("hidden", view !== "dashboard");
   createPagePanel.classList.add("hidden");
+  connectDomainPanel?.classList.add("hidden");
   studioSidebarName?.classList.toggle("hidden", view === "admin");
   if (view === "dashboard") {
     showStudioDashboardSection("pages");
@@ -757,6 +820,11 @@ async function loadSavedPages() {
 
 function applyStudioRoute() {
   const route = getStudioRoute();
+  if (route.name === "connect-domain") {
+    openConnectDomainPage({ skipHistory: true });
+    return;
+  }
+
   if (route.name === "create") {
     openCreateWizard({ skipHistory: true });
     return;
@@ -807,6 +875,7 @@ async function refreshStudioState(user) {
   }
 
   hydrateStudioSettingsForms();
+  updateDomainSummary();
   showStudioView("dashboard");
   updateLinkCreationGate();
   await loadSavedPages();
@@ -1152,6 +1221,7 @@ function openCreateWizard(options = {}) {
   setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardTemplateStatus, "");
   studioDashboardPanel.classList.add("hidden");
+  connectDomainPanel?.classList.add("hidden");
   createPagePanel.classList.remove("hidden");
   if (!skipHistory && window.location.pathname !== "/studio/create") {
     window.history.pushState({ studio: true, create: true }, "", "/studio/create");
@@ -1200,6 +1270,7 @@ function openEditWizard(page, options = {}) {
   setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardTemplateStatus, `Pairing code stays ${wizardState.pairingCode}.`);
   studioDashboardPanel.classList.add("hidden");
+  connectDomainPanel?.classList.add("hidden");
   createPagePanel.classList.remove("hidden");
   if (!skipHistory && page?.id) {
     window.history.pushState({ studio: true, edit: page.id }, "", `/studio/edit/${encodeURIComponent(page.id)}`);
@@ -1212,6 +1283,29 @@ function closeCreateWizard(options = {}) {
   createPagePanel.classList.add("hidden");
   studioDashboardPanel.classList.remove("hidden");
   showStudioDashboardSection("pages");
+  if (!skipHistory && window.location.pathname !== "/studio") {
+    window.history.pushState({ studio: true }, "", "/studio");
+  }
+}
+
+function openConnectDomainPage(options = {}) {
+  const { skipHistory = false } = options;
+  studioDashboardPanel.classList.add("hidden");
+  createPagePanel.classList.add("hidden");
+  connectDomainPanel?.classList.remove("hidden");
+  updateDomainSummary();
+  setStudioStatus(connectDomainStatus, "");
+  refreshDomainVerificationPreview(brandingCustomDomain?.value || "").catch(() => {});
+  if (!skipHistory && window.location.pathname !== "/studio/connect-domain") {
+    window.history.pushState({ studio: true, connectDomain: true }, "", "/studio/connect-domain");
+  }
+}
+
+function closeConnectDomainPage(options = {}) {
+  const { skipHistory = false } = options;
+  connectDomainPanel?.classList.add("hidden");
+  studioDashboardPanel.classList.remove("hidden");
+  showStudioDashboardSection("account");
   if (!skipHistory && window.location.pathname !== "/studio") {
     window.history.pushState({ studio: true }, "", "/studio");
   }
@@ -1651,6 +1745,7 @@ studioBrandingForm?.addEventListener("submit", async (event) => {
       customDomain: branding.customDomain || "",
     }));
     hydrateStudioSettingsForms();
+    updateDomainSummary();
     renderSavedPagesTable();
     setStudioStatus(studioBrandingStatus, "Branding saved.");
   } catch (error) {
@@ -1669,6 +1764,88 @@ studioAccountForm?.addEventListener("submit", async (event) => {
     setStudioStatus(studioAccountStatus, "Studio name updated.");
   } catch (error) {
     setStudioStatus(studioAccountStatus, error.message || "Could not update studio name.", true);
+  }
+});
+
+accountConnectDomainButton?.addEventListener("click", () => {
+  const mode = accountConnectDomainButton.dataset.mode || "connect";
+  if (mode === "remove") {
+    const confirmed = window.confirm("Remove the connected domain from this studio?");
+    if (!confirmed) {
+      return;
+    }
+
+    const removeDomain = async () => {
+      const branding = {
+        ...getProfileBranding(),
+        customDomain: "",
+      };
+      setStudioStatus(studioAccountStatus, "Removing domain...");
+      await saveBrandingSettings(branding);
+      currentProfile = {
+        ...currentProfile,
+        branding,
+      };
+      savedPages = savedPages.map((page) => ({
+        ...page,
+        branding,
+        customDomain: "",
+      }));
+      hydrateStudioSettingsForms();
+      updateDomainSummary();
+      renderSavedPagesTable();
+      setStudioStatus(studioAccountStatus, "Domain removed.");
+    };
+
+    removeDomain().catch((error) => {
+      setStudioStatus(studioAccountStatus, error.message || "Could not remove domain.", true);
+    });
+    return;
+  }
+
+  openConnectDomainPage();
+});
+
+closeConnectDomainButton?.addEventListener("click", () => {
+  closeConnectDomainPage();
+});
+
+brandingCustomDomain?.addEventListener("input", () => {
+  updateDomainSummary();
+  refreshDomainVerificationPreview(brandingCustomDomain.value).catch(() => {});
+});
+
+connectDomainForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const normalizedDomain = normalizeCustomDomain(brandingCustomDomain?.value);
+    setStudioStatus(connectDomainStatus, "Checking DNS settings...");
+    const verification = await refreshDomainVerificationPreview(normalizedDomain);
+    if (normalizedDomain && !verification?.ok) {
+      throw new Error(verification?.message || "Your DNS settings are not connected yet.");
+    }
+
+    const branding = {
+      ...getProfileBranding(),
+      customDomain: normalizedDomain,
+    };
+    setStudioStatus(connectDomainStatus, "Saving domain...");
+    await saveBrandingSettings(branding);
+    currentProfile = {
+      ...currentProfile,
+      branding,
+    };
+    savedPages = savedPages.map((page) => ({
+      ...page,
+      branding,
+      customDomain: branding.customDomain || "",
+    }));
+    hydrateStudioSettingsForms();
+    updateDomainSummary();
+    renderSavedPagesTable();
+    setStudioStatus(connectDomainStatus, "Domain saved.");
+  } catch (error) {
+    setStudioStatus(connectDomainStatus, error.message || "Could not save domain.", true);
   }
 });
 

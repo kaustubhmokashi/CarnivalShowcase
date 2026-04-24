@@ -2287,6 +2287,79 @@ input[type="checkbox"]:checked {
   gap: 10px;
 }
 
+.studio-domain-summary {
+  display: grid;
+  gap: 18px;
+  padding: 8px 0 2px;
+}
+
+.studio-domain-title,
+.studio-domain-dns-title {
+  margin: 0;
+  color: #000000;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.studio-domain-copy {
+  margin: 0;
+  color: #000000;
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.studio-domain-copy span {
+  color: rgba(0, 0, 0, 0.42);
+}
+
+.studio-domain-copy strong {
+  display: block;
+  font-weight: 700;
+}
+
+.studio-domain-connect-button {
+  margin-top: 2px;
+}
+
+.studio-domain-form {
+  gap: 28px;
+}
+
+.studio-domain-dns-block {
+  display: grid;
+  gap: 16px;
+}
+
+.studio-domain-dns-table {
+  display: grid;
+  border-top: 1px solid #000000;
+}
+
+.studio-domain-dns-row {
+  display: grid;
+  grid-template-columns: 0.7fr 0.8fr 1.7fr 0.6fr;
+  gap: 18px;
+  align-items: center;
+  min-height: 62px;
+  padding: 0 0 0 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.14);
+  color: #000000;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.studio-domain-dns-head {
+  min-height: 48px;
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
 .studio-settings-form label > span,
 .studio-field-row > span {
   color: rgba(0, 0, 0, 0.58);

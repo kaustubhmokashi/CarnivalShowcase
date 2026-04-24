@@ -153,10 +153,6 @@
                     <span>Homepage link</span>
                     <input id="branding-homepage-link" type="url" placeholder="WHERE LOGO SHOULD OPEN" />
                   </label>
-                  <label>
-                    <span>Album domain</span>
-                    <input id="branding-custom-domain" type="text" placeholder="album.abcd.com" autocapitalize="off" autocomplete="off" spellcheck="false" />
-                  </label>
                   <button type="submit" class="studio-primary-button">Save branding</button>
                   <p id="studio-branding-status" class="studio-status" aria-live="polite"></p>
                 </form>
@@ -172,10 +168,56 @@
                     <input id="account-studio-name" type="text" placeholder="STUDIO NAME" autocomplete="organization" required />
                   </label>
                   <button type="submit" class="studio-primary-button">Update studio</button>
+                  <section class="studio-domain-summary" aria-labelledby="studio-domain-title">
+                    <p id="studio-domain-title" class="studio-domain-title">Plug your domain</p>
+                    <p id="studio-domain-copy" class="studio-domain-copy"></p>
+                    <button id="account-connect-domain" type="button" class="studio-primary-button studio-domain-connect-button">
+                      Connect your domain
+                    </button>
+                  </section>
                   <p id="studio-account-status" class="studio-status" aria-live="polite"></p>
                 </form>
               </section>
             </div>
+          </section>
+
+          <section id="connect-domain-panel" class="studio-wizard hidden" aria-live="polite">
+            <div class="studio-wizard-head">
+              <p class="studio-kicker">Domain</p>
+              <button id="close-connect-domain" type="button" class="studio-text-button">Back</button>
+            </div>
+
+            <form id="connect-domain-form" class="studio-panel studio-settings-form studio-domain-form">
+              <h2>Connect your domain.</h2>
+              <p class="studio-copy">
+                Add the DNS record below in your domain provider, then save the album domain here.
+              </p>
+              <label>
+                <span>Album domain</span>
+                <input id="branding-custom-domain" type="text" placeholder="album.abcd.com" autocapitalize="off" autocomplete="off" spellcheck="false" />
+              </label>
+
+              <div class="studio-domain-dns-block">
+                <p class="studio-domain-dns-title">DNS settings</p>
+                <div class="studio-domain-dns-table" role="table" aria-label="DNS setup">
+                  <div class="studio-domain-dns-row studio-domain-dns-head" role="row">
+                    <span role="columnheader">Type</span>
+                    <span role="columnheader">Host</span>
+                    <span role="columnheader">Value</span>
+                    <span role="columnheader">TTL</span>
+                  </div>
+                  <div class="studio-domain-dns-row" role="row">
+                    <span role="cell">CNAME</span>
+                    <span id="connect-domain-host" role="cell">album</span>
+                    <span id="connect-domain-target" role="cell"></span>
+                    <span role="cell">Auto</span>
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" class="studio-primary-button">Save domain</button>
+              <p id="connect-domain-status" class="studio-status" aria-live="polite"></p>
+            </form>
           </section>
 
           <section id="create-page-panel" class="studio-wizard hidden" aria-live="polite">

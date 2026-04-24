@@ -28,7 +28,7 @@ service cloud.firestore {
 
       match /pages/{pageId} {
         allow get: if true;
-        allow list: if false;
+        allow list: if isOwner(uid) || isAdmin();
         allow update, delete: if isOwner(uid);
         allow create: if isOwner(uid)
           && canCreateLinks()
