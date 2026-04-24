@@ -634,6 +634,7 @@ function sanitizePathname(pathname) {
 
 function resolveStaticPathname(pathname) {
   const pathSegments = pathname.split("/").filter(Boolean);
+  const hasFileExtension = Boolean(path.extname(pathname));
 
   if (pathname.startsWith("/assets/")) {
     return pathname;
@@ -661,6 +662,10 @@ function resolveStaticPathname(pathname) {
 
   if (pathname === "/remote-tv") {
     return "/remote-tv.html";
+  }
+
+  if (pathSegments.length === 1 && !hasFileExtension) {
+    return "/index.html";
   }
 
   return pathname;
