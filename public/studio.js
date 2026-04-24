@@ -27,6 +27,7 @@ const collections = {
   studioNames: firebaseSettings.collections?.studioNames || "studioNames",
   publicPages: firebaseSettings.collections?.publicPages || "publicPages",
   pairingCodes: firebaseSettings.collections?.pairingCodes || "pairingCodes",
+  customDomains: firebaseSettings.collections?.customDomains || "customDomains",
 };
 
 const screenDirectLink = document.getElementById("screen-direct-link");
@@ -63,6 +64,7 @@ const brandingAccentHex = document.getElementById("branding-accent-hex");
 const brandingLogoLink = document.getElementById("branding-logo-link");
 const brandingFaviconLink = document.getElementById("branding-favicon-link");
 const brandingHomepageLink = document.getElementById("branding-homepage-link");
+const brandingCustomDomain = document.getElementById("branding-custom-domain");
 const studioBrandingStatus = document.getElementById("studio-branding-status");
 const studioAccountForm = document.getElementById("studio-account-form");
 const accountStudioName = document.getElementById("account-studio-name");
@@ -161,7 +163,25 @@ function getDefaultBranding() {
     logoLink: "",
     faviconLink: "",
     homepageLink: "",
+    customDomain: "",
   };
+}
+
+function normalizeCustomDomain(value) {
+  const rawValue = String(value || "").trim().toLowerCase();
+  if (!rawValue) {
+    return "";
+  }
+
+  const candidate = rawValue.replace(/^https?:\/\//, "");
+  const hostCandidate = candidate.includes("/") ? candidate.split("/")[0] : candidate;
+  const host = hostCandidate.replace(/:\d+$/, "").replace(/\.+$/, "");
+
+  if (!/^[a-z0-9.-]+$/.test(host) || host.startsWith(".") || host.endsWith(".") || host.includes("..")) {
+    throw new Error("Please enter a valid album domain.");
+  }
+
+  return host;
 }
 
 function getProfileBranding(profile = currentProfile) {
@@ -173,6 +193,7 @@ function getProfileBranding(profile = currentProfile) {
     logoLink: String(branding.logoLink || ""),
     faviconLink: String(branding.faviconLink || ""),
     homepageLink: String(branding.homepageLink || ""),
+    customDomain: normalizeCustomDomain(branding.customDomain || ""),
   };
 }
 
@@ -183,6 +204,7 @@ function getBrandingFromInputs() {
     logoLink: brandingLogoLink.value.trim(),
     faviconLink: brandingFaviconLink.value.trim(),
     homepageLink: brandingHomepageLink.value.trim(),
+    customDomain: normalizeCustomDomain(brandingCustomDomain?.value),
   };
 }
 
@@ -242,6 +264,9 @@ function hydrateStudioSettingsForms() {
   if (brandingHomepageLink) {
     brandingHomepageLink.value = branding.homepageLink;
   }
+  if (brandingCustomDomain) {
+    brandingCustomDomain.value = branding.customDomain;
+  }
   if (accountStudioName) {
     accountStudioName.value = currentProfile?.studioName || "";
   }
@@ -289,16 +314,37 @@ function generatePairingCode() {
   return Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join("");
 }
 
-function getPageUrl(page) {
-  const studioSlug = encodeURIComponent(page?.studioSlug || "");
-  const pageSlug = encodeURIComponent(page?.pageSlug || "");
-  return studioSlug && pageSlug ? `${window.location.origin}/${studioSlug}/${pageSlug}` : "";
+function getPrimaryPublicPageId(page) {
+  const studioSlug = String(page?.studioSlug || "").trim();
+  const pageSlug = String(page?.pageSlug || "").trim();
+  return studioSlug && pageSlug ? `${studioSlug}__${pageSlug}` : "";
 }
 
-function getPagePath(page) {
+function getPageCustomDomain(page) {
+  return normalizeCustomDomain(page?.customDomain || page?.branding?.customDomain || "");
+}
+
+function getCustomDomainPublicPageId(customDomain, pageSlug) {
+  const normalizedDomain = normalizeCustomDomain(customDomain);
+  const normalizedPageSlug = String(pageSlug || "").trim();
+  return normalizedDomain && normalizedPageSlug ? `${normalizedDomain}__${normalizedPageSlug}` : "";
+}
+
+function getPlatformPagePath(page) {
   const studioSlug = encodeURIComponent(page?.studioSlug || "");
   const pageSlug = encodeURIComponent(page?.pageSlug || "");
   return studioSlug && pageSlug ? `/${studioSlug}/${pageSlug}` : "";
+}
+
+function getPageUrl(page) {
+  const pageSlug = encodeURIComponent(page?.pageSlug || "");
+  const customDomain = getPageCustomDomain(page);
+  if (customDomain && pageSlug) {
+    return `https://${customDomain}/${pageSlug}`;
+  }
+
+  const platformPath = getPlatformPagePath(page);
+  return platformPath ? `${window.location.origin}${platformPath}` : "";
 }
 
 async function openPairingCode(pairingCode) {
@@ -319,7 +365,7 @@ async function openPairingCode(pairingCode) {
   }
 
   if (pairing.studioSlug && pairing.pageSlug) {
-    window.location.href = `/${encodeURIComponent(pairing.studioSlug)}/${encodeURIComponent(pairing.pageSlug)}`;
+    window.location.href = getPageUrl(pairing) || `/${encodeURIComponent(pairing.studioSlug)}/${encodeURIComponent(pairing.pageSlug)}`;
     return;
   }
 
@@ -327,7 +373,7 @@ async function openPairingCode(pairingCode) {
     const publicPageSnapshot = await getDoc(doc(db, collections.publicPages, pairing.publicPageId));
     if (publicPageSnapshot.exists()) {
       const publicPage = publicPageSnapshot.data();
-      const publicPath = getPagePath(publicPage);
+      const publicPath = getPageUrl(publicPage);
       if (publicPath) {
         window.location.href = publicPath;
         return;
@@ -338,7 +384,7 @@ async function openPairingCode(pairingCode) {
   if (pairing.ownerUid && pairing.pageId) {
     const pageSnapshot = await getDoc(doc(db, collections.users, pairing.ownerUid, "pages", pairing.pageId));
     if (pageSnapshot.exists()) {
-      const publicPath = getPagePath(pageSnapshot.data());
+      const publicPath = getPageUrl(pageSnapshot.data());
       if (publicPath) {
         window.location.href = publicPath;
         return;
@@ -434,15 +480,37 @@ function setStudioScreen(active) {
 }
 
 function getPublicPageSlugFromPath() {
-  const match = window.location.pathname.match(/^\/([^/]+)\/([^/]+)\/?$/);
-  if (!match || match[1] === "studio") {
+  const pathSegments = window.location.pathname.split("/").filter(Boolean);
+  if (!pathSegments.length) {
+    return null;
+  }
+
+  if (pathSegments[0] === "studio") {
+    return null;
+  }
+
+  if (pathSegments.length >= 2) {
+    const studioSlug = decodeURIComponent(pathSegments[0]);
+    const pageSlug = decodeURIComponent(pathSegments[1]);
+    return {
+      studioSlug,
+      pageSlug,
+      publicPageId: getPrimaryPublicPageId({ studioSlug, pageSlug }),
+      isCustomDomain: false,
+    };
+  }
+
+  const pageSlug = decodeURIComponent(pathSegments[0]);
+  const customDomain = normalizeCustomDomain(window.location.hostname);
+  if (!customDomain) {
     return null;
   }
 
   return {
-    studioSlug: decodeURIComponent(match[1]),
-    pageSlug: decodeURIComponent(match[2]),
-    publicPageId: `${decodeURIComponent(match[1])}__${decodeURIComponent(match[2])}`,
+    customDomain,
+    pageSlug,
+    publicPageId: getCustomDomainPublicPageId(customDomain, pageSlug),
+    isCustomDomain: true,
   };
 }
 
@@ -559,7 +627,7 @@ function renderSavedPagesTable() {
     const pageUrl = getPageUrl(page);
     const thumbnail = page.coverThumbnailUrl || page.coverImageUrl || "";
     card.innerHTML = `
-      <a class="saved-page-thumb" href="/${encodeURIComponent(page.studioSlug || "")}/${encodeURIComponent(page.pageSlug || "")}" aria-label="Open ${escapeMarkup(page.pageName || "page")}">
+      <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" aria-label="Open ${escapeMarkup(page.pageName || "page")}">
         ${thumbnail ? `<img src="${escapeMarkup(thumbnail)}" alt="" loading="lazy" />` : ""}
       </a>
       <div class="saved-page-content">
@@ -753,6 +821,7 @@ async function saveStudioName(name) {
   }
 
   const previousStudioSlug = currentProfile?.studioSlug || "";
+  const currentCustomDomain = normalizeCustomDomain(currentProfile?.branding?.customDomain || "");
 
   await runTransaction(db, async (transaction) => {
     const nameRef = doc(db, collections.studioNames, studioSlug);
@@ -782,25 +851,45 @@ async function saveStudioName(name) {
       createdAt: serverTimestamp(),
     }, { merge: true });
 
+    if (currentCustomDomain) {
+      transaction.set(doc(db, collections.customDomains, currentCustomDomain), {
+        uid: currentUser.uid,
+        studioName,
+        studioSlug,
+        domain: currentCustomDomain,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+
     savedPages.forEach((page) => {
       if (!page?.id || !page?.pageSlug) {
         return;
       }
 
       const pageRef = doc(getPagesCollection(), page.id);
-      const nextPublicRef = doc(db, collections.publicPages, `${studioSlug}__${page.pageSlug}`);
-      transaction.set(pageRef, {
-        studioName,
-        studioSlug,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      transaction.set(nextPublicRef, {
+      const nextPage = {
         ...page,
         studioName,
         studioSlug,
         pageId: page.id,
         updatedAt: serverTimestamp(),
+      };
+      const nextPublicRef = doc(db, collections.publicPages, getPrimaryPublicPageId(nextPage));
+      const nextCustomDomain = getPageCustomDomain(nextPage);
+      transaction.set(pageRef, {
+        studioName,
+        studioSlug,
+        updatedAt: serverTimestamp(),
       }, { merge: true });
+      transaction.set(nextPublicRef, nextPage, { merge: true });
+
+      if (nextCustomDomain) {
+        transaction.set(
+          doc(db, collections.publicPages, getCustomDomainPublicPageId(nextCustomDomain, page.pageSlug)),
+          nextPage,
+          { merge: true }
+        );
+      }
 
       if (previousStudioSlug && previousStudioSlug !== studioSlug) {
         transaction.delete(doc(db, collections.publicPages, `${previousStudioSlug}__${page.pageSlug}`));
@@ -810,28 +899,71 @@ async function saveStudioName(name) {
 }
 
 async function saveBrandingSettings(branding) {
-  const batch = writeBatch(db);
-  batch.set(getUserRef(), {
-    branding,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
+  const previousDomain = normalizeCustomDomain(currentProfile?.branding?.customDomain || "");
+  const nextDomain = normalizeCustomDomain(branding.customDomain || "");
 
-  savedPages.forEach((page) => {
-    if (!page?.id || !page?.pageSlug) {
-      return;
+  await runTransaction(db, async (transaction) => {
+    if (nextDomain && nextDomain !== previousDomain) {
+      const nextDomainRef = doc(db, collections.customDomains, nextDomain);
+      const nextDomainSnapshot = await transaction.get(nextDomainRef);
+      if (nextDomainSnapshot.exists() && nextDomainSnapshot.data()?.uid !== currentUser.uid) {
+        throw new Error("That album domain is already connected to another studio.");
+      }
+
+      transaction.set(nextDomainRef, {
+        uid: currentUser.uid,
+        studioName: currentProfile?.studioName || "",
+        studioSlug: currentProfile?.studioSlug || "",
+        domain: nextDomain,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     }
 
-    batch.set(doc(getPagesCollection(), page.id), {
-      branding,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    batch.set(doc(db, collections.publicPages, `${page.studioSlug}__${page.pageSlug}`), {
-      branding,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-  });
+    if (previousDomain && previousDomain !== nextDomain) {
+      transaction.delete(doc(db, collections.customDomains, previousDomain));
+    }
 
-  await batch.commit();
+    transaction.set(getUserRef(), {
+      branding,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    savedPages.forEach((page) => {
+      if (!page?.id || !page?.pageSlug) {
+        return;
+      }
+
+      const nextPage = {
+        ...page,
+        branding,
+        customDomain: nextDomain,
+        updatedAt: serverTimestamp(),
+      };
+
+      transaction.set(doc(getPagesCollection(), page.id), {
+        branding,
+        customDomain: nextDomain,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      transaction.set(
+        doc(db, collections.publicPages, getPrimaryPublicPageId(nextPage)),
+        nextPage,
+        { merge: true }
+      );
+
+      if (nextDomain) {
+        transaction.set(
+          doc(db, collections.publicPages, getCustomDomainPublicPageId(nextDomain, page.pageSlug)),
+          nextPage,
+          { merge: true }
+        );
+      }
+
+      if (previousDomain && previousDomain !== nextDomain) {
+        transaction.delete(doc(db, collections.publicPages, getCustomDomainPublicPageId(previousDomain, page.pageSlug)));
+      }
+    });
+  });
 }
 
 function flattenDriveMedia(node, folderPath = "") {
@@ -1117,7 +1249,8 @@ async function checkPageDuplicate(pageSlug, driveLink) {
 async function reservePairingCode(pageRef, pagePayload) {
   let pairingCode = "";
   await runTransaction(db, async (transaction) => {
-    const publicPageRef = doc(db, collections.publicPages, `${pagePayload.studioSlug}__${pagePayload.pageSlug}`);
+    const primaryPublicPageId = getPrimaryPublicPageId(pagePayload);
+    const publicPageRef = doc(db, collections.publicPages, primaryPublicPageId);
     const publicPageSnapshot = await transaction.get(publicPageRef);
     if (publicPageSnapshot.exists()) {
       throw new Error("This page name is already taken.");
@@ -1139,10 +1272,13 @@ async function reservePairingCode(pageRef, pagePayload) {
         ownerUid: currentUser.uid,
         pageId: pageRef.id,
         pageName: pagePayload.pageName,
-        publicPageId: `${pagePayload.studioSlug}__${pagePayload.pageSlug}`,
-        publicPath: getPagePath(pagePayload),
+        publicPageId: pagePayload.customDomain
+          ? getCustomDomainPublicPageId(pagePayload.customDomain, pagePayload.pageSlug)
+          : primaryPublicPageId,
+        publicPath: getPageUrl(pagePayload),
         studioSlug: pagePayload.studioSlug,
         pageSlug: pagePayload.pageSlug,
+        customDomain: pagePayload.customDomain || "",
         template: pagePayload.template,
         permanent: true,
         createdAt: serverTimestamp(),
@@ -1160,6 +1296,15 @@ async function reservePairingCode(pageRef, pagePayload) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      if (pagePayload.customDomain) {
+        transaction.set(doc(db, collections.publicPages, getCustomDomainPublicPageId(pagePayload.customDomain, pagePayload.pageSlug)), {
+          ...pagePayload,
+          pageId: pageRef.id,
+          pairingCode: candidate,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       return;
     }
 
@@ -1170,6 +1315,7 @@ async function reservePairingCode(pageRef, pagePayload) {
 }
 
 async function createPageRecord() {
+  const branding = getProfileBranding();
   const pageRef = doc(getPagesCollection());
   const payload = {
     ownerUid: currentUser.uid,
@@ -1182,7 +1328,8 @@ async function createPageRecord() {
     tagline: wizardState.tagline,
     eventStartDate: wizardState.eventStartDate,
     eventEndDate: wizardState.eventEndDate,
-    branding: getProfileBranding(),
+    branding,
+    customDomain: branding.customDomain || "",
     template: wizardState.template,
     templateLabel: "Template 1",
     coverFileId: wizardState.selectedCover?.id || "",
@@ -1201,8 +1348,14 @@ async function updatePageRecord() {
   }
 
   const pageRef = doc(getPagesCollection(), existingPage.id);
-  const oldPublicPageRef = doc(db, collections.publicPages, `${existingPage.studioSlug}__${existingPage.pageSlug}`);
-  const newPublicPageRef = doc(db, collections.publicPages, `${currentProfile.studioSlug}__${wizardState.pageSlug}`);
+  const existingCustomDomain = getPageCustomDomain(existingPage);
+  const branding = getProfileBranding();
+  const nextCustomDomain = branding.customDomain || "";
+  const oldPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(existingPage));
+  const newPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId({
+    studioSlug: currentProfile.studioSlug,
+    pageSlug: wizardState.pageSlug,
+  }));
   const pairingRef = doc(db, collections.pairingCodes, existingPage.pairingCode);
   const payload = {
     ownerUid: currentUser.uid,
@@ -1215,7 +1368,8 @@ async function updatePageRecord() {
     tagline: wizardState.tagline,
     eventStartDate: wizardState.eventStartDate,
     eventEndDate: wizardState.eventEndDate,
-    branding: getProfileBranding(),
+    branding,
+    customDomain: nextCustomDomain,
     template: wizardState.template,
     templateLabel: "Template 1",
     coverFileId: wizardState.selectedCover?.id || "",
@@ -1235,12 +1389,23 @@ async function updatePageRecord() {
       transaction.delete(oldPublicPageRef);
     }
 
+    if (existingCustomDomain && (existingCustomDomain !== nextCustomDomain || existingPage.pageSlug !== wizardState.pageSlug)) {
+      transaction.delete(doc(db, collections.publicPages, getCustomDomainPublicPageId(existingCustomDomain, existingPage.pageSlug)));
+    }
+
     transaction.set(pageRef, payload, { merge: true });
     transaction.set(newPublicPageRef, {
       ...payload,
       pageId: existingPage.id,
       createdAt: existingPage.createdAt || serverTimestamp(),
     }, { merge: true });
+    if (nextCustomDomain) {
+      transaction.set(doc(db, collections.publicPages, getCustomDomainPublicPageId(nextCustomDomain, payload.pageSlug)), {
+        ...payload,
+        pageId: existingPage.id,
+        createdAt: existingPage.createdAt || serverTimestamp(),
+      }, { merge: true });
+    }
     transaction.set(pairingRef, {
       code: existingPage.pairingCode,
       url: payload.driveLink,
@@ -1248,10 +1413,13 @@ async function updatePageRecord() {
       ownerUid: currentUser.uid,
       pageId: existingPage.id,
       pageName: payload.pageName,
-      publicPageId: `${payload.studioSlug}__${payload.pageSlug}`,
-      publicPath: getPagePath(payload),
+      publicPageId: nextCustomDomain
+        ? getCustomDomainPublicPageId(nextCustomDomain, payload.pageSlug)
+        : getPrimaryPublicPageId(payload),
+      publicPath: getPageUrl(payload),
       studioSlug: payload.studioSlug,
       pageSlug: payload.pageSlug,
+      customDomain: nextCustomDomain,
       template: payload.template,
       permanent: true,
       updatedAt: serverTimestamp(),
@@ -1270,12 +1438,18 @@ async function deleteSavedPage(page) {
   }
 
   const pageRef = doc(getPagesCollection(), page.id);
-  const publicPageRef = doc(db, collections.publicPages, `${page.studioSlug}__${page.pageSlug}`);
+  const publicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(page));
+  const aliasPublicPageRef = getPageCustomDomain(page)
+    ? doc(db, collections.publicPages, getCustomDomainPublicPageId(getPageCustomDomain(page), page.pageSlug))
+    : null;
   const pairingRef = page.pairingCode ? doc(db, collections.pairingCodes, page.pairingCode) : null;
 
   await runTransaction(db, async (transaction) => {
     transaction.delete(pageRef);
     transaction.delete(publicPageRef);
+    if (aliasPublicPageRef) {
+      transaction.delete(aliasPublicPageRef);
+    }
     if (pairingRef) {
       transaction.delete(pairingRef);
     }
@@ -1335,7 +1509,18 @@ function initializeFirebase() {
 async function loadPublicStudioPage(publicPageRoute) {
   showPublicPageLoadingState();
   let pageSnapshot = await getDoc(doc(db, collections.publicPages, publicPageRoute.publicPageId));
-  if (!pageSnapshot.exists()) {
+  if (!pageSnapshot.exists() && publicPageRoute.isCustomDomain && publicPageRoute.customDomain) {
+    const customDomainSnapshot = await getDoc(doc(db, collections.customDomains, publicPageRoute.customDomain));
+    if (customDomainSnapshot.exists()) {
+      const studioSlug = customDomainSnapshot.data()?.studioSlug || "";
+      if (studioSlug) {
+        pageSnapshot = await getDoc(
+          doc(db, collections.publicPages, getPrimaryPublicPageId({ studioSlug, pageSlug: publicPageRoute.pageSlug }))
+        );
+      }
+    }
+  }
+  if (!pageSnapshot.exists() && !publicPageRoute.isCustomDomain) {
     pageSnapshot = await getDoc(doc(db, collections.publicPages, publicPageRoute.pageSlug));
   }
 
@@ -1344,7 +1529,7 @@ async function loadPublicStudioPage(publicPageRoute) {
   }
 
   const page = pageSnapshot.data();
-  if (page.studioSlug && page.studioSlug !== publicPageRoute.studioSlug) {
+  if (!publicPageRoute.isCustomDomain && page.studioSlug && page.studioSlug !== publicPageRoute.studioSlug) {
     throw new Error("This studio page does not exist.");
   }
 
@@ -1460,7 +1645,11 @@ studioBrandingForm?.addEventListener("submit", async (event) => {
       ...currentProfile,
       branding,
     };
-    savedPages = savedPages.map((page) => ({ ...page, branding }));
+    savedPages = savedPages.map((page) => ({
+      ...page,
+      branding,
+      customDomain: branding.customDomain || "",
+    }));
     hydrateStudioSettingsForms();
     renderSavedPagesTable();
     setStudioStatus(studioBrandingStatus, "Branding saved.");

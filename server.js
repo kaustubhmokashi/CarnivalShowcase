@@ -58,9 +58,26 @@ const HOST = process.env.HOST || "0.0.0.0";
 const API_KEY = process.env.GOOGLE_DRIVE_API_KEY || "";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
+const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
 const CODE_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
 const FIREBASE_COLLECTION = process.env.FIREBASE_PAIRING_COLLECTION || "pairingCodes";
+const FIREBASE_WEB_CONFIG = {
+  apiKey: process.env.FIREBASE_WEB_API_KEY || "",
+  authDomain: process.env.FIREBASE_WEB_AUTH_DOMAIN || "",
+  projectId: process.env.FIREBASE_WEB_PROJECT_ID || "",
+  storageBucket: process.env.FIREBASE_WEB_STORAGE_BUCKET || "",
+  messagingSenderId: process.env.FIREBASE_WEB_MESSAGING_SENDER_ID || "",
+  appId: process.env.FIREBASE_WEB_APP_ID || "",
+  measurementId: process.env.FIREBASE_WEB_MEASUREMENT_ID || "",
+};
+const FIREBASE_COLLECTIONS = {
+  users: process.env.FIREBASE_USERS_COLLECTION || "users",
+  studioNames: process.env.FIREBASE_STUDIONAMES_COLLECTION || "studioNames",
+  publicPages: process.env.FIREBASE_PUBLICPAGES_COLLECTION || "publicPages",
+  pairingCodes: process.env.FIREBASE_PAIRINGCODES_COLLECTION || "pairingCodes",
+  customDomains: process.env.FIREBASE_CUSTOMDOMAINS_COLLECTION || "customDomains",
+};
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
@@ -409,6 +426,51 @@ function sendJson(res, statusCode, payload) {
     "Content-Length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function hasFirebaseWebConfigEnv() {
+  return Boolean(
+    FIREBASE_WEB_CONFIG.apiKey &&
+      FIREBASE_WEB_CONFIG.authDomain &&
+      FIREBASE_WEB_CONFIG.projectId &&
+      FIREBASE_WEB_CONFIG.storageBucket &&
+      FIREBASE_WEB_CONFIG.messagingSenderId &&
+      FIREBASE_WEB_CONFIG.appId
+  );
+}
+
+function sendFirebaseConfigScript(res) {
+  if (hasFirebaseWebConfigEnv()) {
+    const body = `window.CARNIVAL_FIREBASE = ${JSON.stringify({
+      firebaseConfig: FIREBASE_WEB_CONFIG,
+      collections: FIREBASE_COLLECTIONS,
+    }, null, 2)};\n`;
+
+    res.writeHead(200, {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+    res.end(body);
+    return;
+  }
+
+  if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
+    sendFile(res, FIREBASE_CONFIG_FILE);
+    return;
+  }
+
+  const fallbackBody = "window.CARNIVAL_FIREBASE = {};\n";
+  res.writeHead(200, {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Content-Length": Buffer.byteLength(fallbackBody),
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+  res.end(fallbackBody);
 }
 
 async function proxyDriveImage(req, res) {
@@ -971,6 +1033,11 @@ async function handlePairingOrigin(req, res) {
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+
+  if (requestUrl.pathname === "/firebase-config.js") {
+    sendFirebaseConfigScript(res);
+    return;
+  }
 
   if (requestUrl.pathname === "/api/folder") {
     await handleApiFolder(req, res);

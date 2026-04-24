@@ -48,6 +48,15 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid;
     }
 
+    match /customDomains/{domain} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
     match /publicPages/{pageSlug} {
       allow get: if true;
       allow list: if false;
