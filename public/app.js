@@ -852,7 +852,14 @@ function updateCoverStoryLayout() {
     80;
   coverTaglineEl.dataset.baseFontSize = String(baseFontSize);
 
-  const availableWidth = Math.max(coverCopyEl.clientWidth - 4, 0);
+  const mobileHorizontalPadding = 16;
+  const availableWidth = Math.max(
+    Math.min(
+      coverCopyEl.clientWidth,
+      (coverPhotoEl?.clientWidth || coverCopyEl.clientWidth) - mobileHorizontalPadding * 2
+    ),
+    0
+  );
   if (!availableWidth) {
     return;
   }
