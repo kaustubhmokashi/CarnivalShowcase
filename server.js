@@ -82,15 +82,166 @@ const FIREBASE_COLLECTIONS = {
 const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
 const FOLDER_CACHE_FRESH_MS = Number(process.env.FOLDER_CACHE_FRESH_MS || 5 * 60 * 1000);
 const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 60 * 1000);
+const MEDIA_CACHE_TTL_MS = Number(process.env.MEDIA_CACHE_TTL_MS || 30 * 60 * 1000);
+const MEDIA_CACHE_MAX_BYTES = Number(process.env.MEDIA_CACHE_MAX_BYTES || 120 * 1024 * 1024);
+const MEDIA_CACHE_MAX_ENTRY_BYTES = Number(process.env.MEDIA_CACHE_MAX_ENTRY_BYTES || 8 * 1024 * 1024);
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 let firestoreDb = null;
 const folderTreeCache = new Map();
+const mediaResponseCache = new Map();
+const mediaInflightRequests = new Map();
+let mediaCacheSizeBytes = 0;
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
+
+function buildMediaCacheKey(fileId, mode) {
+  return `${fileId}:${mode}`;
+}
+
+function evictExpiredMediaCacheEntries() {
+  const now = Date.now();
+  for (const [cacheKey, entry] of mediaResponseCache.entries()) {
+    if (entry.expiresAt <= now) {
+      mediaResponseCache.delete(cacheKey);
+      mediaCacheSizeBytes = Math.max(0, mediaCacheSizeBytes - entry.body.length);
+    }
+  }
+}
+
+function enforceMediaCacheBudget() {
+  if (mediaCacheSizeBytes <= MEDIA_CACHE_MAX_BYTES) {
+    return;
+  }
+
+  const entries = Array.from(mediaResponseCache.entries()).sort(
+    (left, right) => left[1].storedAt - right[1].storedAt
+  );
+
+  for (const [cacheKey, entry] of entries) {
+    mediaResponseCache.delete(cacheKey);
+    mediaCacheSizeBytes = Math.max(0, mediaCacheSizeBytes - entry.body.length);
+    if (mediaCacheSizeBytes <= MEDIA_CACHE_MAX_BYTES) {
+      break;
+    }
+  }
+}
+
+function getCachedMediaResponse(cacheKey) {
+  evictExpiredMediaCacheEntries();
+  const entry = mediaResponseCache.get(cacheKey);
+  if (!entry) {
+    return null;
+  }
+
+  return entry;
+}
+
+function storeCachedMediaResponse(cacheKey, entry) {
+  if (!entry?.body?.length || entry.body.length > MEDIA_CACHE_MAX_ENTRY_BYTES) {
+    return;
+  }
+
+  const previousEntry = mediaResponseCache.get(cacheKey);
+  if (previousEntry) {
+    mediaCacheSizeBytes = Math.max(0, mediaCacheSizeBytes - previousEntry.body.length);
+  }
+
+  mediaResponseCache.set(cacheKey, entry);
+  mediaCacheSizeBytes += entry.body.length;
+  enforceMediaCacheBudget();
+}
+
+function sendCachedMediaResponse(res, entry) {
+  res.writeHead(entry.status, {
+    "Content-Type": entry.contentType,
+    "Content-Length": String(entry.body.length),
+    "Cache-Control": entry.cacheControl,
+  });
+  res.end(entry.body);
+}
+
+async function fetchMediaCandidateWithCache(candidates, rangeHeader, cacheKey) {
+  if (cacheKey && mediaInflightRequests.has(cacheKey)) {
+    return mediaInflightRequests.get(cacheKey);
+  }
+
+  const fetchPromise = (async () => {
+    let lastError = "Unable to fetch media from Google Drive.";
+
+    for (const candidate of candidates) {
+      const response = await fetch(candidate, {
+        redirect: "follow",
+        headers: rangeHeader ? { Range: rangeHeader } : undefined,
+      });
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!response.ok) {
+        lastError = `Media request failed (${response.status}) for ${candidate}`;
+        continue;
+      }
+
+      if (!response.body || (!contentType.startsWith("image/") && !contentType.startsWith("video/"))) {
+        lastError = `Non-media response returned for ${candidate}`;
+        continue;
+      }
+
+      const contentRange = response.headers.get("content-range");
+      const acceptRanges = response.headers.get("accept-ranges");
+      const cacheControl =
+        !rangeHeader && (contentType.startsWith("image/") || contentType.startsWith("video/"))
+          ? "public, max-age=3600, stale-while-revalidate=86400"
+          : "public, max-age=3600";
+
+      if (!rangeHeader) {
+        const body = Buffer.from(await response.arrayBuffer());
+        const result = {
+          status: response.status,
+          contentType,
+          cacheControl,
+          body,
+          contentRange,
+          acceptRanges,
+        };
+        if (cacheKey) {
+          storeCachedMediaResponse(cacheKey, {
+            ...result,
+            storedAt: Date.now(),
+            expiresAt: Date.now() + MEDIA_CACHE_TTL_MS,
+          });
+        }
+        return result;
+      }
+
+      return {
+        status: response.status,
+        contentType,
+        cacheControl,
+        body: response.body,
+        contentLength: response.headers.get("content-length"),
+        contentRange,
+        acceptRanges,
+      };
+    }
+
+    throw new Error(lastError);
+  })();
+
+  if (cacheKey) {
+    mediaInflightRequests.set(cacheKey, fetchPromise);
+  }
+
+  try {
+    return await fetchPromise;
+  } finally {
+    if (cacheKey) {
+      mediaInflightRequests.delete(cacheKey);
+    }
+  }
+}
 
 function ensureDataStore() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -628,6 +779,8 @@ async function proxyDriveImage(req, res) {
   const mode =
     requestedMode === "thumb" || requestedMode === "screen" ? requestedMode : "full";
   const rangeHeader = req.headers.range;
+  const allowMediaCache = !rangeHeader && (mode === "thumb" || mode === "screen");
+  const mediaCacheKey = allowMediaCache ? buildMediaCacheKey(fileId, mode) : "";
 
   if (!API_KEY) {
     sendJson(res, 500, {
@@ -643,6 +796,14 @@ async function proxyDriveImage(req, res) {
   }
 
   try {
+    if (mediaCacheKey) {
+      const cachedEntry = getCachedMediaResponse(mediaCacheKey);
+      if (cachedEntry) {
+        sendCachedMediaResponse(res, cachedEntry);
+        return;
+      }
+    }
+
     const candidates =
       mode === "thumb"
         ? [
@@ -665,53 +826,41 @@ async function proxyDriveImage(req, res) {
             `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`,
           ];
 
-    let lastError = "Unable to fetch media from Google Drive.";
-
-    for (const candidate of candidates) {
-      const response = await fetch(candidate, {
-        redirect: "follow",
-        headers: rangeHeader ? { Range: rangeHeader } : undefined,
+    const result = await fetchMediaCandidateWithCache(candidates, rangeHeader, mediaCacheKey);
+    if (Buffer.isBuffer(result.body)) {
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType,
+        "Content-Length": String(result.body.length),
+        "Cache-Control": result.cacheControl,
       });
-      const contentType = response.headers.get("content-type") || "";
-
-      if (!response.ok) {
-        lastError = `Media request failed (${response.status}) for ${candidate}`;
-        continue;
-      }
-
-      if (!response.body || (!contentType.startsWith("image/") && !contentType.startsWith("video/"))) {
-        lastError = `Non-media response returned for ${candidate}`;
-        continue;
-      }
-
-      const responseHeaders = {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=3600",
-      };
-      const contentLength = response.headers.get("content-length");
-      const contentRange = response.headers.get("content-range");
-      const acceptRanges = response.headers.get("accept-ranges");
-
-      if (contentLength) {
-        responseHeaders["Content-Length"] = contentLength;
-      }
-      if (contentRange) {
-        responseHeaders["Content-Range"] = contentRange;
-      }
-      if (acceptRanges || contentRange || rangeHeader) {
-        responseHeaders["Accept-Ranges"] = acceptRanges || "bytes";
-      }
-
-      res.writeHead(response.status, responseHeaders);
-
-      for await (const chunk of response.body) {
-        res.write(chunk);
-      }
-      res.end();
+      res.end(result.body);
       return;
     }
 
-    sendJson(res, 502, { error: lastError });
+    if (!result.body) {
+      throw new Error("Unable to stream media from Google Drive.");
+    }
+
+    const responseHeaders = {
+      "Content-Type": result.contentType,
+      "Cache-Control": result.cacheControl,
+    };
+    if (result.contentLength) {
+      responseHeaders["Content-Length"] = result.contentLength;
+    }
+    if (result.contentRange) {
+      responseHeaders["Content-Range"] = result.contentRange;
+    }
+    if (result.acceptRanges || result.contentRange || rangeHeader) {
+      responseHeaders["Accept-Ranges"] = result.acceptRanges || "bytes";
+    }
+
+    res.writeHead(result.status, responseHeaders);
+    for await (const chunk of result.body) {
+      res.write(chunk);
+    }
+    res.end();
+    return;
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }
