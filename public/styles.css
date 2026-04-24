@@ -2744,10 +2744,18 @@ input[type="checkbox"]:checked {
     display: inline-grid;
   }
 
+  .studio-main {
+    display: grid;
+    justify-items: center;
+    row-gap: 18px;
+  }
+
   .studio-floating-actions {
-    left: 16px;
-    right: 16px;
-    top: 16px;
+    position: static;
+    width: min(100%, 720px);
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 16px 16px 0;
     justify-items: stretch;
     gap: 14px;
   }
@@ -2832,7 +2840,7 @@ input[type="checkbox"]:checked {
 
   .studio-dashboard-content {
     grid-column: auto;
-    padding-top: calc(92px + var(--studio-page-offset));
+    padding-top: var(--studio-page-offset);
   }
 
   .studio-dashboard-head,
