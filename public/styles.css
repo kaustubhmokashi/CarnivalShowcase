@@ -156,15 +156,15 @@ label:focus-within {
 }
 
 .icon-settings {
-  mask-image: url("/assets/icons/Settings.svg?v=20260424b");
-  -webkit-mask-image: url("/assets/icons/Settings.svg?v=20260424b");
-  mask-size: 88%;
-  -webkit-mask-size: 88%;
+  mask-image: url("/assets/icons/Settings.svg?v=20260425a");
+  -webkit-mask-image: url("/assets/icons/Settings.svg?v=20260425a");
+  mask-size: contain;
+  -webkit-mask-size: contain;
 }
 
 .icon-close {
-  mask-image: url("/assets/icons/Close.svg?v=20260424b");
-  -webkit-mask-image: url("/assets/icons/Close.svg?v=20260424b");
+  mask-image: url("/assets/icons/Close.svg?v=20260425a");
+  -webkit-mask-image: url("/assets/icons/Close.svg?v=20260425a");
 }
 
 .icon-arrow-up {
@@ -1207,11 +1207,12 @@ label:focus-within {
 }
 
 .slideshow-settings-icon {
-  display: inline-grid;
+  display: block;
   width: 20px;
   height: 20px;
   flex: 0 0 20px;
-  opacity: 0.78;
+  color: var(--template-accent);
+  opacity: 1;
 }
 
 .gallery-settings-text {
@@ -1486,19 +1487,18 @@ input[type="checkbox"]:checked {
   top: 18px;
   left: 18px;
   z-index: 6;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border-radius: 999px;
-  background: var(--template-bg);
+  border-radius: 0;
+  background: transparent;
   color: var(--template-accent);
-  box-shadow: 0 10px 24px rgba(var(--template-accent-rgb), 0.12);
   place-items: center;
 }
 
 .slideshow-close-mobile .icon-mask {
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
 }
 
 .slideshow-actions {
@@ -1596,11 +1596,16 @@ input[type="checkbox"]:checked {
 @media (hover: none) {
   .photo-card:hover,
   .folder-choice:hover,
-  .icon-action:hover,
-  .slideshow-nav:hover {
+  .icon-action:hover {
     transform: none;
     background: initial;
     border-color: transparent;
+  }
+
+  .slideshow-nav:hover {
+    transform: translateY(-50%);
+    background: var(--template-bg);
+    border-color: var(--template-accent-line);
   }
 }
 
