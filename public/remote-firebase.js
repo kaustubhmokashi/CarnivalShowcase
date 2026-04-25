@@ -17,7 +17,7 @@ const remoteConfig = window.GALLERY_REMOTE_FIREBASE || {};
 const firebaseConfig = remoteConfig.firebaseConfig || {};
 const collectionName = remoteConfig.collectionName || "pairingCodes";
 const validateFolderEndpoint = remoteConfig.validateFolderEndpoint || "/api/folder-meta";
-const temporaryCodeExpiryMs = Number(remoteConfig.temporaryCodeExpiryDays || 2) * 24 * 60 * 60 * 1000;
+const temporaryCodeExpiryMs = Number(remoteConfig.temporaryCodeExpiryDays || 1) * 24 * 60 * 60 * 1000;
 
 const remoteForm = document.getElementById("remote-form");
 const remoteUrlInput = document.getElementById("remote-url");
@@ -34,8 +34,6 @@ const deleteForm = document.getElementById("remote-delete-form");
 const deleteCodeInput = document.getElementById("delete-code");
 const deleteUrlInput = document.getElementById("delete-url");
 const deleteFeedbackEl = document.getElementById("delete-feedback");
-const permanentCheckbox = document.getElementById("remote-permanent");
-
 let latestCode = "";
 let latestFolderName = "";
 let isDeleteMode = false;
@@ -50,7 +48,7 @@ function normalizeUrl(url) {
 }
 
 function isValidCode(code) {
-  return /^\d{6}$|^\d{9}$/.test(String(code || "").trim());
+  return /^\d{6}$|^\d{7}$/.test(String(code || "").trim());
 }
 
 function setRemoteStatus(message, isError = false) {
@@ -182,7 +180,7 @@ async function createCodeRecord(url, permanent, folderMeta) {
     };
   }
 
-  const code = await generateUniqueCode(permanent ? 9 : 6);
+  const code = await generateUniqueCode(permanent ? 7 : 6);
   await setDoc(doc(db, collectionName, code), {
     url: normalizedUrl,
     normalizedUrl,
@@ -218,8 +216,6 @@ remoteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const url = normalizeUrl(remoteUrlInput.value);
-  const permanent = permanentCheckbox.checked;
-
   if (!url) {
     setRemoteStatus("Paste a Google Drive folder link to get started.", true);
     return;
@@ -235,7 +231,7 @@ remoteForm.addEventListener("submit", async (event) => {
     const folderMeta = await validateFolder(url);
     setRemoteStatus("Creating your pairing code...");
 
-    const result = await createCodeRecord(url, permanent, folderMeta);
+    const result = await createCodeRecord(url, false, folderMeta);
     latestCode = result.code;
     latestFolderName = result.folderName || folderMeta.name;
     remoteCodeEl.textContent = result.code;

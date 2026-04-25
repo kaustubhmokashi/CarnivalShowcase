@@ -12,8 +12,6 @@ const deleteForm = document.getElementById("remote-delete-form");
 const deleteCodeInput = document.getElementById("delete-code");
 const deleteUrlInput = document.getElementById("delete-url");
 const deleteFeedbackEl = document.getElementById("delete-feedback");
-const permanentCheckbox = document.getElementById("remote-permanent");
-
 let latestCode = "";
 let latestFolderName = "";
 let isDeleteMode = false;
@@ -65,7 +63,6 @@ remoteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const url = remoteUrlInput.value.trim();
-  const permanent = permanentCheckbox.checked;
   if (!url) {
     setRemoteStatus("Paste a Google Drive folder link to get started.", true);
     return;
@@ -79,7 +76,7 @@ remoteForm.addEventListener("submit", async (event) => {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ url, permanent }),
+      body: JSON.stringify({ url, permanent: false }),
     });
 
     const data = await response.json();

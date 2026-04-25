@@ -1,13 +1,14 @@
 window.GALLERY_REMOTE_FIREBASE = {
   firebaseConfig: {
-    apiKey: "YOUR_NEW_FIREBASE_API_KEY",
-    authDomain: "YOUR_NEW_PROJECT.firebaseapp.com",
-    projectId: "YOUR_NEW_PROJECT_ID",
-    storageBucket: "YOUR_NEW_PROJECT.firebasestorage.app",
-    messagingSenderId: "YOUR_NEW_MESSAGING_SENDER_ID",
-    appId: "YOUR_NEW_APP_ID",
+    apiKey: "AIzaSyBVLOWV_x6Am0V58KL-sRd4nJym6d1gyxA",
+    authDomain: "carnivalshowcase-ec0d8.firebaseapp.com",
+    projectId: "carnivalshowcase-ec0d8",
+    storageBucket: "carnivalshowcase-ec0d8.firebasestorage.app",
+    messagingSenderId: "763656183807",
+    appId: "1:763656183807:web:a0df1dfa1c35a549f391ca",
+    measurementId: "G-CL9G9XE0J9",
   },
   collectionName: "pairingCodes",
   validateFolderEndpoint: "/api/folder-meta",
-  temporaryCodeExpiryDays: 2,
+  temporaryCodeExpiryDays: 1,
 };

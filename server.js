@@ -61,7 +61,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
-const CODE_EXPIRY_MS = 2 * 24 * 60 * 60 * 1000;
+const CODE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const FIREBASE_COLLECTION = process.env.FIREBASE_PAIRING_COLLECTION || "pairingCodes";
 const FIREBASE_WEB_CONFIG = {
   apiKey: process.env.FIREBASE_WEB_API_KEY || "",
@@ -282,7 +282,7 @@ function generateRemoteCode() {
 }
 
 function generatePermanentRemoteCode() {
-  return generateNumericCode(9);
+  return generateNumericCode(7);
 }
 
 function generateNumericCode(length) {
@@ -1530,8 +1530,8 @@ async function handleResolveRemoteCode(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const code = String(requestUrl.searchParams.get("code") || "").trim();
 
-  if (!/^\d{6}$|^\d{9}$/.test(code)) {
-    sendJson(res, 400, { error: "Code must be a 6 or 9 digit number." });
+  if (!/^\d{6}$|^\d{7}$/.test(code)) {
+    sendJson(res, 400, { error: "Code must be a 6 or 7 digit number." });
     return;
   }
 

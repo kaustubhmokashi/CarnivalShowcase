@@ -349,7 +349,7 @@ function escapeMarkup(value) {
 }
 
 function generatePairingCode() {
-  return Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join("");
+  return Array.from({ length: 7 }, () => Math.floor(Math.random() * 10)).join("");
 }
 
 function getPrimaryPublicPageId(page) {

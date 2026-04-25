@@ -32,10 +32,6 @@
           placeholder="https://drive.google.com/drive/folders/..."
           required
         ></textarea>
-        <label class="remote-checkbox-option">
-          <input id="remote-permanent" type="checkbox" name="remote-permanent" />
-          <span>Create a permanent code</span>
-        </label>
         <button type="submit">Create Code</button>
       </form>
 
@@ -71,9 +67,7 @@
         Back to code creation
       </button>
 
-      <p class="remote-expiry-note">
-        Temporary codes stay active for 2 days. Permanent codes stay active until you change or remove the folder.
-      </p>
+      <p class="remote-expiry-note">Temporary codes stay active for 24 hours.</p>
       <p id="remote-status" class="remote-status"></p>
     </main>
 

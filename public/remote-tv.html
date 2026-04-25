@@ -3,21 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gallery Remote TV Pairing</title>
+    <title>Carnival Showcase TV Pairing</title>
     <link rel="stylesheet" href="/remote-tv.css" />
   </head>
   <body>
     <main class="remote-page">
       <section class="remote-shell">
         <div class="remote-brand-row">
-          <p class="remote-eyebrow">Gallery Remote</p>
+          <p class="remote-eyebrow">Carnival Showcase</p>
           <p class="remote-version">TV Pairing</p>
         </div>
 
         <div class="remote-hero">
           <h1>Send a Google Drive folder to your TV.</h1>
           <p class="remote-subtitle">
-            Paste the folder link below and we’ll turn it into a 6 digit temporary code or a 9 digit permanent code you can enter on your TV.
+            Paste the folder link below and we’ll turn it into a temporary pairing code you can enter on your TV.
           </p>
         </div>
 
@@ -46,10 +46,6 @@
             placeholder="https://drive.google.com/drive/folders/..."
             required
           ></textarea>
-          <label class="remote-checkbox-option">
-            <input id="remote-permanent" type="checkbox" name="remote-permanent" />
-            <span>Create a permanent code</span>
-          </label>
           <button type="submit">Create Code</button>
         </form>
 
@@ -88,7 +84,7 @@
 
         <div class="remote-footer">
           <p class="remote-expiry-note">
-            Temporary codes stay active for 2 days. Permanent codes stay active until you change or remove the folder.
+            Pairing codes stay active for 24 hours.
           </p>
           <p id="remote-status" class="remote-status"></p>
         </div>
