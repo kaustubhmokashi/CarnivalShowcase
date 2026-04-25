@@ -262,8 +262,8 @@ function readRemoteMappings() {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [code, url, createdAt, permanentFlag] = line.split("\t");
-      return { code, url, createdAt, permanent: permanentFlag === "1" };
+      const [code, url, createdAt, permanentFlag, folderName = ""] = line.split("\t");
+      return { code, url, createdAt, permanent: permanentFlag === "1", folderName };
     });
 }
 
@@ -271,7 +271,7 @@ function writeRemoteMappings(mappings) {
   ensureDataStore();
   const body = mappings
     .map((entry) =>
-      [entry.code, entry.url || "", entry.createdAt || "", entry.permanent ? "1" : "0"].join("\t")
+      [entry.code, entry.url || "", entry.createdAt || "", entry.permanent ? "1" : "0", entry.folderName || ""].join("\t")
     )
     .join("\n");
   fs.writeFileSync(REMOTE_CODES_FILE, body ? `${body}\n` : "", "utf8");
@@ -472,6 +472,21 @@ function pruneExpiredMappings() {
 async function writeRemoteLinkToStore(url, permanent = false) {
   const normalizedUrl = normalizeRemoteUrl(url);
   const db = getFirestoreDb();
+  let folderName = "Google Drive folder";
+
+  if (API_KEY) {
+    const folderId = extractFolderId(normalizedUrl);
+    if (folderId) {
+      try {
+        const folderMeta = await driveGetFile(folderId);
+        if (folderMeta?.name) {
+          folderName = folderMeta.name;
+        }
+      } catch (error) {
+        // If metadata lookup fails, still allow code creation; the admin table can fall back later.
+      }
+    }
+  }
 
   if (!db) {
     const mappings = pruneExpiredMappings();
@@ -480,6 +495,10 @@ async function writeRemoteLinkToStore(url, permanent = false) {
     );
 
     if (existingEntry) {
+      if (!existingEntry.folderName && folderName) {
+        existingEntry.folderName = folderName;
+        writeRemoteMappings(mappings);
+      }
       return { success: true, code: existingEntry.code, reused: true, store: "file" };
     }
 
@@ -489,6 +508,7 @@ async function writeRemoteLinkToStore(url, permanent = false) {
       url: normalizedUrl,
       createdAt: new Date().toISOString(),
       permanent,
+      folderName,
     });
     writeRemoteMappings(mappings);
     return { success: true, code, reused: false, store: "file" };
@@ -520,6 +540,9 @@ async function writeRemoteLinkToStore(url, permanent = false) {
   }
 
   if (reusableEntry) {
+    if (!reusableEntry.folderName && folderName) {
+      await collection.doc(reusableEntry.code).set({ folderName }, { merge: true });
+    }
     return { success: true, code: reusableEntry.code, reused: true, store: "firestore" };
   }
 
@@ -534,6 +557,7 @@ async function writeRemoteLinkToStore(url, permanent = false) {
     normalizedUrl,
     createdAt,
     permanent,
+    folderName,
   });
 
   return { success: true, code, reused: false, store: "firestore" };
@@ -552,6 +576,8 @@ async function resolveRemoteLinkFromStore(code) {
       code: entry.code,
       url: entry.url || "",
       ready: Boolean(entry.url),
+      permanent: Boolean(entry.permanent),
+      folderName: entry.folderName || "",
       store: "file",
     };
   }
@@ -571,6 +597,8 @@ async function resolveRemoteLinkFromStore(code) {
     code: doc.id,
     url: data.url || "",
     ready: Boolean(data.url),
+    permanent: Boolean(data.permanent),
+    folderName: data.folderName || "",
     store: "firestore",
   };
 }
@@ -852,6 +880,164 @@ async function getPairingCodeRecordById(code) {
 
   const document = await response.json();
   return parseFirestoreFields(document.fields || {});
+}
+
+async function lookupFirebaseAccountByIdToken(idToken) {
+  const token = String(idToken || "").trim();
+  if (!token || !FIREBASE_WEB_CONFIG.apiKey) {
+    return null;
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(FIREBASE_WEB_CONFIG.apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ idToken: token }),
+    }
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json();
+  return payload?.users?.[0] || null;
+}
+
+async function requireAdminRequest(req, res) {
+  const authorization = String(req.headers.authorization || "");
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  const account = await lookupFirebaseAccountByIdToken(token);
+
+  if (!account?.email || account.email.toLowerCase() !== "carnivalshowcase@gmail.com") {
+    sendJson(res, 403, { error: "Admin access required." });
+    return null;
+  }
+
+  return account;
+}
+
+async function hydrateRemoteMappingFolderName(entry) {
+  if (entry?.folderName || !entry?.url || !API_KEY) {
+    return entry;
+  }
+
+  const folderId = extractFolderId(entry.url);
+  if (!folderId) {
+    return entry;
+  }
+
+  try {
+    const folderMeta = await driveGetFile(folderId);
+    if (folderMeta?.name) {
+      return {
+        ...entry,
+        folderName: folderMeta.name,
+      };
+    }
+  } catch (error) {
+    // Leave the name blank if Google Drive metadata cannot be fetched now.
+  }
+
+  return entry;
+}
+
+async function listRemoteLinksForAdmin() {
+  const db = getFirestoreDb();
+
+  if (!db) {
+    const mappings = pruneExpiredMappings();
+    const hydratedMappings = await Promise.all(mappings.map((entry) => hydrateRemoteMappingFolderName(entry)));
+    const changed = hydratedMappings.some((entry, index) => entry.folderName !== mappings[index].folderName);
+    if (changed) {
+      writeRemoteMappings(hydratedMappings);
+    }
+    return hydratedMappings.map((entry) => ({
+      code: entry.code,
+      url: entry.url || "",
+      createdAt: entry.createdAt || "",
+      permanent: Boolean(entry.permanent),
+      folderName: entry.folderName || "Google Drive folder",
+      source: "remote",
+    }));
+  }
+
+  const snapshot = await db.collection(FIREBASE_COLLECTION).get();
+  const docs = snapshot.docs;
+  const activeEntries = [];
+  const deletions = [];
+  const updates = [];
+
+  for (const linkDoc of docs) {
+    const data = linkDoc.data() || {};
+    if (isEntryExpired(data)) {
+      deletions.push(linkDoc.ref.delete());
+      continue;
+    }
+
+    const hydrated = await hydrateRemoteMappingFolderName({
+      code: linkDoc.id,
+      url: data.url || "",
+      createdAt: data.createdAt || "",
+      permanent: Boolean(data.permanent),
+      folderName: data.folderName || "",
+    });
+
+    if (hydrated.folderName && hydrated.folderName !== (data.folderName || "")) {
+      updates.push(linkDoc.ref.set({ folderName: hydrated.folderName }, { merge: true }));
+    }
+
+    activeEntries.push({
+      code: linkDoc.id,
+      url: data.url || "",
+      createdAt: data.createdAt || "",
+      permanent: Boolean(data.permanent),
+      folderName: hydrated.folderName || "Google Drive folder",
+      source: "remote",
+    });
+  }
+
+  if (deletions.length || updates.length) {
+    await Promise.all([...deletions, ...updates]);
+  }
+
+  return activeEntries;
+}
+
+async function deletePermanentLinkByAdmin(payload) {
+  const db = getFirestoreDb();
+  if (!db) {
+    throw new Error("Permanent link deletion requires Firebase admin credentials on the server.");
+  }
+
+  const code = String(payload.code || "").trim();
+  const ownerUid = String(payload.ownerUid || "").trim();
+  const pageId = String(payload.pageId || "").trim();
+  const publicPageId = String(payload.publicPageId || "").trim();
+  const customDomainPublicPageId = String(payload.customDomainPublicPageId || "").trim();
+
+  if (!code || !ownerUid || !pageId) {
+    throw new Error("Missing permanent link identifiers.");
+  }
+
+  const batch = db.batch();
+  batch.delete(db.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId));
+  batch.delete(db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(code));
+
+  if (publicPageId) {
+    batch.delete(db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId));
+  }
+
+  if (customDomainPublicPageId) {
+    batch.delete(db.collection(FIREBASE_COLLECTIONS.publicPages).doc(customDomainPublicPageId));
+  }
+
+  await batch.commit();
+  return { deleted: true, source: "permanent" };
 }
 
 async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
@@ -1604,7 +1790,7 @@ async function handleDeleteRemoteCode(req, res) {
     const code = String(body.code || "").trim();
     const url = normalizeRemoteUrl(body.url);
 
-    if (!/^\d{6}$|^\d{9}$/.test(code)) {
+    if (!/^\d{6}$|^\d{7}$/.test(code)) {
       sendJson(res, 400, { error: "Please enter the full code." });
       return;
     }
@@ -1628,6 +1814,60 @@ async function handleDeleteRemoteCode(req, res) {
     });
   } catch (error) {
     sendJson(res, 400, { error: error.message || "Invalid request body." });
+  }
+}
+
+async function handleAdminLinks(req, res) {
+  const admin = await requireAdminRequest(req, res);
+  if (!admin) {
+    return;
+  }
+
+  try {
+    const links = await listRemoteLinksForAdmin();
+    sendJson(res, 200, { links });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "Could not load links." });
+  }
+}
+
+async function handleAdminDeleteLink(req, res) {
+  const admin = await requireAdminRequest(req, res);
+  if (!admin) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const kind = String(body.kind || "").trim();
+
+    if (kind === "temporary") {
+      const code = String(body.code || "").trim();
+      const url = normalizeRemoteUrl(body.url);
+      if (!code || !url) {
+        sendJson(res, 400, { error: "Temporary links need both code and Drive link." });
+        return;
+      }
+
+      const result = await deleteRemoteCode(code, url);
+      if (!result.deleted) {
+        sendJson(res, 404, { error: "We couldn’t find that temporary link anymore." });
+        return;
+      }
+
+      sendJson(res, 200, { success: true });
+      return;
+    }
+
+    if (kind === "permanent") {
+      const result = await deletePermanentLinkByAdmin(body);
+      sendJson(res, 200, { success: true, ...result });
+      return;
+    }
+
+    sendJson(res, 400, { error: "Unknown link type." });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not delete link." });
   }
 }
 
@@ -1788,6 +2028,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/remote/delete" && req.method === "POST") {
     await handleDeleteRemoteCode(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/links" && req.method === "GET") {
+    await handleAdminLinks(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/links/delete" && req.method === "POST") {
+    await handleAdminDeleteLink(req, res);
     return;
   }
 

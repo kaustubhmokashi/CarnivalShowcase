@@ -118,12 +118,14 @@ let currentUser = null;
 let currentProfile = null;
 let savedPages = [];
 let allAccounts = [];
+let allAdminLinks = [];
 let pendingAccountStatuses = new Map();
 let activeAdminFilter = "active";
 let wizardState = createEmptyWizardState();
 let authHasResolved = false;
 let currentWizardStep = 1;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
+const adminFolderNameCache = new Map();
 
 function isMobileStudioViewport() {
   return window.matchMedia("(max-width: 900px)").matches;
@@ -822,12 +824,79 @@ function formatRegistrationDate(value) {
   });
 }
 
+function getDateValueMs(value) {
+  if (!value) {
+    return 0;
+  }
+
+  if (typeof value?.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (typeof value?.toDate === "function") {
+    return value.toDate().getTime();
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+async function getAdminAuthHeaders() {
+  if (!currentUser) {
+    throw new Error("You need to be signed in.");
+  }
+
+  const token = await currentUser.getIdToken();
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+async function getFolderNameForAdminLink(url, fallback = "Google Drive folder") {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    return fallback;
+  }
+
+  if (adminFolderNameCache.has(normalizedUrl)) {
+    return adminFolderNameCache.get(normalizedUrl);
+  }
+
+  try {
+    const response = await fetch(`/api/folder-meta?url=${encodeURIComponent(normalizedUrl)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not load folder name.");
+    }
+
+    const folderName = String(payload.name || "").trim() || fallback;
+    adminFolderNameCache.set(normalizedUrl, folderName);
+    return folderName;
+  } catch (error) {
+    adminFolderNameCache.set(normalizedUrl, fallback);
+    return fallback;
+  }
+}
+
+function updateAdminPanelMode() {
+  const isLinksView = activeAdminFilter === "links";
+  adminSaveAccountsButton?.classList.toggle("hidden", isLinksView);
+  adminAccountsList?.classList.toggle("links-mode", isLinksView);
+}
+
 function renderAdminAccounts() {
   if (!adminAccountsList) {
     return;
   }
 
-  const filteredAccounts = allAccounts.filter((account) => getAccountStatus(account) === activeAdminFilter);
+  updateAdminPanelMode();
+
+  const filteredAccounts = allAccounts.filter((account) => {
+    if (isAdminEmail(account.email)) {
+      return false;
+    }
+    return getAccountStatus(account) === activeAdminFilter;
+  });
   if (!filteredAccounts.length) {
     adminAccountsList.innerHTML = '<p class="studio-empty">No accounts here.</p>';
     return;
@@ -859,16 +928,178 @@ function renderAdminAccounts() {
   });
 }
 
-async function loadAdminAccounts() {
+function renderAdminLinks() {
+  if (!adminAccountsList) {
+    return;
+  }
+
+  updateAdminPanelMode();
+
+  if (!allAdminLinks.length) {
+    adminAccountsList.innerHTML = '<p class="studio-empty">No links here.</p>';
+    return;
+  }
+
+  adminAccountsList.innerHTML = `
+    <div class="admin-link-row admin-account-head">
+      <span>Folder name</span>
+      <span>Type</span>
+      <span>Creation date</span>
+      <span>Pairing code</span>
+      <span>Drive link</span>
+      <span>Delete</span>
+    </div>
+  `;
+
+  allAdminLinks.forEach((link) => {
+    const row = document.createElement("div");
+    row.className = "admin-link-row";
+    row.innerHTML = `
+      <span>${escapeMarkup(link.folderName || "Google Drive folder")}</span>
+      <span>${escapeMarkup(link.kind === "temporary" ? "Temporary" : "Permanent")}</span>
+      <span>${escapeMarkup(formatRegistrationDate(link.createdAt))}</span>
+      <span>${escapeMarkup(link.code || "")}</span>
+      <span>
+        <a class="text-link-button admin-link-anchor" href="${escapeMarkup(link.url || "#")}" target="_blank" rel="noreferrer noopener">
+          Open link
+        </a>
+      </span>
+      <span>
+        <button type="button" class="saved-page-icon-button danger admin-link-delete" aria-label="Delete ${escapeMarkup(link.folderName || "link")}">
+          <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
+        </button>
+      </span>
+    `;
+    row.querySelector(".admin-link-delete")?.addEventListener("click", async () => {
+      await deleteAdminLink(link);
+    });
+    adminAccountsList.appendChild(row);
+  });
+}
+
+async function loadAdminAccounts({ render = true } = {}) {
   const snapshot = await getDocs(collection(db, collections.users));
   allAccounts = snapshot.docs
     .map((accountDoc) => ({ id: accountDoc.id, ...accountDoc.data() }))
     .sort((a, b) => {
-      const aDate = a.createdAt?.toMillis?.() || 0;
-      const bDate = b.createdAt?.toMillis?.() || 0;
-      return bDate - aDate;
+      return getDateValueMs(b.createdAt) - getDateValueMs(a.createdAt);
     });
-  renderAdminAccounts();
+  if (render && activeAdminFilter !== "links") {
+    renderAdminAccounts();
+  }
+}
+
+async function loadAdminLinks({ force = false } = {}) {
+  if (!force && allAdminLinks.length) {
+    renderAdminLinks();
+    return;
+  }
+
+  setStudioStatus(adminAccountsStatus, "Loading links...");
+  if (!allAccounts.length) {
+    await loadAdminAccounts({ render: false });
+  }
+
+  const headers = await getAdminAuthHeaders();
+  const temporaryResponse = await fetch("/api/admin/links", { headers });
+  const temporaryPayload = await temporaryResponse.json().catch(() => ({}));
+  if (!temporaryResponse.ok) {
+    throw new Error(temporaryPayload.error || "Could not load temporary links.");
+  }
+
+  const permanentPages = (
+    await Promise.all(
+      allAccounts.map(async (account) => {
+        const snapshot = await getDocs(collection(db, collections.users, account.uid, "pages"));
+        return snapshot.docs.map((pageDoc) => ({
+          id: pageDoc.id,
+          ownerUid: account.uid,
+          ownerEmail: account.email || "",
+          ownerStudioName: account.studioName || "",
+          ...pageDoc.data(),
+        }));
+      })
+    )
+  ).flat();
+
+  const permanentLinks = await Promise.all(
+    permanentPages.map(async (page) => {
+      const customDomain = getPageCustomDomain(page);
+      return {
+        kind: "permanent",
+        folderName: await getFolderNameForAdminLink(
+          page.driveLink,
+          page.pageName || page.tagline || "Google Drive folder"
+        ),
+        createdAt: page.createdAt || "",
+        code: String(page.pairingCode || "").trim(),
+        url: String(page.driveLink || "").trim(),
+        ownerUid: page.ownerUid || "",
+        pageId: page.id || "",
+        publicPageId: getPrimaryPublicPageId(page),
+        customDomainPublicPageId: customDomain ? getCustomDomainPublicPageId(customDomain, page.pageSlug) : "",
+      };
+    })
+  );
+
+  const temporaryLinks = (temporaryPayload.links || []).map((link) => ({
+    kind: "temporary",
+    folderName: link.folderName || "Google Drive folder",
+    createdAt: link.createdAt || "",
+    code: String(link.code || "").trim(),
+    url: String(link.url || "").trim(),
+  }));
+
+  allAdminLinks = [...temporaryLinks, ...permanentLinks]
+    .filter((link) => link.code && link.url)
+    .sort((a, b) => getDateValueMs(b.createdAt) - getDateValueMs(a.createdAt));
+
+  renderAdminLinks();
+  setStudioStatus(adminAccountsStatus, "");
+}
+
+async function deleteAdminLink(link) {
+  if (!link?.code || !link?.url) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete ${link.folderName || "this link"}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setStudioStatus(adminAccountsStatus, "Deleting link...");
+    const response = await fetch("/api/admin/links/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await getAdminAuthHeaders()),
+      },
+      body: JSON.stringify(link.kind === "temporary" ? {
+        kind: "temporary",
+        code: link.code,
+        url: link.url,
+      } : {
+        kind: "permanent",
+        code: link.code,
+        ownerUid: link.ownerUid,
+        pageId: link.pageId,
+        publicPageId: link.publicPageId,
+        customDomainPublicPageId: link.customDomainPublicPageId,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not delete link.");
+    }
+
+    allAdminLinks = allAdminLinks.filter((entry) => !(entry.kind === link.kind && entry.code === link.code));
+    renderAdminLinks();
+    setStudioStatus(adminAccountsStatus, "Link deleted.");
+  } catch (error) {
+    setStudioStatus(adminAccountsStatus, error.message || "Could not delete link.", true);
+  }
 }
 
 function updateLinkCreationGate() {
@@ -1952,11 +2183,23 @@ studioSidebarScrim?.addEventListener("click", () => {
 });
 
 adminTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
+  tab.addEventListener("click", async () => {
     activeAdminFilter = tab.dataset.adminFilter || "active";
     adminTabs.forEach((item) => {
       item.classList.toggle("active", item === tab);
     });
+    updateAdminPanelMode();
+    if (activeAdminFilter === "links") {
+      try {
+        await loadAdminLinks();
+      } catch (error) {
+        adminAccountsList.innerHTML = '<p class="studio-empty">No links here.</p>';
+        setStudioStatus(adminAccountsStatus, error.message || "Could not load links.", true);
+      }
+      return;
+    }
+
+    setStudioStatus(adminAccountsStatus, "");
     renderAdminAccounts();
   });
 });
