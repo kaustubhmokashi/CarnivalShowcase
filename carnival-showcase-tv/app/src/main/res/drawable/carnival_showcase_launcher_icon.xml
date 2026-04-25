@@ -5,9 +5,9 @@
       <solid android:color="#FFFFFF" />
     </shape>
   </item>
-  <item android:left="96dp" android:top="64dp" android:right="96dp" android:bottom="64dp">
+  <item android:left="14dp" android:top="18dp" android:right="14dp" android:bottom="18dp">
     <bitmap
-      android:src="@drawable/carnival_showcase_logo"
-      android:gravity="center" />
+      android:gravity="center"
+      android:src="@drawable/carnival_showcase_logo" />
   </item>
 </layer-list>

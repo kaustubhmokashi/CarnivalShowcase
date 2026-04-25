@@ -275,22 +275,10 @@ private fun SplashScreen() {
       .background(AppBackgroundMuted),
     contentAlignment = Alignment.Center
   ) {
-    Column(
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-      BrandLogo(
-        modifier = Modifier
-          .fillMaxWidth(0.32f)
-      )
-      Text(
-        text = "Carnival Showcase TV",
-        fontSize = 44.sp,
-        letterSpacing = (-1).sp,
-        color = TextPrimary,
-        fontWeight = FontWeight.Bold,
-      )
-    }
+    BrandLogo(
+      modifier = Modifier
+        .fillMaxWidth(0.34f)
+    )
   }
 }
 
@@ -411,7 +399,7 @@ private fun PairingQrBlock(pairingUrl: String) {
       )
     }
     Text(
-      text = "Scan the QR code to open the phone remote.",
+      text = "Scan QR to create a Pairing Code",
       color = TextPrimary,
       fontWeight = FontWeight.SemiBold,
       textAlign = TextAlign.Center,
@@ -432,7 +420,7 @@ private fun BrandLogo(
 
   AsyncImage(
     model = ImageRequest.Builder(context)
-      .data("android.resource://${context.packageName}/${R.raw.drivedeck_logo}")
+      .data("android.resource://${context.packageName}/${R.raw.carnival_showcase_logo}")
       .build(),
     imageLoader = imageLoader,
     contentDescription = "Carnival Showcase logo",
