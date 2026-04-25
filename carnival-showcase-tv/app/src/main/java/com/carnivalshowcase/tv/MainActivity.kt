@@ -387,7 +387,7 @@ private fun PairingQrBlock(pairingUrl: String) {
   val qrBitmap = remember(pairingUrl) { generateQrBitmap(pairingUrl) }
 
   Column(
-    modifier = Modifier.width(400.dp),
+    modifier = Modifier.width(420.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(18.dp)
   ) {
@@ -400,11 +400,12 @@ private fun PairingQrBlock(pairingUrl: String) {
     }
     Text(
       text = "Scan QR to create a Pairing Code",
+      modifier = Modifier.padding(bottom = 8.dp),
       color = TextPrimary,
       fontWeight = FontWeight.SemiBold,
       textAlign = TextAlign.Center,
       fontSize = 18.sp,
-      lineHeight = 26.sp,
+      lineHeight = 28.sp,
     )
   }
 }
@@ -891,7 +892,7 @@ private fun SlideshowScreen(
         if (!state.autoplayEnabled) {
           BrandLogo(
             modifier = Modifier
-              .size(32.dp)
+              .size(40.dp)
               .align(Alignment.Start)
           )
         }
