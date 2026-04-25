@@ -90,6 +90,7 @@ let loadingProgressMessageBase = "";
 let loadingMessageDots = 0;
 let loadingFadeTimer = null;
 let slideshowPaused = false;
+let slideshowUiHideTimer = null;
 let slideshowConfig = {
   duration: 4,
   loop: false,
@@ -190,6 +191,68 @@ function setSlideshowPaused(nextPaused) {
 
 function toggleSlideshowPlayback() {
   setSlideshowPaused(!slideshowPaused);
+}
+
+function clearSlideshowUiHideTimer() {
+  if (slideshowUiHideTimer) {
+    window.clearTimeout(slideshowUiHideTimer);
+    slideshowUiHideTimer = null;
+  }
+}
+
+function isSlideshowOpen() {
+  return Boolean(slideshowEl && !slideshowEl.classList.contains("hidden"));
+}
+
+function setSlideshowFullscreenVisualState() {
+  if (!slideshowEl) {
+    return;
+  }
+
+  slideshowEl.classList.toggle("slideshow-fullscreen", isSlideshowFullscreen());
+}
+
+function hideSlideshowUi() {
+  if (!slideshowEl || !isSlideshowOpen() || isSlideshowFullscreen()) {
+    return;
+  }
+
+  slideshowEl.classList.add("slideshow-ui-hidden");
+}
+
+function scheduleSlideshowUiHide() {
+  clearSlideshowUiHideTimer();
+
+  if (!slideshowEl || !isSlideshowOpen() || isSlideshowFullscreen()) {
+    return;
+  }
+
+  slideshowUiHideTimer = window.setTimeout(() => {
+    hideSlideshowUi();
+  }, 2000);
+}
+
+function showSlideshowUi({ autoHide = true } = {}) {
+  if (!slideshowEl || !isSlideshowOpen() || isSlideshowFullscreen()) {
+    return;
+  }
+
+  slideshowEl.classList.remove("slideshow-ui-hidden");
+
+  if (autoHide) {
+    scheduleSlideshowUiHide();
+    return;
+  }
+
+  clearSlideshowUiHideTimer();
+}
+
+function handleSlideshowInteraction() {
+  if (!isSlideshowOpen() || isSlideshowFullscreen()) {
+    return;
+  }
+
+  showSlideshowUi();
 }
 
 function updateVideoProgress() {
@@ -1693,6 +1756,8 @@ function openSlideshow(index = 0) {
   updateSlideshowActionVisibility();
   slideshowEl.classList.remove("hidden");
   slideshowEl.setAttribute("aria-hidden", "false");
+  slideshowEl.classList.remove("slideshow-ui-hidden");
+  setSlideshowFullscreenVisualState();
   updateStickyFolderTabsVisibility();
   showSlide(index);
   if (slideshowToastEl && !window.matchMedia("(max-width: 900px)").matches) {
@@ -1704,6 +1769,7 @@ function openSlideshow(index = 0) {
   } else if (slideshowToastEl) {
     slideshowToastEl.classList.add("hidden");
   }
+  scheduleSlideshowUiHide();
   focusElement(nextSlideButton);
 }
 openSlideshow.toastTimer = null;
@@ -1726,11 +1792,14 @@ async function enterSlideshowFullscreen() {
 
 function closeSlideshow() {
   clearSlideshowAdvanceTimer();
+  clearSlideshowUiHideTimer();
   slideshowImageLoadToken += 1;
   slideshowPaused = false;
   updateSlideshowPlaybackVisual();
   resetSlideshowVideoState();
   slideshowEl.classList.add("hidden");
+  slideshowEl.classList.remove("slideshow-ui-hidden");
+  slideshowEl.classList.remove("slideshow-fullscreen");
   slideshowEl.setAttribute("aria-hidden", "true");
   updateStickyFolderTabsVisibility();
   if (slideshowToastEl) {
@@ -1781,12 +1850,18 @@ function handleKeydown(event) {
 
   if (event.key === "ArrowRight") {
     event.preventDefault();
+    if (!isSlideshowFullscreen()) {
+      showSlideshowUi();
+    }
     showSlide(currentSlideIndex + 1);
     return;
   }
 
   if (event.key === "ArrowLeft") {
     event.preventDefault();
+    if (!isSlideshowFullscreen()) {
+      showSlideshowUi();
+    }
     showSlide(currentSlideIndex - 1);
   }
 }
@@ -1970,6 +2045,21 @@ shareSlideButton?.addEventListener("click", () => {
   shareCurrentSlide().catch(() => {
     setStatus("Sharing isn’t available right now.", true);
   });
+});
+slideshowEl?.addEventListener("pointermove", handleSlideshowInteraction, { passive: true });
+slideshowEl?.addEventListener("pointerdown", handleSlideshowInteraction, { passive: true });
+slideshowEl?.addEventListener("touchstart", handleSlideshowInteraction, { passive: true });
+document.addEventListener("fullscreenchange", () => {
+  setSlideshowFullscreenVisualState();
+  if (isSlideshowFullscreen()) {
+    clearSlideshowUiHideTimer();
+    slideshowEl?.classList.add("slideshow-ui-hidden");
+    return;
+  }
+
+  if (isSlideshowOpen()) {
+    showSlideshowUi();
+  }
 });
 slideVideoOverlayEl?.addEventListener("click", async () => {
   await toggleCurrentVideoPlayback();

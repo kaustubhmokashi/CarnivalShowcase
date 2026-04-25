@@ -1574,6 +1574,31 @@ input[type="checkbox"]:checked {
   border-color: transparent;
 }
 
+.slideshow-close-mobile,
+.slideshow-actions,
+.slideshow-nav,
+.slideshow-toast,
+.slide-video-overlay,
+.slide-video-controls {
+  transition: opacity 160ms ease;
+}
+
+.slideshow.slideshow-ui-hidden .slideshow-close-mobile,
+.slideshow.slideshow-ui-hidden .slideshow-actions,
+.slideshow.slideshow-ui-hidden .slideshow-nav,
+.slideshow.slideshow-ui-hidden .slideshow-toast,
+.slideshow.slideshow-ui-hidden .slide-video-overlay,
+.slideshow.slideshow-ui-hidden .slide-video-controls,
+.slideshow.slideshow-fullscreen .slideshow-close-mobile,
+.slideshow.slideshow-fullscreen .slideshow-actions,
+.slideshow.slideshow-fullscreen .slideshow-nav,
+.slideshow.slideshow-fullscreen .slideshow-toast,
+.slideshow.slideshow-fullscreen .slide-video-overlay,
+.slideshow.slideshow-fullscreen .slide-video-controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .slideshow-nav {
   position: absolute;
   top: 50%;
