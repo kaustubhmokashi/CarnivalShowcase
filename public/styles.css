@@ -2406,6 +2406,63 @@ input[type="checkbox"]:checked {
   justify-self: start;
 }
 
+.admin-link-accordion {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+.admin-link-accordion-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.admin-link-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-link-accordion-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.admin-link-accordion-code {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.admin-link-accordion-body {
+  display: grid;
+  gap: 18px;
+  padding: 0 0 18px;
+}
+
+.admin-link-accordion-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-link-accordion-field {
+  display: grid;
+  gap: 4px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.admin-link-accordion-label {
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
 .studio-approval-notice {
   max-width: 620px;
   margin: -34px 0 0;
@@ -2961,6 +3018,28 @@ input[type="checkbox"]:checked {
     padding-left: 16px;
     padding-right: 16px;
     box-sizing: border-box;
+  }
+
+  .admin-tabs {
+    flex-wrap: nowrap;
+    gap: 28px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .admin-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .admin-accounts-list.links-mode {
+    overflow-x: visible;
   }
 
   .studio-auth-panel,

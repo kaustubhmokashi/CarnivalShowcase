@@ -934,9 +934,52 @@ function renderAdminLinks() {
   }
 
   updateAdminPanelMode();
+  const isMobileView = isMobileStudioViewport();
 
   if (!allAdminLinks.length) {
     adminAccountsList.innerHTML = '<p class="studio-empty">No links here.</p>';
+    return;
+  }
+
+  if (isMobileView) {
+    adminAccountsList.innerHTML = "";
+    allAdminLinks.forEach((link) => {
+      const item = document.createElement("details");
+      item.className = "admin-link-accordion";
+      item.innerHTML = `
+        <summary class="admin-link-accordion-summary">
+          <span class="admin-link-accordion-title">${escapeMarkup(link.folderName || "Google Drive folder")}</span>
+          <span class="admin-link-accordion-code">${escapeMarkup(link.code || "")}</span>
+        </summary>
+        <div class="admin-link-accordion-body">
+          <div class="admin-link-accordion-grid">
+            <div class="admin-link-accordion-field">
+              <span class="admin-link-accordion-label">Type</span>
+              <span>${escapeMarkup(link.kind === "temporary" ? "Temporary" : "Permanent")}</span>
+            </div>
+            <div class="admin-link-accordion-field">
+              <span class="admin-link-accordion-label">Creation date</span>
+              <span>${escapeMarkup(formatRegistrationDate(link.createdAt))}</span>
+            </div>
+            <div class="admin-link-accordion-field">
+              <span class="admin-link-accordion-label">Drive link</span>
+              <a class="text-link-button admin-link-anchor" href="${escapeMarkup(link.url || "#")}" target="_blank" rel="noreferrer noopener">
+                Open link
+              </a>
+            </div>
+          </div>
+          <button type="button" class="saved-page-icon-button danger admin-link-delete" aria-label="Delete ${escapeMarkup(link.folderName || "link")}">
+            <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
+          </button>
+        </div>
+      `;
+      item.querySelector(".admin-link-delete")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await deleteAdminLink(link);
+      });
+      adminAccountsList.appendChild(item);
+    });
     return;
   }
 
