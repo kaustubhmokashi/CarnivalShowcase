@@ -387,7 +387,7 @@ private fun PairingQrBlock(pairingUrl: String) {
   val qrBitmap = remember(pairingUrl) { generateQrBitmap(pairingUrl) }
 
   Column(
-    modifier = Modifier.width(340.dp),
+    modifier = Modifier.width(400.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(18.dp)
   ) {
@@ -403,6 +403,8 @@ private fun PairingQrBlock(pairingUrl: String) {
       color = TextPrimary,
       fontWeight = FontWeight.SemiBold,
       textAlign = TextAlign.Center,
+      fontSize = 18.sp,
+      lineHeight = 26.sp,
     )
   }
 }
@@ -425,7 +427,7 @@ private fun BrandLogo(
     imageLoader = imageLoader,
     contentDescription = "Carnival Showcase logo",
     modifier = modifier,
-    contentScale = ContentScale.FillWidth,
+    contentScale = ContentScale.Fit,
   )
 }
 
@@ -741,7 +743,7 @@ private fun SlideshowScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(Color.White)
+      .background(Color.Black)
       .focusable()
       .onPreviewKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) {
@@ -864,7 +866,7 @@ private fun SlideshowScreen(
                   .align(Alignment.Center)
                   .size(64.dp)
                   .clip(RoundedCornerShape(32.dp))
-                  .background(Color(0xCCFFFFFF)),
+                  .background(Color(0xB0000000)),
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
@@ -886,24 +888,15 @@ private fun SlideshowScreen(
           .fillMaxSize()
           .padding(28.dp)
       ) {
-        Text("CARNIVAL SHOWCASE", color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+        if (!state.autoplayEnabled) {
+          BrandLogo(
+            modifier = Modifier
+              .size(32.dp)
+              .align(Alignment.Start)
+          )
+        }
 
         Spacer(modifier = Modifier.weight(1f))
-
-        Text(
-          text = current.name.substringBeforeLast('.').uppercase(),
-          color = Color.White,
-          fontSize = 38.sp,
-          fontWeight = FontWeight.Bold
-        )
-        Text(
-          text = current.path.uppercase(),
-          color = Color(0xFF5F5F5F),
-          fontSize = 12.sp,
-          letterSpacing = 1.6.sp
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         Row(
           horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1181,7 +1174,7 @@ private fun VideoPlayerScreen(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(Color.White)
+      .background(Color.Black)
       .focusable()
       .onPreviewKeyEvent { event ->
         if (event.type == KeyEventType.KeyUp && pendingSeekKey != null && event.key == pendingSeekKey) {
@@ -1404,12 +1397,18 @@ private fun CompactRoundActionButton(
   emphasized: Boolean = false,
   content: @Composable () -> Unit,
 ) {
+  var focused by remember { mutableStateOf(false) }
+
   Card(
     modifier = modifier
+      .onFocusChanged { focused = it.isFocused }
       .size(54.dp)
+      .focusable()
       .clickable(onClick = onClick),
-    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
-    border = BorderStroke(1.dp, Color(0x14000000)),
+    colors = CardDefaults.cardColors(
+      containerColor = if (focused) Color(0xE6000000) else Color(0xCC000000)
+    ),
+    border = BorderStroke(1.dp, if (focused) Color(0x55FFFFFF) else Color(0x22FFFFFF)),
     shape = RoundedCornerShape(16.dp)
   ) {
     Box(
@@ -1566,7 +1565,11 @@ private fun PhotoCard(
   image: PhotoAsset,
   onClick: () -> Unit,
 ) {
-  FocusableSurface(modifier = modifier, onClick = onClick) {
+  FocusableSurface(
+    modifier = modifier,
+    onClick = onClick,
+    shape = RoundedCornerShape(0.dp)
+  ) {
     Column {
       Box(
         modifier = Modifier
@@ -1630,7 +1633,8 @@ private fun TvCard(
 ) {
   FocusableSurface(
     modifier = modifier.fillMaxWidth(),
-    onClick = onClick
+    onClick = onClick,
+    shape = RoundedCornerShape(0.dp)
   ) {
     Column(
       modifier = Modifier
@@ -1651,6 +1655,7 @@ private fun FocusableSurface(
   onClick: () -> Unit,
   focusedBorderColor: Color = Color(0xFF000000),
   shape: RoundedCornerShape = RoundedCornerShape(18.dp),
+  focusedShadow: Boolean = false,
   content: @Composable () -> Unit,
 ) {
   var focused by remember { mutableStateOf(false) }
@@ -1667,7 +1672,11 @@ private fun FocusableSurface(
       width = if (focused) 2.dp else 1.dp,
       color = if (focused) focusedBorderColor else BorderSoft
     ),
-    shape = shape
+    shape = shape,
+    elevation = CardDefaults.cardElevation(
+      defaultElevation = 0.dp,
+      focusedElevation = if (focusedShadow) 18.dp else 0.dp
+    )
   ) {
     content()
   }
@@ -1681,9 +1690,19 @@ private fun RoundActionButton(
   label: String? = null,
   content: @Composable () -> Unit,
 ) {
-  FocusableSurface(
-    modifier = modifier.size(72.dp),
-    onClick = onClick
+  var focused by remember { mutableStateOf(false) }
+
+  Card(
+    modifier = modifier
+      .size(72.dp)
+      .onFocusChanged { focused = it.isFocused }
+      .focusable()
+      .clickable(onClick = onClick),
+    colors = CardDefaults.cardColors(
+      containerColor = if (focused) Color(0xE6000000) else Color(0xCC000000)
+    ),
+    border = BorderStroke(1.dp, if (focused) Color(0x55FFFFFF) else Color(0x22FFFFFF)),
+    shape = RoundedCornerShape(18.dp)
   ) {
     Box(
       modifier = Modifier.fillMaxSize(),
@@ -1721,7 +1740,8 @@ private fun FocusablePrimaryButton(
     modifier = modifier.height(58.dp),
     onClick = onClick,
     focusedBorderColor = AccentColor,
-    shape = RoundedCornerShape(if (sharpCorners) 0.dp else 18.dp)
+    shape = RoundedCornerShape(if (sharpCorners) 0.dp else 18.dp),
+    focusedShadow = true,
   ) {
     Box(
       modifier = Modifier
@@ -1781,7 +1801,8 @@ private fun FocusableIconAction(
 ) {
   FocusableSurface(
     modifier = modifier.size(56.dp),
-    onClick = onClick
+    onClick = onClick,
+    shape = RoundedCornerShape(0.dp)
   ) {
     Box(
       modifier = Modifier.fillMaxSize(),
