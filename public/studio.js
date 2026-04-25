@@ -387,47 +387,67 @@ function getPageUrl(page) {
 
 async function openPairingCode(pairingCode) {
   const code = String(pairingCode || "").trim();
-  if (!code || !db) {
+  if (!code) {
     throw new Error("Either the pairing code does not exist or has been deleted.");
   }
 
-  const pairingSnapshot = await getDoc(doc(db, collections.pairingCodes, code));
-  if (!pairingSnapshot.exists()) {
-    throw new Error("Either the pairing code does not exist or has been deleted.");
-  }
-
-  const pairing = pairingSnapshot.data() || {};
-  if (pairing.publicPath) {
-    window.location.href = pairing.publicPath;
-    return;
-  }
-
-  if (pairing.studioSlug && pairing.pageSlug) {
-    window.location.href = getPageUrl(pairing) || `/${encodeURIComponent(pairing.studioSlug)}/${encodeURIComponent(pairing.pageSlug)}`;
-    return;
-  }
-
-  if (pairing.publicPageId) {
-    const publicPageSnapshot = await getDoc(doc(db, collections.publicPages, pairing.publicPageId));
-    if (publicPageSnapshot.exists()) {
-      const publicPage = publicPageSnapshot.data();
-      const publicPath = getPageUrl(publicPage);
-      if (publicPath) {
-        window.location.href = publicPath;
+  if (db) {
+    const pairingSnapshot = await getDoc(doc(db, collections.pairingCodes, code));
+    if (pairingSnapshot.exists()) {
+      const pairing = pairingSnapshot.data() || {};
+      if (pairing.publicPath) {
+        window.location.href = pairing.publicPath;
         return;
+      }
+
+      if (pairing.studioSlug && pairing.pageSlug) {
+        window.location.href = getPageUrl(pairing) || `/${encodeURIComponent(pairing.studioSlug)}/${encodeURIComponent(pairing.pageSlug)}`;
+        return;
+      }
+
+      if (pairing.publicPageId) {
+        const publicPageSnapshot = await getDoc(doc(db, collections.publicPages, pairing.publicPageId));
+        if (publicPageSnapshot.exists()) {
+          const publicPage = publicPageSnapshot.data();
+          const publicPath = getPageUrl(publicPage);
+          if (publicPath) {
+            window.location.href = publicPath;
+            return;
+          }
+        }
+      }
+
+      if (pairing.ownerUid && pairing.pageId) {
+        const pageSnapshot = await getDoc(doc(db, collections.users, pairing.ownerUid, "pages", pairing.pageId));
+        if (pageSnapshot.exists()) {
+          const publicPath = getPageUrl(pageSnapshot.data());
+          if (publicPath) {
+            window.location.href = publicPath;
+            return;
+          }
+        }
       }
     }
   }
 
-  if (pairing.ownerUid && pairing.pageId) {
-    const pageSnapshot = await getDoc(doc(db, collections.users, pairing.ownerUid, "pages", pairing.pageId));
-    if (pageSnapshot.exists()) {
-      const publicPath = getPageUrl(pageSnapshot.data());
-      if (publicPath) {
-        window.location.href = publicPath;
-        return;
+  const remoteResponse = await fetch(`/api/remote/resolve?code=${encodeURIComponent(code)}`);
+  if (remoteResponse.ok) {
+    const remotePayload = await remoteResponse.json();
+    const folderUrl = String(remotePayload?.url || "").trim();
+    if (folderUrl) {
+      if (!window.CarnivalGallery?.loadFolder) {
+        throw new Error("The hosted gallery loader is unavailable right now.");
       }
+
+      window.CarnivalGallery?.showLoading?.("Opening your Drive folder.");
+      await window.CarnivalGallery.loadFolder(folderUrl, {});
+      return;
     }
+  }
+
+  if (!remoteResponse.ok && remoteResponse.status !== 404) {
+    const remotePayload = await remoteResponse.json().catch(() => ({}));
+    throw new Error(remotePayload?.error || "We couldn’t open that pairing code right now.");
   }
 
   throw new Error("Either the pairing code does not exist or has been deleted.");
