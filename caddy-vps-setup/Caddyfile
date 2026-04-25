@@ -7,6 +7,10 @@
 }
 
 your-vps-domain.example.com {
+	tls {
+		key_type rsa2048
+	}
+
 	encode gzip zstd
 	reverse_proxy 127.0.0.1:3000
 }
@@ -14,6 +18,7 @@ your-vps-domain.example.com {
 https:// {
 	tls {
 		on_demand
+		key_type rsa2048
 	}
 
 	encode gzip zstd
