@@ -11,65 +11,67 @@
       <section class="remote-shell">
         <img class="remote-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Showcase" />
 
-        <h1>Create pairing code</h1>
+        <section class="remote-content">
+          <h1>Create pairing code</h1>
 
-        <section class="remote-result-panel hidden" aria-live="polite">
-          <div class="remote-result-actions">
-            <button id="share-code-button" type="button" class="remote-icon-button" aria-label="Share code">
-              <span class="icon-mask icon-share" aria-hidden="true"></span>
-            </button>
-            <button id="copy-code-button" type="button" class="remote-icon-button" aria-label="Copy code">
-              <span class="icon-mask icon-copy" aria-hidden="true"></span>
-            </button>
+          <section class="remote-result-panel hidden" aria-live="polite">
+            <div class="remote-result-actions">
+              <button id="share-code-button" type="button" class="remote-icon-button" aria-label="Share code">
+                <span class="icon-mask icon-share" aria-hidden="true"></span>
+              </button>
+              <button id="copy-code-button" type="button" class="remote-icon-button" aria-label="Copy code">
+                <span class="icon-mask icon-copy" aria-hidden="true"></span>
+              </button>
+            </div>
+            <p id="remote-code" class="remote-code">---------</p>
+            <p class="remote-result-note">Enter this code on your TV to open the folder.</p>
+          </section>
+
+          <form id="remote-form" class="remote-form">
+            <textarea
+              id="remote-url"
+              name="remote-url"
+              rows="4"
+              placeholder="https://drive.google.com/drive/folders/..."
+              required
+            ></textarea>
+            <button type="submit" class="remote-primary-button">Create code</button>
+          </form>
+
+          <form id="remote-delete-form" class="remote-form hidden">
+            <input
+              id="delete-code"
+              name="delete-code"
+              class="remote-input"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="Enter the code"
+              required
+            />
+            <textarea
+              id="delete-url"
+              name="delete-url"
+              rows="4"
+              placeholder="Original Google Drive folder link"
+              required
+            ></textarea>
+            <button type="submit" class="remote-primary-button">Delete code</button>
+            <p id="delete-feedback" class="delete-feedback hidden"></p>
+          </form>
+
+          <button id="new-code-button" type="button" class="remote-tertiary-button hidden">
+            Create Another Code
+          </button>
+          <button id="delete-mode-button" type="button" class="remote-tertiary-button">Delete Code</button>
+          <button id="cancel-delete-button" type="button" class="remote-tertiary-button hidden">
+            Back
+          </button>
+
+          <div class="remote-footer">
+            <p class="remote-expiry-note">Pairing codes stay active for 24 hours.</p>
+            <p id="remote-status" class="remote-status"></p>
           </div>
-          <p id="remote-code" class="remote-code">---------</p>
-          <p class="remote-result-note">Enter this code on your TV to open the folder.</p>
         </section>
-
-        <form id="remote-form" class="remote-form">
-          <textarea
-            id="remote-url"
-            name="remote-url"
-            rows="4"
-            placeholder="https://drive.google.com/drive/folders/..."
-            required
-          ></textarea>
-          <button type="submit" class="remote-primary-button">Create code</button>
-        </form>
-
-        <form id="remote-delete-form" class="remote-form hidden">
-          <input
-            id="delete-code"
-            name="delete-code"
-            class="remote-input"
-            inputmode="numeric"
-            autocomplete="off"
-            placeholder="Enter the code"
-            required
-          />
-          <textarea
-            id="delete-url"
-            name="delete-url"
-            rows="4"
-            placeholder="Original Google Drive folder link"
-            required
-          ></textarea>
-          <button type="submit" class="remote-primary-button">Delete code</button>
-          <p id="delete-feedback" class="delete-feedback hidden"></p>
-        </form>
-
-        <button id="new-code-button" type="button" class="remote-tertiary-button hidden">
-          Create Another Code
-        </button>
-        <button id="delete-mode-button" type="button" class="remote-tertiary-button">Delete Code</button>
-        <button id="cancel-delete-button" type="button" class="remote-tertiary-button hidden">
-          Back
-        </button>
-
-        <div class="remote-footer">
-          <p class="remote-expiry-note">Pairing codes stay active for 24 hours.</p>
-          <p id="remote-status" class="remote-status"></p>
-        </div>
       </section>
     </main>
 

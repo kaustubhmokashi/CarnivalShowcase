@@ -52,14 +52,21 @@ p {
 
 .remote-shell {
   width: min(100%, 540px);
+  min-height: calc(100vh - 96px);
   display: grid;
-  gap: 18px;
-  align-content: start;
+  grid-template-rows: auto 1fr;
+  gap: 24px;
 }
 
 .remote-logo {
   width: min(240px, 58vw);
   justify-self: center;
+}
+
+.remote-content {
+  display: grid;
+  align-content: center;
+  gap: 18px;
 }
 
 h1 {
@@ -87,11 +94,11 @@ h1 {
   display: inline-grid;
   place-items: center;
   padding: 0;
-  border: 0;
-  background: var(--accent-soft-strong);
+  border: 1px solid var(--accent);
+  background: #ffffff;
   color: var(--accent);
   cursor: pointer;
-  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease, border-color 140ms ease;
 }
 
 .remote-icon-button:active,
@@ -241,8 +248,13 @@ h1 {
 
 @media (hover: hover) and (pointer: fine) {
   .remote-primary-button:hover,
-  .remote-icon-button:hover,
   .remote-tertiary-button:hover {
+    opacity: 0.82;
+  }
+
+  .remote-icon-button:hover {
+    background: #ffffff;
+    border-color: var(--accent);
     opacity: 0.82;
   }
 }
@@ -250,6 +262,11 @@ h1 {
 @media (max-width: 640px) {
   .remote-page {
     padding: 28px 16px 40px;
+  }
+
+  .remote-shell {
+    min-height: calc(100vh - 68px);
+    gap: 20px;
   }
 
   h1 {
