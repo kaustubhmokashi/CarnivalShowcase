@@ -51,6 +51,7 @@ const closeSlideshowMobileButton = document.getElementById("close-slideshow-mobi
 const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
 const toggleSlideshowPlaybackButton = document.getElementById("toggle-slideshow-playback");
+const enterSlideshowFullscreenButton = document.getElementById("enter-slideshow-fullscreen");
 const slideshowPlaybackIconEl = document.getElementById("slideshow-playback-icon");
 const prevSlideButton = document.getElementById("prev-slide");
 const nextSlideButton = document.getElementById("next-slide");
@@ -1707,6 +1708,22 @@ function openSlideshow(index = 0) {
 }
 openSlideshow.toastTimer = null;
 
+function isSlideshowFullscreen() {
+  return document.fullscreenElement === slideshowEl;
+}
+
+async function enterSlideshowFullscreen() {
+  if (!slideshowEl || isSlideshowFullscreen() || typeof slideshowEl.requestFullscreen !== "function") {
+    return;
+  }
+
+  try {
+    await slideshowEl.requestFullscreen();
+  } catch (error) {
+    setStatus("Fullscreen isn’t available right now.", true);
+  }
+}
+
 function closeSlideshow() {
   clearSlideshowAdvanceTimer();
   slideshowImageLoadToken += 1;
@@ -1739,6 +1756,10 @@ function handleKeydown(event) {
   }
 
   if (event.key === "Escape") {
+    if (isSlideshowFullscreen()) {
+      return;
+    }
+
     if (!slideshowEl.classList.contains("hidden")) {
       event.preventDefault();
       closeSlideshow();
@@ -1940,6 +1961,11 @@ nextSlideButton.addEventListener("click", () => showSlide(currentSlideIndex + 1)
 closeSlideshowMobileButton?.addEventListener("click", closeSlideshow);
 downloadSlideButton.addEventListener("click", downloadCurrentSlide);
 toggleSlideshowPlaybackButton?.addEventListener("click", toggleSlideshowPlayback);
+enterSlideshowFullscreenButton?.addEventListener("click", () => {
+  enterSlideshowFullscreen().catch(() => {
+    setStatus("Fullscreen isn’t available right now.", true);
+  });
+});
 shareSlideButton?.addEventListener("click", () => {
   shareCurrentSlide().catch(() => {
     setStatus("Sharing isn’t available right now.", true);

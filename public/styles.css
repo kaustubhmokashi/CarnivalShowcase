@@ -217,6 +217,11 @@ label:focus-within {
   -webkit-mask-image: url("/assets/icons/Delete.svg?v=20260424b");
 }
 
+.icon-fullscreen {
+  mask-image: url("/assets/icons/Full-screen.svg?v=20260426a");
+  -webkit-mask-image: url("/assets/icons/Full-screen.svg?v=20260426a");
+}
+
 .icon-hamburger {
   mask-image: url("/assets/icons/Hamburger.svg?v=20260424b");
   -webkit-mask-image: url("/assets/icons/Hamburger.svg?v=20260424b");
