@@ -1530,6 +1530,16 @@ input[type="checkbox"]:checked {
   display: block;
 }
 
+.slideshow-action-image {
+  display: block;
+}
+
+.slideshow-settings-image {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
 .slideshow-playback-icon {
   width: 18px;
   height: 18px;
