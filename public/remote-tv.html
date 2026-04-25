@@ -3,42 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Carnival Showcase TV Pairing</title>
+    <title>Create pairing code</title>
     <link rel="stylesheet" href="/remote-tv.css" />
   </head>
   <body>
     <main class="remote-page">
       <section class="remote-shell">
-        <div class="remote-brand-row">
-          <p class="remote-eyebrow">Carnival Showcase</p>
-          <p class="remote-version">TV Pairing</p>
-        </div>
+        <img class="remote-logo" src="/assets/carnivalstories-logo.svg" alt="Carnival Showcase" />
 
-        <div class="remote-hero">
-          <h1>Send a Google Drive folder to your TV.</h1>
-          <p class="remote-subtitle">
-            Paste the folder link below and we’ll turn it into a temporary pairing code you can enter on your TV.
-          </p>
-        </div>
+        <h1>Create pairing code</h1>
 
-        <section class="remote-result-panel" aria-live="polite">
-          <div class="remote-result-header">
-            <p class="remote-result-label">Your Pairing Code</p>
-            <div class="remote-result-actions">
-              <button id="share-code-button" type="button" class="remote-copy-button" aria-label="Share code">
-                Share
-              </button>
-              <button id="copy-code-button" type="button" class="remote-copy-button" aria-label="Copy code">
-                Copy
-              </button>
-            </div>
+        <section class="remote-result-panel hidden" aria-live="polite">
+          <div class="remote-result-actions">
+            <button id="share-code-button" type="button" class="remote-icon-button" aria-label="Share code">
+              <span class="icon-mask icon-share" aria-hidden="true"></span>
+            </button>
+            <button id="copy-code-button" type="button" class="remote-icon-button" aria-label="Copy code">
+              <span class="icon-mask icon-copy" aria-hidden="true"></span>
+            </button>
           </div>
           <p id="remote-code" class="remote-code">---------</p>
           <p class="remote-result-note">Enter this code on your TV to open the folder.</p>
         </section>
 
         <form id="remote-form" class="remote-form">
-          <label for="remote-url">Google Drive folder link</label>
           <textarea
             id="remote-url"
             name="remote-url"
@@ -46,11 +34,10 @@
             placeholder="https://drive.google.com/drive/folders/..."
             required
           ></textarea>
-          <button type="submit">Create Code</button>
+          <button type="submit" class="remote-primary-button">Create code</button>
         </form>
 
         <form id="remote-delete-form" class="remote-form hidden">
-          <label for="delete-code">Code</label>
           <input
             id="delete-code"
             name="delete-code"
@@ -60,32 +47,27 @@
             placeholder="Enter the code"
             required
           />
-          <label for="delete-url">Original Google Drive folder link</label>
           <textarea
             id="delete-url"
             name="delete-url"
             rows="4"
-            placeholder="https://drive.google.com/drive/folders/..."
+            placeholder="Original Google Drive folder link"
             required
           ></textarea>
-          <button type="submit">Delete Code</button>
+          <button type="submit" class="remote-primary-button">Delete code</button>
           <p id="delete-feedback" class="delete-feedback hidden"></p>
         </form>
 
         <button id="new-code-button" type="button" class="remote-tertiary-button hidden">
           Create Another Code
         </button>
-        <button id="delete-mode-button" type="button" class="remote-tertiary-button">
-          Delete a code
-        </button>
+        <button id="delete-mode-button" type="button" class="remote-tertiary-button">Delete Code</button>
         <button id="cancel-delete-button" type="button" class="remote-tertiary-button hidden">
-          Back to code creation
+          Back
         </button>
 
         <div class="remote-footer">
-          <p class="remote-expiry-note">
-            Pairing codes stay active for 24 hours.
-          </p>
+          <p class="remote-expiry-note">Pairing codes stay active for 24 hours.</p>
           <p id="remote-status" class="remote-status"></p>
         </div>
       </section>
