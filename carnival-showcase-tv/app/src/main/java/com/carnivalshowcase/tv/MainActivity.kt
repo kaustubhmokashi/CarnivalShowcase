@@ -59,6 +59,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +89,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -102,6 +105,7 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.decode.SvgDecoder
 import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
@@ -134,6 +138,35 @@ private val TextSecondary = Color(0xFF5F5F5F)
 private val BorderSoft = Color(0x14000000)
 private val BorderStrong = Color(0x22000000)
 private val OverlaySoft = Color(0xCCFFFFFF)
+private val WorkSansFontFamily = FontFamily(
+  Font(R.font.work_sans_variable, FontWeight.Normal),
+  Font(R.font.work_sans_variable, FontWeight.Medium),
+  Font(R.font.work_sans_variable, FontWeight.SemiBold),
+  Font(R.font.work_sans_variable, FontWeight.Bold),
+  Font(R.font.work_sans_variable, FontWeight.ExtraBold),
+)
+private val GreatVibesFontFamily = FontFamily(
+  Font(R.font.great_vibes_regular, FontWeight.Normal),
+)
+private val AppTypography = Typography().run {
+  copy(
+    displayLarge = displayLarge.copy(fontFamily = WorkSansFontFamily),
+    displayMedium = displayMedium.copy(fontFamily = WorkSansFontFamily),
+    displaySmall = displaySmall.copy(fontFamily = WorkSansFontFamily),
+    headlineLarge = headlineLarge.copy(fontFamily = WorkSansFontFamily),
+    headlineMedium = headlineMedium.copy(fontFamily = WorkSansFontFamily),
+    headlineSmall = headlineSmall.copy(fontFamily = WorkSansFontFamily),
+    titleLarge = titleLarge.copy(fontFamily = WorkSansFontFamily),
+    titleMedium = titleMedium.copy(fontFamily = WorkSansFontFamily),
+    titleSmall = titleSmall.copy(fontFamily = WorkSansFontFamily),
+    bodyLarge = bodyLarge.copy(fontFamily = WorkSansFontFamily),
+    bodyMedium = bodyMedium.copy(fontFamily = WorkSansFontFamily),
+    bodySmall = bodySmall.copy(fontFamily = WorkSansFontFamily),
+    labelLarge = labelLarge.copy(fontFamily = WorkSansFontFamily),
+    labelMedium = labelMedium.copy(fontFamily = WorkSansFontFamily),
+    labelSmall = labelSmall.copy(fontFamily = WorkSansFontFamily),
+  )
+}
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -143,7 +176,10 @@ class MainActivity : ComponentActivity() {
       baseUrl = BuildConfig.CARNIVAL_SHOWCASE_BASE_URL,
       pairingUrlOverride = BuildConfig.CARNIVAL_SHOWCASE_PAIRING_URL,
     )
-    val factory = DriveDeckViewModel.Factory(repository)
+    val factory = DriveDeckViewModel.Factory(
+      repository = repository,
+      initialPairingUrl = BuildConfig.CARNIVAL_SHOWCASE_PAIRING_URL
+    )
 
     setContent {
       MaterialTheme {
@@ -243,10 +279,9 @@ private fun SplashScreen() {
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-      Image(
-        painter = painterResource(id = R.drawable.drivedeck_launcher_icon),
-        contentDescription = "Carnival Showcase logo",
-        modifier = Modifier.size(220.dp)
+      BrandLogo(
+        modifier = Modifier
+          .fillMaxWidth(0.32f)
       )
       Text(
         text = "Carnival Showcase TV",
@@ -266,74 +301,95 @@ private fun HomeScreen(
   onSubmitCode: () -> Unit,
   onOpenDirect: () -> Unit,
 ) {
-  CenterStage(
-    title = "Carnival Showcase",
-    subtitle = "Enter the pairing code here. If you need one, scan the QR code below on your phone.",
-    status = state.status,
-    statusTone = state.statusTone,
-    isLoading = state.isLoading,
+  val codeFieldFocusRequester = remember { FocusRequester() }
+  val continueFocusRequester = remember { FocusRequester() }
+  LaunchedEffect(Unit) {
+    codeFieldFocusRequester.requestFocus()
+  }
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(AppBackground)
   ) {
-    val codeFieldFocusRequester = remember { FocusRequester() }
-    val continueFocusRequester = remember { FocusRequester() }
-    val directLinkFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
-      codeFieldFocusRequester.requestFocus()
-    }
-
-    OutlinedTextField(
-      value = state.pairingCode,
-      onValueChange = { onCodeChanged(it.filter(Char::isDigit).take(7)) },
+    Column(
       modifier = Modifier
+        .align(Alignment.TopCenter)
         .fillMaxWidth()
-        .focusRequester(codeFieldFocusRequester),
-      singleLine = true,
-      label = { Text("Pairing code") },
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-      textStyle = androidx.compose.ui.text.TextStyle(
-        color = TextPrimary,
-        fontSize = 36.sp,
-        fontWeight = FontWeight.ExtraBold,
-        letterSpacing = 6.sp,
-        textAlign = TextAlign.Center
-      ),
-      colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = AccentColor,
-        unfocusedBorderColor = BorderStrong,
-        focusedLabelColor = AccentColor,
-        unfocusedLabelColor = TextSecondary,
-        focusedTextColor = TextPrimary,
-        unfocusedTextColor = TextPrimary,
-        cursorColor = AccentColor
+        .padding(horizontal = 56.dp, vertical = 36.dp),
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+      BrandLogo(
+        modifier = Modifier
+          .fillMaxWidth(0.24f)
       )
-    )
-    Spacer(modifier = Modifier.height(18.dp))
-    FocusablePrimaryButton(
-      onClick = onSubmitCode,
-      modifier = Modifier
-        .fillMaxWidth()
-        .focusRequester(continueFocusRequester)
-        .focusProperties {
-          down = directLinkFocusRequester
-        },
-    ) {
-      Text("Continue", color = Color.White)
-    }
-    if (state.pairingUrl.isNotBlank()) {
-      Spacer(modifier = Modifier.height(12.dp))
-      PairingQrBlock(state.pairingUrl)
-    }
-    Spacer(modifier = Modifier.height(10.dp))
-    FocusableTextAction(
-      onClick = onOpenDirect,
-      modifier = Modifier
-        .align(Alignment.CenterHorizontally)
-        .focusRequester(directLinkFocusRequester)
-        .focusProperties {
-          up = continueFocusRequester
+      Spacer(modifier = Modifier.height(44.dp))
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(48.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.Top
+      ) {
+        Column(
+          modifier = Modifier.width(560.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+          Text(
+            text = "Enter the pairing code here.",
+            color = TextSecondary,
+            fontSize = 24.sp,
+            lineHeight = 34.sp,
+            textAlign = TextAlign.Left
+          )
+          OutlinedTextField(
+            value = state.pairingCode,
+            onValueChange = { onCodeChanged(it.filter(Char::isDigit).take(7)) },
+            modifier = Modifier
+              .fillMaxWidth()
+              .focusRequester(codeFieldFocusRequester),
+            singleLine = true,
+            label = { Text("Pairing code") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            textStyle = androidx.compose.ui.text.TextStyle(
+              color = TextPrimary,
+              fontSize = 36.sp,
+              fontWeight = FontWeight.ExtraBold,
+              letterSpacing = 6.sp,
+              textAlign = TextAlign.Center
+            ),
+            shape = RoundedCornerShape(0.dp),
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = AccentColor,
+              unfocusedBorderColor = BorderStrong,
+              focusedLabelColor = AccentColor,
+              unfocusedLabelColor = TextSecondary,
+              focusedTextColor = TextPrimary,
+              unfocusedTextColor = TextPrimary,
+              cursorColor = AccentColor
+            )
+          )
+          FocusablePrimaryButton(
+            onClick = onSubmitCode,
+            modifier = Modifier
+              .fillMaxWidth()
+              .focusRequester(continueFocusRequester),
+            sharpCorners = true,
+          ) {
+            Text("Open folder", color = Color.White, fontWeight = FontWeight.SemiBold)
+          }
+          if (state.status.isNotBlank()) {
+            Text(
+              text = state.status,
+              color = if (state.statusTone == StatusTone.Error) AccentColor else TextSecondary,
+              fontSize = 18.sp,
+              lineHeight = 26.sp,
+            )
+          }
         }
-    ) {
-      Text("Enter Google Drive link manually")
+
+        if (state.pairingUrl.isNotBlank()) {
+          PairingQrBlock(state.pairingUrl)
+        }
+      }
     }
   }
 }
@@ -342,45 +398,47 @@ private fun HomeScreen(
 private fun PairingQrBlock(pairingUrl: String) {
   val qrBitmap = remember(pairingUrl) { generateQrBitmap(pairingUrl) }
 
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(20.dp),
-    verticalAlignment = Alignment.CenterVertically
+  Column(
+    modifier = Modifier.width(340.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(18.dp)
   ) {
     qrBitmap?.let {
       Image(
         bitmap = it.asImageBitmap(),
         contentDescription = "QR code for Carnival Showcase TV pairing",
-        modifier = Modifier.size(180.dp)
+        modifier = Modifier.size(220.dp)
       )
     }
-
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-      Text(
-        text = "Scan this QR code to convert a Google Drive link into a pairing code.",
-        color = TextPrimary,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        text = "Open it on your phone, paste the Google Drive link, and then enter the temporary pairing code shown on your phone here on TV.",
-        color = TextSecondary,
-      )
-      Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = SurfaceMuted
-      ) {
-        Text(
-          text = pairingUrl,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-          color = TextPrimary,
-        )
-      }
-    }
+    Text(
+      text = "Scan the QR code to open the phone remote.",
+      color = TextPrimary,
+      fontWeight = FontWeight.SemiBold,
+      textAlign = TextAlign.Center,
+    )
   }
+}
+
+@Composable
+private fun BrandLogo(
+  modifier: Modifier = Modifier,
+) {
+  val context = LocalContext.current
+  val imageLoader = context.imageLoader.newBuilder()
+    .components {
+      add(SvgDecoder.Factory())
+    }
+    .build()
+
+  AsyncImage(
+    model = ImageRequest.Builder(context)
+      .data("android.resource://${context.packageName}/${R.raw.drivedeck_logo}")
+      .build(),
+    imageLoader = imageLoader,
+    contentDescription = "Carnival Showcase logo",
+    modifier = modifier,
+    contentScale = ContentScale.FillWidth,
+  )
 }
 
 @Composable
@@ -1604,6 +1662,7 @@ private fun FocusableSurface(
   modifier: Modifier = Modifier,
   onClick: () -> Unit,
   focusedBorderColor: Color = Color(0xFF000000),
+  shape: RoundedCornerShape = RoundedCornerShape(18.dp),
   content: @Composable () -> Unit,
 ) {
   var focused by remember { mutableStateOf(false) }
@@ -1620,7 +1679,7 @@ private fun FocusableSurface(
       width = if (focused) 2.dp else 1.dp,
       color = if (focused) focusedBorderColor else BorderSoft
     ),
-    shape = RoundedCornerShape(18.dp)
+    shape = shape
   ) {
     content()
   }
@@ -1667,12 +1726,14 @@ private fun RoundActionButton(
 private fun FocusablePrimaryButton(
   modifier: Modifier = Modifier,
   onClick: () -> Unit,
+  sharpCorners: Boolean = false,
   content: @Composable () -> Unit,
 ) {
   FocusableSurface(
     modifier = modifier.height(58.dp),
     onClick = onClick,
-    focusedBorderColor = AccentColor
+    focusedBorderColor = AccentColor,
+    shape = RoundedCornerShape(if (sharpCorners) 0.dp else 18.dp)
   ) {
     Box(
       modifier = Modifier
@@ -1868,7 +1929,7 @@ private fun generateQrBitmap(content: String): Bitmap? {
           setPixel(
             x,
             y,
-            if (bitMatrix[x, y]) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT
+            if (bitMatrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
           )
         }
       }
@@ -1919,13 +1980,16 @@ enum class StatusTone {
 
 class DriveDeckViewModel(
   private val repository: DriveDeckRepository,
+  private val initialPairingUrl: String = "",
 ) : ViewModel() {
-  var uiState by mutableStateOf(DriveDeckUiState())
+  var uiState by mutableStateOf(DriveDeckUiState(pairingUrl = initialPairingUrl))
     private set
 
   init {
-    viewModelScope.launch {
-      preparePairingUrl()
+    if (initialPairingUrl.isBlank()) {
+      viewModelScope.launch {
+        preparePairingUrl()
+      }
     }
   }
 
@@ -2254,10 +2318,11 @@ class DriveDeckViewModel(
 
   class Factory(
     private val repository: DriveDeckRepository,
+    private val initialPairingUrl: String = "",
   ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-      return DriveDeckViewModel(repository) as T
+      return DriveDeckViewModel(repository, initialPairingUrl) as T
     }
   }
 }

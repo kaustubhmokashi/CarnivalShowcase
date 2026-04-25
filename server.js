@@ -818,6 +818,42 @@ async function getPublicPageRecordById(publicPageId) {
   return parseFirestoreFields(document.fields || {});
 }
 
+async function getPairingCodeRecordById(code) {
+  const normalizedCode = String(code || "").trim();
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const db = getFirestoreDb();
+  if (db) {
+    const snapshot = await db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(normalizedCode).get();
+    return snapshot.exists ? snapshot.data() || null : null;
+  }
+
+  if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
+    return null;
+  }
+
+  const documentUrl = new URL(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      FIREBASE_WEB_CONFIG.projectId
+    )}/databases/(default)/documents/${FIREBASE_COLLECTIONS.pairingCodes}/${encodeURIComponent(normalizedCode)}`
+  );
+  documentUrl.searchParams.set("key", FIREBASE_WEB_CONFIG.apiKey);
+
+  const response = await fetch(documentUrl);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Pairing code lookup failed (${response.status}): ${body}`);
+  }
+
+  const document = await response.json();
+  return parseFirestoreFields(document.fields || {});
+}
+
 async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
   const route = parsePublicPageRequest(requestUrl.pathname, requestHost);
   if (!route?.publicPageId) {
@@ -1536,16 +1572,30 @@ async function handleResolveRemoteCode(req, res) {
   }
 
   const entry = await resolveRemoteLinkFromStore(code);
-  if (!entry) {
-    sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
+  if (entry) {
+    sendJson(res, 200, {
+      code: entry.code,
+      url: entry.url || "",
+      ready: Boolean(entry.url),
+      permanent: Boolean(entry.permanent),
+      source: "remote",
+    });
     return;
   }
 
-  sendJson(res, 200, {
-    code: entry.code,
-    url: entry.url || "",
-    ready: Boolean(entry.url),
-  });
+  const pairingRecord = await getPairingCodeRecordById(code);
+  if (pairingRecord?.url) {
+    sendJson(res, 200, {
+      code,
+      url: String(pairingRecord.url || "").trim(),
+      ready: true,
+      permanent: true,
+      source: "firestore",
+    });
+    return;
+  }
+
+  sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
 }
 
 async function handleDeleteRemoteCode(req, res) {

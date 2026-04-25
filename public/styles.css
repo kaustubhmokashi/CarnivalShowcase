@@ -406,6 +406,17 @@ label:focus-within {
   margin-left: 2px;
 }
 
+.link-create-code-cta {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.link-create-code-cta:hover,
+.link-create-code-cta:focus-visible {
+  color: var(--accent);
+}
+
 .loading-indicator {
   position: absolute;
   left: 0;
