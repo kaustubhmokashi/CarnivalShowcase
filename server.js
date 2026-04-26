@@ -1198,6 +1198,50 @@ async function incrementPublicPagePhotoLike(publicPageId, photoId) {
   return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount, source: "firestore" };
 }
 
+async function decrementPublicPagePhotoLike(publicPageId, photoId) {
+  const db = getFirestoreDb();
+  const normalizedPageId = String(publicPageId || "").trim();
+  const normalizedPhotoId = String(photoId || "").trim();
+  if (!normalizedPageId || !normalizedPhotoId) {
+    throw new Error("Missing photo like identifiers.");
+  }
+
+  if (!db) {
+    const store = readPublicPageLikesStore();
+    const existingLikes =
+      store[normalizedPageId] && typeof store[normalizedPageId] === "object" ? store[normalizedPageId] : {};
+    const currentCount = Math.max(0, Number(existingLikes[normalizedPhotoId]) || 0);
+    const nextCount = Math.max(0, currentCount - 1);
+    store[normalizedPageId] = {
+      ...existingLikes,
+      [normalizedPhotoId]: nextCount,
+    };
+    writePublicPageLikesStore(store);
+    return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount, source: "vps" };
+  }
+
+  const pageRef = db.collection(FIREBASE_COLLECTIONS.publicPages).doc(normalizedPageId);
+  const nextCount = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(pageRef);
+    if (!snapshot.exists) {
+      throw new Error("This studio page does not exist.");
+    }
+
+    const pageData = snapshot.data() || {};
+    const existingLikes = pageData.photoLikes && typeof pageData.photoLikes === "object" ? pageData.photoLikes : {};
+    const currentCount = Math.max(0, Number(existingLikes[normalizedPhotoId]) || 0);
+    const updatedLikes = {
+      ...existingLikes,
+      [normalizedPhotoId]: Math.max(0, currentCount - 1),
+    };
+
+    transaction.set(pageRef, { photoLikes: updatedLikes }, { merge: true });
+    return updatedLikes[normalizedPhotoId];
+  });
+
+  return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount, source: "firestore" };
+}
+
 async function handlePublicPageLikes(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
@@ -2095,6 +2139,24 @@ async function handlePublicPageLike(req, res) {
   }
 }
 
+async function handlePublicPageUnlike(req, res) {
+  try {
+    const body = await readRequestBody(req);
+    const publicPageId = String(body.publicPageId || "").trim();
+    const photoId = String(body.photoId || "").trim();
+
+    if (!publicPageId || !photoId) {
+      sendJson(res, 400, { error: "Missing photo like identifiers." });
+      return;
+    }
+
+    const result = await decrementPublicPagePhotoLike(publicPageId, photoId);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not remove the photo like." });
+  }
+}
+
 async function handleAdminLinks(req, res) {
   const admin = await requireAdminRequest(req, res);
   if (!admin) {
@@ -2316,6 +2378,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/public-page/like" && req.method === "POST") {
     await handlePublicPageLike(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/unlike" && req.method === "POST") {
+    await handlePublicPageUnlike(req, res);
     return;
   }
 

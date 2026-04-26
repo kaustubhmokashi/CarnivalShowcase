@@ -181,36 +181,25 @@ function getPhotoLikeCount(photoId) {
 }
 
 function renderPhotoLikeBadge(photo) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "photo-like-badge";
-  button.dataset.photoId = String(photo?.id || "");
-  button.setAttribute("aria-label", "Like photo");
+  const badge = document.createElement("div");
+  badge.className = "photo-like-badge";
+  badge.dataset.photoId = String(photo?.id || "");
+  badge.setAttribute("aria-hidden", "true");
 
   const icon = document.createElement("span");
   const count = getPhotoLikeCount(photo?.id);
   icon.className = `photo-like-badge-icon icon-mask ${count > 0 ? "icon-heart-selected" : "icon-heart-empty"}`;
   icon.setAttribute("aria-hidden", "true");
-  button.appendChild(icon);
+  badge.appendChild(icon);
 
   if (count > 0) {
     const countEl = document.createElement("span");
     countEl.className = "photo-like-badge-count";
     countEl.textContent = String(count);
-    button.appendChild(countEl);
+    badge.appendChild(countEl);
   }
 
-  button.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      await incrementPhotoLike(photo);
-    } catch (error) {
-      setStatus(error.message || "Could not save the photo like.", true);
-    }
-  });
-
-  return button;
+  return badge;
 }
 
 function syncGridLikeBadges(photoId) {
@@ -255,16 +244,8 @@ function updateSlideshowLikeVisual(photo = getCurrentSlidePhoto()) {
   slideshowLikeCountEl.classList.toggle("hidden", count <= 0);
 }
 
-async function incrementPhotoLike(photo = getCurrentSlidePhoto()) {
-  if (!hasPublicPageLikes() || !photo?.id || likedPhotoSessionIds.has(photo.id)) {
-    if (photo?.id) {
-      likedPhotoSessionIds.delete(photo.id);
-      updateSlideshowLikeVisual(photo);
-    }
-    return;
-  }
-
-  const response = await fetch("/api/public-page/like", {
+async function updatePhotoLikeCount(endpoint, photo) {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -279,9 +260,28 @@ async function incrementPhotoLike(photo = getCurrentSlidePhoto()) {
     throw new Error(payload?.error || "Could not save the photo like.");
   }
 
-  currentPhotoLikes[photo.id] = Math.max(0, Number(payload?.count) || getPhotoLikeCount(photo.id) + 1);
-  likedPhotoSessionIds.add(photo.id);
+  currentPhotoLikes[photo.id] = Math.max(0, Number(payload?.count) || 0);
   syncGridLikeBadges(photo.id);
+  updateSlideshowLikeVisual(photo);
+}
+
+async function togglePhotoLike(photo = getCurrentSlidePhoto()) {
+  if (!hasPublicPageLikes() || !photo?.id) {
+    return;
+  }
+
+  if (likedPhotoSessionIds.has(photo.id)) {
+    const previousCount = getPhotoLikeCount(photo.id);
+    await updatePhotoLikeCount("/api/public-page/unlike", photo);
+    likedPhotoSessionIds.delete(photo.id);
+    currentPhotoLikes[photo.id] = Math.max(0, Number(currentPhotoLikes[photo.id]) || previousCount - 1);
+    syncGridLikeBadges(photo.id);
+    updateSlideshowLikeVisual(photo);
+    return;
+  }
+
+  await updatePhotoLikeCount("/api/public-page/like", photo);
+  likedPhotoSessionIds.add(photo.id);
   updateSlideshowLikeVisual(photo);
 }
 
@@ -2178,7 +2178,7 @@ nextSlideButton.addEventListener("click", () => showSlide(currentSlideIndex + 1)
 closeSlideshowMobileButton?.addEventListener("click", closeSlideshow);
 likeSlideButton?.addEventListener("click", async () => {
   try {
-    await incrementPhotoLike();
+    await togglePhotoLike();
   } catch (error) {
     setStatus(error.message || "Could not save the photo like.", true);
   }
