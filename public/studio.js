@@ -32,6 +32,7 @@ const collections = {
 const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
 const ALBUM_SNAPSHOT_VERSION = 1;
 const ALBUM_SNAPSHOT_TARGET_CHARS = 240000;
+const PRODUCT_HOME_URL = "https://carnivalshowcase.kaustubhmokashi.com/";
 
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
@@ -395,13 +396,12 @@ function getPageUrl(page) {
   return platformPath ? `${window.location.origin}${platformPath}` : "";
 }
 
-function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "", homepageLink = "" } = {}) {
+function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "" } = {}) {
   const lines = [];
   const trimmedShareMessage = String(shareMessage || "").trim();
   const trimmedTagline = String(tagline || "").trim() || "CarnivalStories";
   const trimmedPageUrl = String(pageUrl || "").trim() || window.location.origin;
   const trimmedPairingCode = String(pairingCode || "").trim();
-  const trimmedHomepageLink = String(homepageLink || "").trim() || window.location.origin;
 
   if (trimmedShareMessage) {
     lines.push(trimmedShareMessage, "");
@@ -410,7 +410,7 @@ function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "",
   lines.push(`Here's the link to the album from ${trimmedTagline} - ${trimmedPageUrl}`);
   lines.push("");
   lines.push(`The pairing code for the album is : ${trimmedPairingCode}`);
-  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${trimmedHomepageLink} 😄`);
+  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${PRODUCT_HOME_URL} 😄`);
 
   return lines.join("\n").trim();
 }
@@ -836,7 +836,6 @@ function renderSavedPagesTable() {
         tagline: page.tagline || page.pageName || "CarnivalStories album",
         pageUrl,
         pairingCode: page.pairingCode || "",
-        homepageLink: page.branding?.homepageLink || currentProfile?.branding?.homepageLink || window.location.origin,
       });
       try {
         if (navigator.share) {

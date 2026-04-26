@@ -59,6 +59,7 @@ const slideshowPlaybackIconEl = document.getElementById("slideshow-playback-icon
 const prevSlideButton = document.getElementById("prev-slide");
 const nextSlideButton = document.getElementById("next-slide");
 const logoAssetPath = "/assets/carnivalstories-logo.svg?v=20260423";
+const PRODUCT_HOME_URL = "https://carnivalshowcase.kaustubhmokashi.com/";
 
 let currentFolders = [];
 let selectedFolderId = null;
@@ -172,13 +173,12 @@ function buildSlideShareUrl(photo = getCurrentSlidePhoto()) {
   return url.toString();
 }
 
-function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "", homepageLink = "" } = {}) {
+function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "" } = {}) {
   const lines = [];
   const trimmedShareMessage = String(shareMessage || "").trim();
   const trimmedTagline = String(tagline || "").trim() || "CarnivalStories";
   const trimmedPageUrl = String(pageUrl || "").trim() || getCurrentPageShareUrl();
   const trimmedPairingCode = String(pairingCode || "").trim();
-  const trimmedHomepageLink = String(homepageLink || "").trim() || window.location.origin;
 
   if (trimmedShareMessage) {
     lines.push(trimmedShareMessage, "");
@@ -187,7 +187,7 @@ function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "",
   lines.push(`Here's the link to the album from ${trimmedTagline} - ${trimmedPageUrl}`);
   lines.push("");
   lines.push(`The pairing code for the album is : ${trimmedPairingCode}`);
-  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${trimmedHomepageLink} 😄`);
+  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${PRODUCT_HOME_URL} 😄`);
 
   return lines.join("\n").trim();
 }
@@ -1939,7 +1939,6 @@ async function shareCurrentSlide() {
     tagline: currentShareContext.tagline || photo.name || "CarnivalStories",
     pageUrl: shareUrl,
     pairingCode: currentShareContext.pairingCode || "",
-    homepageLink: activeBranding.homepageLink || window.location.origin,
   });
 
   const shareData = {
