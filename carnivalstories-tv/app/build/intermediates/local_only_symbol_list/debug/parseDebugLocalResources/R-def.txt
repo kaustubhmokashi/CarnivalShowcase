@@ -1,0 +1,20 @@
+R_DEF: Internal format may change without notice
+local
+drawable carnival_showcase_launcher_icon
+drawable carnival_showcase_logo
+drawable drivedeck_launcher_icon
+drawable drivedeck_tv_icon_art
+drawable tv_banner
+font great_vibes_regular
+font work_sans_bold
+font work_sans_extrabold
+font work_sans_medium
+font work_sans_regular
+font work_sans_semibold
+font work_sans_variable
+raw carnival_showcase_logo
+raw carnival_stories_logo
+raw drivedeck_logo
+string app_name
+style Theme.CarnivalShowcaseTv
+xml backup_rules

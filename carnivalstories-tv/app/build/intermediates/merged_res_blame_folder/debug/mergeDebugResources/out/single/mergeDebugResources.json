@@ -1,0 +1,66 @@
+[
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/drawable-nodpi_carnival_showcase_logo.png.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/drawable-nodpi/carnival_showcase_logo.png"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/raw_carnival_showcase_logo.svg.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/raw/carnival_showcase_logo.svg"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/drawable_carnival_showcase_launcher_icon.xml.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/drawable/carnival_showcase_launcher_icon.xml"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_medium.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_medium.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/raw_carnival_stories_logo.svg.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/raw/carnival_stories_logo.svg"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/raw_drivedeck_logo.svg.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/raw/drivedeck_logo.svg"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/xml_backup_rules.xml.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/drawable_drivedeck_launcher_icon.xml.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/drawable/drivedeck_launcher_icon.xml"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_semibold.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_semibold.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_regular.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_regular.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_variable.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_variable.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/drawable_tv_banner.xml.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/drawable/tv_banner.xml"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_bold.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_bold.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_work_sans_extrabold.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/work_sans_extrabold.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/font_great_vibes_regular.ttf.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/font/great_vibes_regular.ttf"
+    },
+    {
+        "merged": "com.carnivalshowcase.tv.app-debug-69:/drawable-nodpi_drivedeck_tv_icon_art.png.flat",
+        "source": "com.carnivalshowcase.tv.app-main-71:/drawable-nodpi/drivedeck_tv_icon_art.png"
+    }
+]
