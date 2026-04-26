@@ -3274,11 +3274,20 @@ input[type="checkbox"]:checked {
     display: grid;
   }
 
-  .studio-primary-button {
+  .studio-form .studio-primary-button,
+  .studio-settings-form .studio-primary-button,
+  .studio-domain-form .studio-primary-button,
+  .studio-auth-panel .studio-primary-button,
+  .studio-name-panel .studio-primary-button,
+  .studio-wizard .studio-primary-button,
+  .studio-domain-summary .studio-primary-button,
+  .studio-dashboard-head .studio-primary-button {
     width: 100%;
   }
 
-  .studio-secondary-button {
+  .studio-form .studio-secondary-button,
+  .studio-settings-form .studio-secondary-button,
+  .studio-domain-form .studio-secondary-button {
     width: 100%;
   }
 
