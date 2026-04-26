@@ -2666,7 +2666,7 @@ input[type="checkbox"]:checked {
 .studio-sidebar-actions {
   display: grid;
   gap: 24px;
-  margin-top: 50px;
+  margin-top: 24px;
 }
 
 .studio-sidebar-primary-action,
@@ -3280,5 +3280,12 @@ input[type="checkbox"]:checked {
 
   .studio-secondary-button {
     width: 100%;
+  }
+
+  .studio-sidebar-primary-action,
+  .studio-sidebar-secondary-action {
+    width: min(220px, 100%);
+    min-width: 220px;
+    padding: 18px 24px;
   }
 }
