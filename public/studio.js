@@ -71,6 +71,7 @@ const brandingAccentHex = document.getElementById("branding-accent-hex");
 const brandingLogoLink = document.getElementById("branding-logo-link");
 const brandingFaviconLink = document.getElementById("branding-favicon-link");
 const brandingHomepageLink = document.getElementById("branding-homepage-link");
+const brandingShareMessage = document.getElementById("branding-share-message");
 const brandingCustomDomain = document.getElementById("branding-custom-domain");
 const studioBrandingStatus = document.getElementById("studio-branding-status");
 const studioAccountForm = document.getElementById("studio-account-form");
@@ -204,6 +205,7 @@ function getDefaultBranding() {
     logoLink: "",
     faviconLink: "",
     homepageLink: "",
+    shareMessage: "",
     customDomain: "",
   };
 }
@@ -234,6 +236,7 @@ function getProfileBranding(profile = currentProfile) {
     logoLink: String(branding.logoLink || ""),
     faviconLink: String(branding.faviconLink || ""),
     homepageLink: String(branding.homepageLink || ""),
+    shareMessage: String(branding.shareMessage || ""),
     customDomain: normalizeCustomDomain(branding.customDomain || ""),
   };
 }
@@ -245,6 +248,7 @@ function getBrandingFromInputs() {
     logoLink: brandingLogoLink.value.trim(),
     faviconLink: brandingFaviconLink.value.trim(),
     homepageLink: brandingHomepageLink.value.trim(),
+    shareMessage: brandingShareMessage?.value.trim() || "",
     customDomain: normalizeCustomDomain(brandingCustomDomain?.value),
   };
 }
@@ -304,6 +308,9 @@ function hydrateStudioSettingsForms() {
   }
   if (brandingHomepageLink) {
     brandingHomepageLink.value = branding.homepageLink;
+  }
+  if (brandingShareMessage) {
+    brandingShareMessage.value = branding.shareMessage;
   }
   if (brandingCustomDomain) {
     brandingCustomDomain.value = branding.customDomain;
@@ -386,6 +393,25 @@ function getPageUrl(page) {
 
   const platformPath = getPlatformPagePath(page);
   return platformPath ? `${window.location.origin}${platformPath}` : "";
+}
+
+function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "" } = {}) {
+  const lines = [];
+  const trimmedShareMessage = String(shareMessage || "").trim();
+  const trimmedTagline = String(tagline || "").trim() || "CarnivalStories";
+  const trimmedPageUrl = String(pageUrl || "").trim() || window.location.origin;
+  const trimmedPairingCode = String(pairingCode || "").trim();
+
+  if (trimmedShareMessage) {
+    lines.push(trimmedShareMessage, "");
+  }
+
+  lines.push(`Here's the link to the album from ${trimmedTagline} - ${trimmedPageUrl}`);
+  lines.push("");
+  lines.push(`The pairing code for the album is : ${trimmedPairingCode}`);
+  lines.push("😄You can use it on CarnivalStories app on phone & TV");
+
+  return lines.join("\n").trim();
 }
 
 async function openPairingCode(pairingCode) {
@@ -503,6 +529,8 @@ function getGalleryOptionsForPage(page, extraOptions = {}) {
     coverImageUrl: page.coverImageUrl || "",
     coverThumbnailUrl: page.coverThumbnailUrl || "",
     tagline: page.tagline || "",
+    pageUrl: getPageUrl(page),
+    pairingCode: page.pairingCode || "",
     eventDateRange: formatEventDateRange(page),
     branding: page.branding || getProfileBranding(),
     ...extraOptions,
@@ -802,21 +830,27 @@ function renderSavedPagesTable() {
       }
     });
     card.querySelector('[data-action="share"]')?.addEventListener("click", async () => {
+      const shareText = buildAlbumShareMessage({
+        shareMessage: page.branding?.shareMessage || currentProfile?.branding?.shareMessage || "",
+        tagline: page.tagline || page.pageName || "CarnivalStories album",
+        pageUrl,
+        pairingCode: page.pairingCode || "",
+      });
       try {
         if (navigator.share) {
           await navigator.share({
             title: page.tagline || page.pageName || "CarnivalStories album",
-            url: pageUrl,
+            text: shareText,
           });
           return;
         }
-        await copyTextToClipboard(pageUrl);
-        showStudioToast("Link copied to clipboard");
+        await copyTextToClipboard(shareText);
+        showStudioToast("Share message copied to clipboard");
       } catch (error) {
         if (error?.name === "AbortError") {
           return;
         }
-        showStudioToast("Could not share link");
+        showStudioToast("Could not share album");
       }
     });
     card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {

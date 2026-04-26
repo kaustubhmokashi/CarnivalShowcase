@@ -71,6 +71,7 @@ let activeBranding = {
   logoLink: "",
   faviconLink: "",
   homepageLink: "",
+  shareMessage: "",
 };
 let sharedFolderName = "";
 let images = [];
@@ -102,6 +103,13 @@ let slideshowConfig = {
   loop: false,
   autoplay: false,
 };
+let currentShareContext = {
+  tagline: "",
+  pageUrl: "",
+  pairingCode: "",
+};
+let pendingSharedFolderId = "";
+let pendingSharedPhotoId = "";
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
 function focusElement(element) {
@@ -146,6 +154,49 @@ function getFolderShareLink(folder) {
   return slug ? `${base}/${slug}` : `${base}/`;
 }
 
+function getCurrentPageShareUrl() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function buildSlideShareUrl(photo = getCurrentSlidePhoto()) {
+  const currentFolder = getSelectedFolder();
+  if (!photo?.id) {
+    return getCurrentPageShareUrl();
+  }
+
+  const url = new URL(getCurrentPageShareUrl());
+  if (currentFolder?.id) {
+    url.searchParams.set("folder", currentFolder.id);
+  }
+  url.searchParams.set("photo", photo.id);
+  return url.toString();
+}
+
+function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "" } = {}) {
+  const lines = [];
+  const trimmedShareMessage = String(shareMessage || "").trim();
+  const trimmedTagline = String(tagline || "").trim() || "CarnivalStories";
+  const trimmedPageUrl = String(pageUrl || "").trim() || getCurrentPageShareUrl();
+  const trimmedPairingCode = String(pairingCode || "").trim();
+
+  if (trimmedShareMessage) {
+    lines.push(trimmedShareMessage, "");
+  }
+
+  lines.push(`Here's the link to the album from ${trimmedTagline} - ${trimmedPageUrl}`);
+  lines.push("");
+  lines.push(`The pairing code for the album is : ${trimmedPairingCode}`);
+  lines.push("😄You can use it on CarnivalStories app on phone & TV");
+
+  return lines.join("\n").trim();
+}
+
+function syncPendingSharedSelectionFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  pendingSharedFolderId = String(params.get("folder") || "").trim();
+  pendingSharedPhotoId = String(params.get("photo") || "").trim();
+}
+
 function getCurrentSlidePhoto() {
   return images[currentSlideIndex] || null;
 }
@@ -170,6 +221,11 @@ function setPublicPageContext(options = {}) {
   currentPublicPageId = String(options.publicPageId || "").trim();
   currentPhotoLikes = normalizePhotoLikesMap(options.photoLikes);
   likedPhotoSessionIds = new Set();
+  currentShareContext = {
+    tagline: String(options.tagline || "").trim(),
+    pageUrl: String(options.pageUrl || getCurrentPageShareUrl()).trim(),
+    pairingCode: String(options.pairingCode || "").trim(),
+  };
 }
 
 function hasPublicPageLikes() {
@@ -969,6 +1025,7 @@ function setActiveBranding(branding = {}) {
     logoLink: String(branding.logoLink || "").trim(),
     faviconLink: String(branding.faviconLink || "").trim(),
     homepageLink: String(branding.homepageLink || "").trim(),
+    shareMessage: String(branding.shareMessage || "").trim(),
   };
   const backgroundRgb = hexToRgb(activeBranding.backgroundColor);
   const accentRgb = hexToRgb(activeBranding.accentColor);
@@ -1268,6 +1325,9 @@ function collectFolders(node, parentPath = "") {
 function applyFolderState(folders, options = {}) {
   currentFolders = folders;
   selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
+  if (pendingSharedFolderId && currentFolders.some((folder) => folder.id === pendingSharedFolderId)) {
+    selectedFolderId = pendingSharedFolderId;
+  }
   const allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
   coverPhoto = options.coverFileId
     ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
@@ -1548,6 +1608,14 @@ function updateGalleryForSelectedFolder() {
     selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
   }
   renderGallery(selectedFolder ? selectedFolder.images : []);
+  if (selectedFolder && pendingSharedPhotoId && (!pendingSharedFolderId || pendingSharedFolderId === selectedFolder.id)) {
+    const sharedPhotoIndex = images.findIndex((photo) => photo.id === pendingSharedPhotoId);
+    if (sharedPhotoIndex >= 0) {
+      pendingSharedFolderId = "";
+      pendingSharedPhotoId = "";
+      window.setTimeout(() => openSlideshow(sharedPhotoIndex), 0);
+    }
+  }
 }
 
 function updateDurationControls() {
@@ -1864,10 +1932,17 @@ async function shareCurrentSlide() {
     return;
   }
 
+  const shareUrl = buildSlideShareUrl(photo);
+  const shareText = buildAlbumShareMessage({
+    shareMessage: activeBranding.shareMessage || "",
+    tagline: currentShareContext.tagline || photo.name || "CarnivalStories",
+    pageUrl: shareUrl,
+    pairingCode: currentShareContext.pairingCode || "",
+  });
+
   const shareData = {
-    title: photo.name || "CarnivalShowcase",
-    text: photo.name || "CarnivalShowcase",
-    url: photo.url,
+    title: currentShareContext.tagline || photo.name || "CarnivalStories",
+    text: shareText,
   };
 
   if (navigator.share) {
@@ -1876,12 +1951,12 @@ async function shareCurrentSlide() {
   }
 
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(photo.url);
-    setStatus("Photo link copied to clipboard.");
+    await navigator.clipboard.writeText(shareText);
+    setStatus("Photo share message copied to clipboard.");
     return;
   }
 
-  window.open(photo.url, "_blank", "noreferrer");
+  window.open(shareUrl, "_blank", "noreferrer");
 }
 
 function openSlideshow(index = 0) {
@@ -2281,11 +2356,13 @@ window.CarnivalGallery = {
 };
 
 updateDurationControls();
+syncPendingSharedSelectionFromLocation();
 if (!window.CarnivalStudioPublicRoute && window.location.pathname !== "/studio") {
   setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
 }
 
 window.addEventListener("popstate", () => {
+  syncPendingSharedSelectionFromLocation();
   if (window.CarnivalStudioPublicRoute || window.location.pathname === "/studio") {
     return;
   }
