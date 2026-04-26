@@ -106,6 +106,7 @@ let slideshowConfig = {
 };
 let currentShareContext = {
   tagline: "",
+  studioName: "",
   pageUrl: "",
   pairingCode: "",
 };
@@ -224,9 +225,18 @@ function setPublicPageContext(options = {}) {
   likedPhotoSessionIds = new Set();
   currentShareContext = {
     tagline: String(options.tagline || "").trim(),
+    studioName: String(options.studioName || "").trim(),
     pageUrl: String(options.pageUrl || getCurrentPageShareUrl()).trim(),
     pairingCode: String(options.pairingCode || "").trim(),
   };
+  syncDocumentTitle();
+}
+
+function syncDocumentTitle() {
+  const tagline = String(currentShareContext.tagline || "").trim();
+  const studioName = String(currentShareContext.studioName || "").trim();
+  const title = [tagline, studioName].filter(Boolean).join(" | ");
+  document.title = title || "CarnivalShowcase";
 }
 
 function hasPublicPageLikes() {

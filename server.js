@@ -1303,7 +1303,7 @@ function buildPageMetaTags(req, pageRecord) {
   const studioName = String(pageRecord?.studioName || "").trim();
   const tagline = String(pageRecord?.tagline || "").trim();
   const pairingCode = String(pageRecord?.pairingCode || "").trim();
-  const title = [pageName || tagline, studioName].filter(Boolean).join(" | ") || "CarnivalShowcase";
+  const title = [tagline || pageName, studioName].filter(Boolean).join(" | ") || "CarnivalShowcase";
   const descriptionParts = [];
   if (tagline) {
     descriptionParts.push(tagline);

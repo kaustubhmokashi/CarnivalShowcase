@@ -530,6 +530,7 @@ function getGalleryOptionsForPage(page, extraOptions = {}) {
     coverImageUrl: page.coverImageUrl || "",
     coverThumbnailUrl: page.coverThumbnailUrl || "",
     tagline: page.tagline || "",
+    studioName: page.studioName || "",
     pageUrl: getPageUrl(page),
     pairingCode: page.pairingCode || "",
     eventDateRange: formatEventDateRange(page),
