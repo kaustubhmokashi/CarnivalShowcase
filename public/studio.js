@@ -87,6 +87,7 @@ const closeConnectDomainButton = document.getElementById("close-connect-domain")
 const savedPagesTable = document.getElementById("saved-pages-table");
 const studioToast = document.getElementById("studio-toast");
 const createPageButton = document.getElementById("create-page-button");
+const createEventButton = document.getElementById("create-event-button");
 const linkApprovalNotice = document.getElementById("link-approval-notice");
 const createPagePanel = document.getElementById("create-page-panel");
 const closeCreatePageButton = document.getElementById("close-create-page");
@@ -756,6 +757,9 @@ function renderSavedPagesTable() {
         <h2>${escapeMarkup(page.tagline || page.pageName || "Untitled page")}</h2>
         <p class="saved-page-pairing">${escapeMarkup(page.pairingCode || "")}</p>
         <div class="saved-page-actions" aria-label="Page actions">
+          <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share page link">
+            <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
+          </button>
           <button type="button" class="saved-page-icon-button" data-action="copy" aria-label="Copy page link">
             <span class="saved-page-icon icon-mask icon-copy" aria-hidden="true"></span>
           </button>
@@ -795,6 +799,24 @@ function renderSavedPagesTable() {
         showStudioToast("Link copied to clipboard");
       } catch (error) {
         showStudioToast("Could not copy link");
+      }
+    });
+    card.querySelector('[data-action="share"]')?.addEventListener("click", async () => {
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: page.tagline || page.pageName || "CarnivalStories album",
+            url: pageUrl,
+          });
+          return;
+        }
+        await copyTextToClipboard(pageUrl);
+        showStudioToast("Link copied to clipboard");
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return;
+        }
+        showStudioToast("Could not share link");
       }
     });
     card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
@@ -2469,6 +2491,9 @@ studioNameForm?.addEventListener("submit", async (event) => {
 });
 
 createPageButton?.addEventListener("click", openCreateWizard);
+createEventButton?.addEventListener("click", () => {
+  showStudioToast("We're working on this feature, it will be live soon");
+});
 closeCreatePageButton?.addEventListener("click", goBackInWizard);
 
 window.addEventListener("popstate", () => {

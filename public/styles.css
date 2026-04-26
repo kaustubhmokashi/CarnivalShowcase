@@ -2423,6 +2423,20 @@ input[type="checkbox"]:checked {
   color: #ffffff;
 }
 
+.studio-secondary-button {
+  width: fit-content;
+  min-width: 220px;
+  padding: 18px 24px;
+  border: 1px solid #000000;
+  background: #ffffff;
+  color: #000000;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .studio-primary-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -2610,7 +2624,7 @@ input[type="checkbox"]:checked {
   top: 0;
   left: 0;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   row-gap: 24px;
   width: 280px;
   min-height: 100vh;
@@ -2649,6 +2663,18 @@ input[type="checkbox"]:checked {
   object-position: left top;
 }
 
+.studio-sidebar-actions {
+  display: grid;
+  gap: 24px;
+  margin-top: 50px;
+}
+
+.studio-sidebar-primary-action,
+.studio-sidebar-secondary-action {
+  width: min(220px, 100%);
+  justify-self: start;
+}
+
 .studio-sidebar-name {
   margin: 6px 0 0;
   color: rgba(0, 0, 0, 0.46);
@@ -2666,9 +2692,10 @@ input[type="checkbox"]:checked {
 
 .studio-sidebar-nav {
   display: grid;
-  align-content: center;
+  align-content: start;
   justify-items: start;
   gap: 40px;
+  margin-top: 40px;
 }
 
 .studio-sidebar-tab {
@@ -2780,7 +2807,7 @@ input[type="checkbox"]:checked {
 .saved-page-content h2 {
   margin: 0;
   color: #000000;
-  font-size: 24px;
+  font-size: 14px;
   line-height: 1.1;
   font-weight: 600;
 }
@@ -2788,8 +2815,8 @@ input[type="checkbox"]:checked {
 .saved-page-pairing {
   margin: 0;
   color: #000000;
-  font-size: 18px;
-  font-weight: 800;
+  font-size: 24px;
+  font-weight: 400;
   letter-spacing: 0.12em;
 }
 
@@ -2818,6 +2845,10 @@ input[type="checkbox"]:checked {
   width: 18px;
   height: 18px;
   display: block;
+}
+
+.saved-page-share-button {
+  display: none;
 }
 
 .studio-toast {
@@ -3132,14 +3163,23 @@ input[type="checkbox"]:checked {
     min-height: 48px;
   }
 
+  .studio-sidebar-actions {
+    margin-top: 24px;
+  }
+
   .studio-sidebar-nav {
     align-content: start;
     gap: 22px;
+    margin-top: 24px;
   }
 
   .studio-sidebar-favicon {
     position: static;
     margin-top: auto;
+  }
+
+  .saved-page-share-button {
+    display: inline-grid;
   }
 
   .studio-dashboard-content,
@@ -3235,6 +3275,10 @@ input[type="checkbox"]:checked {
   }
 
   .studio-primary-button {
+    width: 100%;
+  }
+
+  .studio-secondary-button {
     width: 100%;
   }
 }
