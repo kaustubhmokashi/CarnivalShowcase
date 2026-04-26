@@ -61,6 +61,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
+const PUBLIC_PAGE_LIKES_FILE = path.join(DATA_DIR, "public-page-likes.json");
 const CODE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const FIREBASE_COLLECTION = process.env.FIREBASE_PAIRING_COLLECTION || "pairingCodes";
 const FIREBASE_WEB_CONFIG = {
@@ -252,6 +253,50 @@ function ensureDataStore() {
   if (!fs.existsSync(REMOTE_CODES_FILE)) {
     fs.writeFileSync(REMOTE_CODES_FILE, "", "utf8");
   }
+
+  if (!fs.existsSync(PUBLIC_PAGE_LIKES_FILE)) {
+    fs.writeFileSync(PUBLIC_PAGE_LIKES_FILE, "{}\n", "utf8");
+  }
+}
+
+function readPublicPageLikesStore() {
+  ensureDataStore();
+
+  try {
+    const content = fs.readFileSync(PUBLIC_PAGE_LIKES_FILE, "utf8").trim();
+    if (!content) {
+      return {};
+    }
+
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writePublicPageLikesStore(store) {
+  ensureDataStore();
+  fs.writeFileSync(PUBLIC_PAGE_LIKES_FILE, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+function getStoredPublicPageLikes(publicPageId) {
+  const normalizedPageId = String(publicPageId || "").trim();
+  if (!normalizedPageId) {
+    return {};
+  }
+
+  const store = readPublicPageLikesStore();
+  const pageLikes = store[normalizedPageId];
+  if (!pageLikes || typeof pageLikes !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(pageLikes)
+      .map(([photoId, count]) => [String(photoId || "").trim(), Math.max(0, Number(count) || 0)])
+      .filter(([photoId]) => photoId)
+  );
 }
 
 function readRemoteMappings() {
@@ -1111,14 +1156,24 @@ async function deletePermanentLinkByAdmin(payload) {
 
 async function incrementPublicPagePhotoLike(publicPageId, photoId) {
   const db = getFirestoreDb();
-  if (!db) {
-    throw new Error("Photo likes require Firebase admin credentials on the server.");
-  }
-
   const normalizedPageId = String(publicPageId || "").trim();
   const normalizedPhotoId = String(photoId || "").trim();
   if (!normalizedPageId || !normalizedPhotoId) {
     throw new Error("Missing photo like identifiers.");
+  }
+
+  if (!db) {
+    const store = readPublicPageLikesStore();
+    const existingLikes =
+      store[normalizedPageId] && typeof store[normalizedPageId] === "object" ? store[normalizedPageId] : {};
+    const currentCount = Math.max(0, Number(existingLikes[normalizedPhotoId]) || 0);
+    const nextCount = currentCount + 1;
+    store[normalizedPageId] = {
+      ...existingLikes,
+      [normalizedPhotoId]: nextCount,
+    };
+    writePublicPageLikesStore(store);
+    return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount, source: "vps" };
   }
 
   const pageRef = db.collection(FIREBASE_COLLECTIONS.publicPages).doc(normalizedPageId);
@@ -1140,7 +1195,38 @@ async function incrementPublicPagePhotoLike(publicPageId, photoId) {
     return currentCount + 1;
   });
 
-  return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount };
+  return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount, source: "firestore" };
+}
+
+async function handlePublicPageLikes(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
+
+  if (!publicPageId) {
+    sendJson(res, 400, { error: "Missing public page identifier." });
+    return;
+  }
+
+  const fileLikes = getStoredPublicPageLikes(publicPageId);
+  const db = getFirestoreDb();
+
+  if (!db) {
+    sendJson(res, 200, { publicPageId, photoLikes: fileLikes, source: "vps" });
+    return;
+  }
+
+  const snapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
+  const firestoreLikes =
+    snapshot.exists && snapshot.data()?.photoLikes && typeof snapshot.data().photoLikes === "object"
+      ? snapshot.data().photoLikes
+      : {};
+
+  const merged = { ...firestoreLikes };
+  for (const [photoId, count] of Object.entries(fileLikes)) {
+    merged[photoId] = Math.max(0, Number(merged[photoId]) || 0, Number(count) || 0);
+  }
+
+  sendJson(res, 200, { publicPageId, photoLikes: merged, source: "firestore" });
 }
 
 async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
@@ -2230,6 +2316,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/public-page/like" && req.method === "POST") {
     await handlePublicPageLike(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/likes" && req.method === "GET") {
+    await handlePublicPageLikes(req, res);
     return;
   }
 

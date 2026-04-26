@@ -203,7 +203,11 @@ function renderPhotoLikeBadge(photo) {
   button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    await incrementPhotoLike(photo);
+    try {
+      await incrementPhotoLike(photo);
+    } catch (error) {
+      setStatus(error.message || "Could not save the photo like.", true);
+    }
   });
 
   return button;

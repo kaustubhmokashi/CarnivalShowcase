@@ -2168,11 +2168,16 @@ async function loadPublicStudioPage(publicPageRoute) {
     throw new Error("This studio page does not have a Google Drive link.");
   }
 
+  const resolvedPhotoLikes = await fetch(`/api/public-page/likes?publicPageId=${encodeURIComponent(resolvedPublicPageId)}`)
+    .then((response) => (response.ok ? response.json() : null))
+    .then((payload) => (payload && typeof payload.photoLikes === "object" ? payload.photoLikes : null))
+    .catch(() => null);
+
   const galleryOptions = getGalleryOptionsForPage(page, {
     preservePath: true,
     keepLoading: true,
     publicPageId: resolvedPublicPageId,
-    photoLikes: page.photoLikes || {},
+    photoLikes: resolvedPhotoLikes || page.photoLikes || {},
   });
   const albumSnapshot = await loadAvailableAlbumSnapshot(pageSnapshot.ref, page, publicPageRoute).catch(() => null);
   const previewCoverSource = galleryOptions.coverImageUrl || galleryOptions.coverThumbnailUrl || "";
