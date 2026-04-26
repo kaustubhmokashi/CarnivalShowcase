@@ -79,6 +79,7 @@ const FIREBASE_COLLECTIONS = {
   pairingCodes: process.env.FIREBASE_PAIRINGCODES_COLLECTION || "pairingCodes",
   customDomains: process.env.FIREBASE_CUSTOMDOMAINS_COLLECTION || "customDomains",
 };
+const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
 const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
 const FOLDER_CACHE_FRESH_MS = Number(process.env.FOLDER_CACHE_FRESH_MS || 5 * 60 * 1000);
 const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 60 * 1000);
@@ -846,6 +847,74 @@ async function getPublicPageRecordById(publicPageId) {
   return parseFirestoreFields(document.fields || {});
 }
 
+async function getAlbumSnapshotChunksForPublicPage(publicPageId) {
+  if (!publicPageId) {
+    return [];
+  }
+
+  const db = getFirestoreDb();
+  if (db) {
+    const snapshot = await db
+      .collection(FIREBASE_COLLECTIONS.publicPages)
+      .doc(publicPageId)
+      .collection(ALBUM_SNAPSHOT_SUBCOLLECTION)
+      .orderBy("index", "asc")
+      .get();
+
+    return snapshot.docs
+      .map((doc) => doc.data() || {})
+      .sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+  }
+
+  if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
+    return [];
+  }
+
+  const collectionUrl = new URL(
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      FIREBASE_WEB_CONFIG.projectId
+    )}/databases/(default)/documents/${FIREBASE_COLLECTIONS.publicPages}/${encodeURIComponent(
+      publicPageId
+    )}/${ALBUM_SNAPSHOT_SUBCOLLECTION}`
+  );
+  collectionUrl.searchParams.set("key", FIREBASE_WEB_CONFIG.apiKey);
+
+  const response = await fetch(collectionUrl);
+  if (response.status === 404) {
+    return [];
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Album snapshot lookup failed (${response.status}): ${body}`);
+  }
+
+  const payload = await response.json();
+  return (payload.documents || [])
+    .map((document) => parseFirestoreFields(document.fields || {}))
+    .sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+}
+
+async function getAlbumSnapshotForPublicPage(publicPageId, pageRecord) {
+  const chunkCount = Number(pageRecord?.albumSnapshotChunkCount) || 0;
+  if (!publicPageId || !chunkCount) {
+    return null;
+  }
+
+  const chunks = await getAlbumSnapshotChunksForPublicPage(publicPageId);
+  if (!chunks.length) {
+    return null;
+  }
+
+  return {
+    version: Number(pageRecord?.albumSnapshotVersion) || 1,
+    rootName: String(pageRecord?.albumSnapshotRootName || ""),
+    folderCount: Number(pageRecord?.albumSnapshotFolderCount) || 0,
+    mediaCount: Number(pageRecord?.albumSnapshotMediaCount) || 0,
+    generatedAt: String(pageRecord?.albumSnapshotGeneratedAt || ""),
+    folders: chunks.flatMap((chunk) => (Array.isArray(chunk.folders) ? chunk.folders : [])),
+  };
+}
+
 async function getPairingCodeRecordById(code) {
   const normalizedCode = String(code || "").trim();
   if (!normalizedCode) {
@@ -1038,6 +1107,40 @@ async function deletePermanentLinkByAdmin(payload) {
 
   await batch.commit();
   return { deleted: true, source: "permanent" };
+}
+
+async function incrementPublicPagePhotoLike(publicPageId, photoId) {
+  const db = getFirestoreDb();
+  if (!db) {
+    throw new Error("Photo likes require Firebase admin credentials on the server.");
+  }
+
+  const normalizedPageId = String(publicPageId || "").trim();
+  const normalizedPhotoId = String(photoId || "").trim();
+  if (!normalizedPageId || !normalizedPhotoId) {
+    throw new Error("Missing photo like identifiers.");
+  }
+
+  const pageRef = db.collection(FIREBASE_COLLECTIONS.publicPages).doc(normalizedPageId);
+  const nextCount = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(pageRef);
+    if (!snapshot.exists) {
+      throw new Error("This studio page does not exist.");
+    }
+
+    const pageData = snapshot.data() || {};
+    const existingLikes = pageData.photoLikes && typeof pageData.photoLikes === "object" ? pageData.photoLikes : {};
+    const currentCount = Number(existingLikes[normalizedPhotoId]) || 0;
+    const updatedLikes = {
+      ...existingLikes,
+      [normalizedPhotoId]: currentCount + 1,
+    };
+
+    transaction.set(pageRef, { photoLikes: updatedLikes }, { merge: true });
+    return currentCount + 1;
+  });
+
+  return { publicPageId: normalizedPageId, photoId: normalizedPhotoId, count: nextCount };
 }
 
 async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
@@ -1784,6 +1887,77 @@ async function handleResolveRemoteCode(req, res) {
   sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
 }
 
+async function handleResolvePairingCode(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const code = String(requestUrl.searchParams.get("code") || "").trim();
+
+  if (!/^\d{6}$|^\d{7}$/.test(code)) {
+    sendJson(res, 400, { error: "Code must be a 6 or 7 digit number." });
+    return;
+  }
+
+  const remoteEntry = await resolveRemoteLinkFromStore(code);
+  if (remoteEntry?.url) {
+    sendJson(res, 200, {
+      code: remoteEntry.code,
+      mode: "folder",
+      url: remoteEntry.url,
+      ready: true,
+      permanent: Boolean(remoteEntry.permanent),
+      folderName: remoteEntry.folderName || "Google Drive folder",
+      source: "remote",
+    });
+    return;
+  }
+
+  const pairingRecord = await getPairingCodeRecordById(code);
+  if (!pairingRecord) {
+    sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
+    return;
+  }
+
+  const publicPageId =
+    String(pairingRecord.publicPageId || "").trim() ||
+    (pairingRecord.studioSlug && pairingRecord.pageSlug
+      ? `${String(pairingRecord.studioSlug).trim()}__${String(pairingRecord.pageSlug).trim()}`
+      : "");
+  const pageRecord = publicPageId ? await getPublicPageRecordById(publicPageId) : null;
+  const snapshot = pageRecord ? await getAlbumSnapshotForPublicPage(publicPageId, pageRecord) : null;
+  const folderUrl =
+    String(pageRecord?.driveLink || "").trim() ||
+    String(pairingRecord.url || "").trim() ||
+    String(pairingRecord.normalizedUrl || "").trim();
+
+  if (snapshot?.folders?.length) {
+    sendJson(res, 200, {
+      code,
+      mode: "snapshot",
+      ready: true,
+      permanent: true,
+      source: "firestore",
+      folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
+      folderUrl,
+      snapshot,
+    });
+    return;
+  }
+
+  if (folderUrl) {
+    sendJson(res, 200, {
+      code,
+      mode: "folder",
+      url: folderUrl,
+      ready: true,
+      permanent: true,
+      source: "firestore",
+      folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
+    });
+    return;
+  }
+
+  sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
+}
+
 async function handleDeleteRemoteCode(req, res) {
   try {
     const body = await readRequestBody(req);
@@ -1814,6 +1988,24 @@ async function handleDeleteRemoteCode(req, res) {
     });
   } catch (error) {
     sendJson(res, 400, { error: error.message || "Invalid request body." });
+  }
+}
+
+async function handlePublicPageLike(req, res) {
+  try {
+    const body = await readRequestBody(req);
+    const publicPageId = String(body.publicPageId || "").trim();
+    const photoId = String(body.photoId || "").trim();
+
+    if (!publicPageId || !photoId) {
+      sendJson(res, 400, { error: "Missing photo like identifiers." });
+      return;
+    }
+
+    const result = await incrementPublicPagePhotoLike(publicPageId, photoId);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not save the photo like." });
   }
 }
 
@@ -2026,8 +2218,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/pairing/resolve") {
+    await handleResolvePairingCode(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/remote/delete" && req.method === "POST") {
     await handleDeleteRemoteCode(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/like" && req.method === "POST") {
+    await handlePublicPageLike(req, res);
     return;
   }
 

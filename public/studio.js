@@ -2159,6 +2159,7 @@ async function loadPublicStudioPage(publicPageRoute) {
   }
 
   const page = pageSnapshot.data();
+  const resolvedPublicPageId = pageSnapshot.id;
   if (!publicPageRoute.isCustomDomain && page.studioSlug && page.studioSlug !== publicPageRoute.studioSlug) {
     throw new Error("This studio page does not exist.");
   }
@@ -2170,6 +2171,8 @@ async function loadPublicStudioPage(publicPageRoute) {
   const galleryOptions = getGalleryOptionsForPage(page, {
     preservePath: true,
     keepLoading: true,
+    publicPageId: resolvedPublicPageId,
+    photoLikes: page.photoLikes || {},
   });
   const albumSnapshot = await loadAvailableAlbumSnapshot(pageSnapshot.ref, page, publicPageRoute).catch(() => null);
   const previewCoverSource = galleryOptions.coverImageUrl || galleryOptions.coverThumbnailUrl || "";

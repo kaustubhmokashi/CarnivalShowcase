@@ -103,6 +103,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.decode.SvgDecoder
@@ -302,23 +303,23 @@ private fun HomeScreen(
   ) {
     Column(
       modifier = Modifier
-        .align(Alignment.TopCenter)
+        .align(Alignment.TopStart)
         .fillMaxWidth()
         .padding(horizontal = 56.dp, vertical = 36.dp),
-      horizontalAlignment = Alignment.CenterHorizontally
+      horizontalAlignment = Alignment.Start
     ) {
-      BrandLogo(
+      HomeBrandLogo(
         modifier = Modifier
-          .fillMaxWidth(0.24f)
+          .width(280.dp)
       )
-      Spacer(modifier = Modifier.height(44.dp))
+      Spacer(modifier = Modifier.height(50.dp))
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(48.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(56.dp),
         verticalAlignment = Alignment.Top
       ) {
         Column(
-          modifier = Modifier.width(560.dp),
+          modifier = Modifier.weight(1f),
           verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
           Text(
@@ -375,7 +376,10 @@ private fun HomeScreen(
         }
 
         if (state.pairingUrl.isNotBlank()) {
-          PairingQrBlock(state.pairingUrl)
+          PairingQrBlock(
+            pairingUrl = state.pairingUrl,
+            modifier = Modifier.weight(1f)
+          )
         }
       }
     }
@@ -383,24 +387,29 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun PairingQrBlock(pairingUrl: String) {
+private fun PairingQrBlock(
+  pairingUrl: String,
+  modifier: Modifier = Modifier,
+) {
   val qrBitmap = remember(pairingUrl) { generateQrBitmap(pairingUrl) }
+  val qrSize = 220.dp
 
   Column(
-    modifier = Modifier.width(420.dp),
+    modifier = modifier,
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(18.dp)
+    verticalArrangement = Arrangement.Top
   ) {
     qrBitmap?.let {
       Image(
         bitmap = it.asImageBitmap(),
         contentDescription = "QR code for Carnival Showcase TV pairing",
-        modifier = Modifier.size(220.dp)
+        modifier = Modifier.size(qrSize)
       )
     }
+    Spacer(modifier = Modifier.height(20.dp))
     Text(
       text = "Scan QR to create a Pairing Code",
-      modifier = Modifier.padding(bottom = 8.dp),
+      modifier = Modifier.width(qrSize),
       color = TextPrimary,
       fontWeight = FontWeight.SemiBold,
       textAlign = TextAlign.Center,
@@ -427,6 +436,28 @@ private fun BrandLogo(
       .build(),
     imageLoader = imageLoader,
     contentDescription = "Carnival Showcase logo",
+    modifier = modifier,
+    contentScale = ContentScale.Fit,
+  )
+}
+
+@Composable
+private fun HomeBrandLogo(
+  modifier: Modifier = Modifier,
+) {
+  val context = LocalContext.current
+  val imageLoader = context.imageLoader.newBuilder()
+    .components {
+      add(SvgDecoder.Factory())
+    }
+    .build()
+
+  AsyncImage(
+    model = ImageRequest.Builder(context)
+      .data("android.resource://${context.packageName}/${R.raw.carnival_stories_logo}")
+      .build(),
+    imageLoader = imageLoader,
+    contentDescription = "CarnivalStories logo",
     modifier = modifier,
     contentScale = ContentScale.Fit,
   )
@@ -619,6 +650,9 @@ private fun SlideshowScreen(
   val context = LocalContext.current
   val imageLoader = context.imageLoader
   var interactionVersion by remember { mutableStateOf(0) }
+  var slideReady by remember(current.id, current.slideshowUrl, current.isVideo) {
+    mutableStateOf(current.isVideo)
+  }
   val latestAutoplayEnabled by rememberUpdatedState(state.autoplayEnabled)
   val latestOnNext by rememberUpdatedState(onNext)
   val inlineVideoAllowed = current.isVideo && state.playVideosInSlideshow
@@ -696,8 +730,13 @@ private fun SlideshowScreen(
     state.images.size,
     state.loopEnabled,
     inlineVideoAllowed,
+    slideReady,
   ) {
     if (!state.autoplayEnabled || state.images.size <= 1 || (current.isVideo && inlineVideoAllowed)) {
+      return@LaunchedEffect
+    }
+
+    if (!current.isVideo && !slideReady) {
       return@LaunchedEffect
     }
 
@@ -846,7 +885,12 @@ private fun SlideshowScreen(
               contentScale = ContentScale.Fit,
               modifier = Modifier.fillMaxSize()
             ) {
-              if (painter.state is coil.compose.AsyncImagePainter.State.Success) {
+              val imageState = painter.state
+              LaunchedEffect(slide.id, imageState) {
+                slideReady = imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error
+              }
+
+              if (imageState is AsyncImagePainter.State.Success) {
                 SubcomposeAsyncImageContent()
               } else {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -2068,9 +2112,9 @@ class DriveDeckViewModel(
         statusTone = StatusTone.Loading
       )
       runCatching {
-        repository.resolveCode(code)
-      }.onSuccess { folderUrl ->
-        loadFolder(folderUrl)
+        repository.resolvePairing(code)
+      }.onSuccess { resolution ->
+        loadResolvedPairing(resolution)
       }.onFailure {
         uiState = uiState.copy(
           isLoading = false,
@@ -2078,6 +2122,43 @@ class DriveDeckViewModel(
           statusTone = StatusTone.Error
         )
       }
+    }
+  }
+
+  private suspend fun loadResolvedPairing(resolution: PairingResolution) {
+    when (resolution) {
+      is PairingResolution.Snapshot -> {
+        val folders = flattenSnapshotFolders(resolution.snapshot)
+        if (folders.isNotEmpty()) {
+          val selectedFolder = folders.firstOrNull()
+          val nextScreen = if (folders.size > 1) TvScreen.Folders else TvScreen.Gallery
+          uiState = uiState.copy(
+            isLoading = false,
+            status = "",
+            statusTone = StatusTone.Neutral,
+            folders = folders,
+            selectedFolder = selectedFolder,
+            images = selectedFolder?.images.orEmpty(),
+            screen = nextScreen,
+            gallerySettingsVisible = false
+          )
+          return
+        }
+
+        val fallbackUrl = resolution.folderUrl.trim()
+        if (fallbackUrl.isNotBlank()) {
+          loadFolder(fallbackUrl)
+          return
+        }
+
+        uiState = uiState.copy(
+          isLoading = false,
+          status = "This gallery preview is still being prepared.",
+          statusTone = StatusTone.Error
+        )
+      }
+
+      is PairingResolution.Folder -> loadFolder(resolution.url)
     }
   }
 
@@ -2326,6 +2407,39 @@ class DriveDeckViewModel(
     return result
   }
 
+  private fun flattenSnapshotFolders(snapshot: AlbumSnapshotPayload): List<FolderSummary> {
+    return snapshot.folders.mapNotNull { folder ->
+      val path = folder.path.ifBlank { folder.name }
+      val images = folder.images.mapNotNull { image ->
+        val id = image.id.trim()
+        if (id.isBlank()) {
+          return@mapNotNull null
+        }
+
+        PhotoAsset(
+          id = id,
+          name = image.name,
+          path = image.path.ifBlank { path },
+          mimeType = image.mimeType,
+          thumbnailUrl = repository.makeAbsolute(image.thumbnailUrl.ifBlank { image.url }),
+          slideshowUrl = repository.makeAbsolute(image.slideshowUrl.ifBlank { image.url }),
+          fullUrl = repository.makeAbsolute(image.url),
+        )
+      }
+
+      if (folder.id.isBlank() || images.isEmpty()) {
+        null
+      } else {
+        FolderSummary(
+          id = folder.id,
+          name = folder.name,
+          path = path,
+          images = images
+        )
+      }
+    }
+  }
+
   class Factory(
     private val repository: DriveDeckRepository,
     private val initialPairingUrl: String = "",
@@ -2357,6 +2471,14 @@ data class PhotoAsset(
     get() = mimeType.startsWith("video/")
 }
 
+sealed interface PairingResolution {
+  data class Folder(val url: String) : PairingResolution
+  data class Snapshot(
+    val snapshot: AlbumSnapshotPayload,
+    val folderUrl: String = "",
+  ) : PairingResolution
+}
+
 class DriveDeckRepository(
   private val baseUrl: String,
   private val pairingUrlOverride: String = "",
@@ -2386,9 +2508,9 @@ class DriveDeckRepository(
     }
   }
 
-  suspend fun resolveCode(code: String): String = withContext(Dispatchers.IO) {
+  suspend fun resolvePairing(code: String): PairingResolution = withContext(Dispatchers.IO) {
     val request = Request.Builder()
-      .url("$baseUrl/api/remote/resolve?code=${urlEncode(code)}")
+      .url("$baseUrl/api/pairing/resolve?code=${urlEncode(code)}")
       .get()
       .build()
 
@@ -2398,8 +2520,18 @@ class DriveDeckRepository(
         throw IllegalStateException(extractError(body))
       }
 
-      val parsed = json.decodeFromString<ResolveCodeResponse>(body)
-      parsed.url.takeIf { it.isNotBlank() } ?: error("This code has no Drive link yet.")
+      val parsed = json.decodeFromString<PairingResolveResponse>(body)
+      when {
+        parsed.mode == "snapshot" && parsed.snapshot != null -> {
+          PairingResolution.Snapshot(
+            snapshot = parsed.snapshot,
+            folderUrl = parsed.folderUrl.orEmpty()
+          )
+        }
+
+        !parsed.url.isNullOrBlank() -> PairingResolution.Folder(parsed.url)
+        else -> error("This code has no Drive link yet.")
+      }
     }
   }
 
@@ -2429,7 +2561,7 @@ class DriveDeckRepository(
     fullUrl = makeAbsolute(image.url),
   )
 
-  private fun makeAbsolute(path: String): String {
+  internal fun makeAbsolute(path: String): String {
     if (path.startsWith("http://") || path.startsWith("https://")) {
       return path
     }
@@ -2492,6 +2624,48 @@ data class ResolveCodeResponse(
   val code: String,
   val url: String,
   val ready: Boolean,
+)
+
+@Serializable
+data class PairingResolveResponse(
+  val code: String,
+  val mode: String = "folder",
+  val url: String? = null,
+  val ready: Boolean = false,
+  val permanent: Boolean = false,
+  val source: String = "",
+  val folderName: String = "",
+  val folderUrl: String? = null,
+  val snapshot: AlbumSnapshotPayload? = null,
+)
+
+@Serializable
+data class AlbumSnapshotPayload(
+  val version: Int = 1,
+  val rootName: String = "",
+  val folderCount: Int = 0,
+  val mediaCount: Int = 0,
+  val generatedAt: String = "",
+  val folders: List<SnapshotFolder> = emptyList(),
+)
+
+@Serializable
+data class SnapshotFolder(
+  val id: String = "",
+  val name: String = "",
+  val path: String = "",
+  val images: List<SnapshotImage> = emptyList(),
+)
+
+@Serializable
+data class SnapshotImage(
+  val id: String = "",
+  val name: String = "",
+  val mimeType: String = "",
+  val path: String = "",
+  val url: String = "",
+  val slideshowUrl: String = "",
+  @SerialName("thumbnailUrl") val thumbnailUrl: String = "",
 )
 
 @Serializable

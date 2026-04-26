@@ -48,6 +48,9 @@ const slideVideoTooltipEl = document.getElementById("slide-video-tooltip");
 const slideshowLoaderEl = document.getElementById("slideshow-loader");
 const slideshowToastEl = document.getElementById("slideshow-toast");
 const closeSlideshowMobileButton = document.getElementById("close-slideshow-mobile");
+const likeSlideButton = document.getElementById("like-slide");
+const slideshowLikeIconEl = document.getElementById("slideshow-like-icon");
+const slideshowLikeCountEl = document.getElementById("slideshow-like-count");
 const shareSlideButton = document.getElementById("share-slide");
 const downloadSlideButton = document.getElementById("download-slide");
 const toggleSlideshowPlaybackButton = document.getElementById("toggle-slideshow-playback");
@@ -91,6 +94,9 @@ let loadingMessageDots = 0;
 let loadingFadeTimer = null;
 let slideshowPaused = false;
 let slideshowUiHideTimer = null;
+let currentPublicPageId = "";
+let currentPhotoLikes = {};
+let likedPhotoSessionIds = new Set();
 let slideshowConfig = {
   duration: 4,
   loop: false,
@@ -146,6 +152,133 @@ function getCurrentSlidePhoto() {
 
 function isVideoMedia(item) {
   return Boolean(item?.mimeType && item.mimeType.startsWith("video/"));
+}
+
+function normalizePhotoLikesMap(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([photoId, count]) => [String(photoId || "").trim(), Math.max(0, Number(count) || 0)])
+      .filter(([photoId]) => photoId)
+  );
+}
+
+function setPublicPageContext(options = {}) {
+  currentPublicPageId = String(options.publicPageId || "").trim();
+  currentPhotoLikes = normalizePhotoLikesMap(options.photoLikes);
+  likedPhotoSessionIds = new Set();
+}
+
+function hasPublicPageLikes() {
+  return Boolean(currentPublicPageId);
+}
+
+function getPhotoLikeCount(photoId) {
+  return Math.max(0, Number(currentPhotoLikes[String(photoId || "").trim()]) || 0);
+}
+
+function renderPhotoLikeBadge(photo) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "photo-like-badge";
+  button.dataset.photoId = String(photo?.id || "");
+  button.setAttribute("aria-label", "Like photo");
+
+  const icon = document.createElement("span");
+  const count = getPhotoLikeCount(photo?.id);
+  icon.className = `photo-like-badge-icon icon-mask ${count > 0 ? "icon-heart-selected" : "icon-heart-empty"}`;
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+
+  if (count > 0) {
+    const countEl = document.createElement("span");
+    countEl.className = "photo-like-badge-count";
+    countEl.textContent = String(count);
+    button.appendChild(countEl);
+  }
+
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await incrementPhotoLike(photo);
+  });
+
+  return button;
+}
+
+function syncGridLikeBadges(photoId) {
+  galleryEl.querySelectorAll(`.photo-like-badge[data-photo-id="${CSS.escape(String(photoId || ""))}"]`).forEach((badge) => {
+    const icon = badge.querySelector(".photo-like-badge-icon");
+    const count = getPhotoLikeCount(photoId);
+    if (icon) {
+      icon.classList.toggle("icon-heart-empty", count <= 0);
+      icon.classList.toggle("icon-heart-selected", count > 0);
+    }
+
+    let countEl = badge.querySelector(".photo-like-badge-count");
+    if (count > 0) {
+      if (!countEl) {
+        countEl = document.createElement("span");
+        countEl.className = "photo-like-badge-count";
+        badge.appendChild(countEl);
+      }
+      countEl.textContent = String(count);
+    } else if (countEl) {
+      countEl.remove();
+    }
+  });
+}
+
+function updateSlideshowLikeVisual(photo = getCurrentSlidePhoto()) {
+  if (!likeSlideButton || !slideshowLikeIconEl || !slideshowLikeCountEl) {
+    return;
+  }
+
+  const shouldShow = hasPublicPageLikes() && !isVideoMedia(photo);
+  likeSlideButton.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) {
+    return;
+  }
+
+  const count = getPhotoLikeCount(photo.id);
+  const likedInSession = likedPhotoSessionIds.has(photo.id);
+  slideshowLikeIconEl.classList.toggle("icon-heart-empty", !likedInSession);
+  slideshowLikeIconEl.classList.toggle("icon-heart-selected", likedInSession);
+  slideshowLikeCountEl.textContent = count > 0 ? String(count) : "";
+  slideshowLikeCountEl.classList.toggle("hidden", count <= 0);
+}
+
+async function incrementPhotoLike(photo = getCurrentSlidePhoto()) {
+  if (!hasPublicPageLikes() || !photo?.id || likedPhotoSessionIds.has(photo.id)) {
+    if (photo?.id) {
+      likedPhotoSessionIds.delete(photo.id);
+      updateSlideshowLikeVisual(photo);
+    }
+    return;
+  }
+
+  const response = await fetch("/api/public-page/like", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      publicPageId: currentPublicPageId,
+      photoId: photo.id,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not save the photo like.");
+  }
+
+  currentPhotoLikes[photo.id] = Math.max(0, Number(payload?.count) || getPhotoLikeCount(photo.id) + 1);
+  likedPhotoSessionIds.add(photo.id);
+  syncGridLikeBadges(photo.id);
+  updateSlideshowLikeVisual(photo);
 }
 
 function createImageUrl(fileId, mode = "full") {
@@ -1243,8 +1376,7 @@ function renderGallery(photoItems) {
   coverPhotoEl.classList.remove("has-cover-image");
   imageLoadFailures = 0;
 
-  const visiblePhotos = photoItems.filter((photo) => photo !== coverPhoto);
-  const slideshowIndexOffset = photoItems[0] === coverPhoto ? 1 : 0;
+  const visiblePhotos = photoItems.slice();
   pendingGalleryThumbnailLoads = visiblePhotos.length;
 
   if (coverPhoto) {
@@ -1346,7 +1478,10 @@ function renderGallery(photoItems) {
       });
 
       card.appendChild(image);
-      card.addEventListener("click", () => openSlideshow(index + slideshowIndexOffset));
+      if (hasPublicPageLikes() && !isVideoMedia(photo)) {
+        card.appendChild(renderPhotoLikeBadge(photo));
+      }
+      card.addEventListener("click", () => openSlideshow(index));
       card.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -1362,7 +1497,7 @@ function renderGallery(photoItems) {
           moveGalleryFocus("down");
         } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          openSlideshow(index + slideshowIndexOffset);
+          openSlideshow(index);
         }
       });
       fragment.appendChild(card);
@@ -1610,6 +1745,7 @@ function showSlide(index) {
 
   currentSlideIndex = (index + images.length) % images.length;
   const photo = images[currentSlideIndex];
+  updateSlideshowLikeVisual(photo);
   const requestToken = ++slideshowImageLoadToken;
   const previewSource = photo.thumbnailUrl || photo.url;
   const isVideo = isVideoMedia(photo);
@@ -1868,6 +2004,7 @@ function handleKeydown(event) {
 
 async function loadFolder(folderUrl, options = {}) {
   setStatus("Getting everything ready...");
+  setPublicPageContext(options);
   coverTagline = String(options.tagline || "").trim();
   coverDateRange = String(options.eventDateRange || "").trim();
   setActiveBranding(options.branding || {});
@@ -1947,6 +2084,7 @@ async function loadFolder(folderUrl, options = {}) {
 
 async function loadSnapshot(snapshot, options = {}) {
   setStatus("Opening the saved album preview...");
+  setPublicPageContext(options);
   coverTagline = String(options.tagline || "").trim();
   coverDateRange = String(options.eventDateRange || "").trim();
   setActiveBranding(options.branding || {});
@@ -2034,6 +2172,13 @@ loopInput.addEventListener("change", () =>
 prevSlideButton.addEventListener("click", () => showSlide(currentSlideIndex - 1));
 nextSlideButton.addEventListener("click", () => showSlide(currentSlideIndex + 1));
 closeSlideshowMobileButton?.addEventListener("click", closeSlideshow);
+likeSlideButton?.addEventListener("click", async () => {
+  try {
+    await incrementPhotoLike();
+  } catch (error) {
+    setStatus(error.message || "Could not save the photo like.", true);
+  }
+});
 downloadSlideButton.addEventListener("click", downloadCurrentSlide);
 toggleSlideshowPlaybackButton?.addEventListener("click", toggleSlideshowPlayback);
 enterSlideshowFullscreenButton?.addEventListener("click", () => {

@@ -222,6 +222,16 @@ label:focus-within {
   -webkit-mask-image: url("/assets/icons/Full-screen.svg?v=20260426a");
 }
 
+.icon-heart-empty {
+  mask-image: url("/assets/icons/Heart-empty.svg?v=20260426a");
+  -webkit-mask-image: url("/assets/icons/Heart-empty.svg?v=20260426a");
+}
+
+.icon-heart-selected {
+  mask-image: url("/assets/icons/Heart-selected.svg?v=20260426a");
+  -webkit-mask-image: url("/assets/icons/Heart-selected.svg?v=20260426a");
+}
+
 .icon-hamburger {
   mask-image: url("/assets/icons/Hamburger.svg?v=20260424b");
   -webkit-mask-image: url("/assets/icons/Hamburger.svg?v=20260424b");
@@ -1132,6 +1142,41 @@ label:focus-within {
   pointer-events: none;
 }
 
+.photo-like-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  color: #000;
+  box-shadow: none;
+}
+
+.photo-like-badge-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.photo-like-badge-count {
+  color: #000;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.72);
+}
+
 @keyframes gridSkeletonPulse {
   0% {
     background-position: 200% 0;
@@ -1527,6 +1572,41 @@ input[type="checkbox"]:checked {
   background: var(--template-bg);
   color: var(--template-accent);
   box-shadow: 0 10px 24px rgba(var(--template-accent-rgb), 0.12);
+}
+
+.slideshow-like-action {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  color: #000;
+  box-shadow: none;
+}
+
+.slideshow-like-action:hover,
+.slideshow-like-action:focus-visible {
+  background: transparent;
+}
+
+.slideshow-like-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.slideshow-like-count {
+  color: #000;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .slideshow-action-icon {
@@ -2047,6 +2127,10 @@ input[type="checkbox"]:checked {
   .slideshow-action {
     width: 32px;
     height: 32px;
+  }
+
+  #enter-slideshow-fullscreen {
+    display: none;
   }
 
   .slide-video-controls {

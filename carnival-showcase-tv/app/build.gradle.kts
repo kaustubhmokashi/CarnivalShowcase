@@ -21,7 +21,7 @@ android {
     val baseUrl = (project.findProperty("carnivalShowcaseBaseUrl") as? String)
       ?.trim()
       ?.trimEnd('/')
-      ?: "http://10.0.2.2:3000"
+      ?: "https://carnivalshowcase.kaustubhmokashi.com"
     val pairingUrl = (project.findProperty("carnivalShowcasePairingUrl") as? String)
       ?.trim()
       ?.trimEnd('/')
