@@ -172,12 +172,13 @@ function buildSlideShareUrl(photo = getCurrentSlidePhoto()) {
   return url.toString();
 }
 
-function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "" } = {}) {
+function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "", pairingCode = "", homepageLink = "" } = {}) {
   const lines = [];
   const trimmedShareMessage = String(shareMessage || "").trim();
   const trimmedTagline = String(tagline || "").trim() || "CarnivalStories";
   const trimmedPageUrl = String(pageUrl || "").trim() || getCurrentPageShareUrl();
   const trimmedPairingCode = String(pairingCode || "").trim();
+  const trimmedHomepageLink = String(homepageLink || "").trim() || window.location.origin;
 
   if (trimmedShareMessage) {
     lines.push(trimmedShareMessage, "");
@@ -186,7 +187,7 @@ function buildAlbumShareMessage({ shareMessage = "", tagline = "", pageUrl = "",
   lines.push(`Here's the link to the album from ${trimmedTagline} - ${trimmedPageUrl}`);
   lines.push("");
   lines.push(`The pairing code for the album is : ${trimmedPairingCode}`);
-  lines.push("😄You can use it on CarnivalStories app on phone & TV");
+  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${trimmedHomepageLink} 😄`);
 
   return lines.join("\n").trim();
 }
@@ -1938,6 +1939,7 @@ async function shareCurrentSlide() {
     tagline: currentShareContext.tagline || photo.name || "CarnivalStories",
     pageUrl: shareUrl,
     pairingCode: currentShareContext.pairingCode || "",
+    homepageLink: activeBranding.homepageLink || window.location.origin,
   });
 
   const shareData = {
