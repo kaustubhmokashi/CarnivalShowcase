@@ -3,6 +3,7 @@ const dns = require("dns").promises;
 const os = require("os");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { URL } = require("url");
 
 loadEnvFile(path.join(__dirname, ".env"));
@@ -62,6 +63,8 @@ const DATA_DIR = path.join(__dirname, "data");
 const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
 const PUBLIC_PAGE_LIKES_FILE = path.join(DATA_DIR, "public-page-likes.json");
+const EVENTS_STORE_FILE = path.join(DATA_DIR, "events.json");
+const DRIVE_CONNECTIONS_FILE = path.join(DATA_DIR, "drive-connections.json");
 const CODE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const FIREBASE_COLLECTION = process.env.FIREBASE_PAIRING_COLLECTION || "pairingCodes";
 const FIREBASE_WEB_CONFIG = {
@@ -87,11 +90,14 @@ const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 6
 const MEDIA_CACHE_TTL_MS = Number(process.env.MEDIA_CACHE_TTL_MS || 30 * 60 * 1000);
 const MEDIA_CACHE_MAX_BYTES = Number(process.env.MEDIA_CACHE_MAX_BYTES || 120 * 1024 * 1024);
 const MEDIA_CACHE_MAX_ENTRY_BYTES = Number(process.env.MEDIA_CACHE_MAX_ENTRY_BYTES || 8 * 1024 * 1024);
+const EVENT_UPLOAD_MAX_BYTES = Number(process.env.EVENT_UPLOAD_MAX_BYTES || 20 * 1024 * 1024);
+const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 let firestoreDb = null;
+let driveServiceTokenCache = null;
 const folderTreeCache = new Map();
 const mediaResponseCache = new Map();
 const mediaInflightRequests = new Map();
@@ -257,6 +263,142 @@ function ensureDataStore() {
   if (!fs.existsSync(PUBLIC_PAGE_LIKES_FILE)) {
     fs.writeFileSync(PUBLIC_PAGE_LIKES_FILE, "{}\n", "utf8");
   }
+
+  if (!fs.existsSync(EVENTS_STORE_FILE)) {
+    fs.writeFileSync(EVENTS_STORE_FILE, JSON.stringify({ events: [] }, null, 2) + "\n", "utf8");
+  }
+
+  if (!fs.existsSync(DRIVE_CONNECTIONS_FILE)) {
+    fs.writeFileSync(
+      DRIVE_CONNECTIONS_FILE,
+      JSON.stringify({ connections: {}, pendingStates: {} }, null, 2) + "\n",
+      "utf8"
+    );
+  }
+}
+
+function readEventsStore() {
+  ensureDataStore();
+
+  try {
+    const content = fs.readFileSync(EVENTS_STORE_FILE, "utf8").trim();
+    if (!content) {
+      return { events: [] };
+    }
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.events)) {
+      return { events: [] };
+    }
+    return parsed;
+  } catch (error) {
+    return { events: [] };
+  }
+}
+
+function writeEventsStore(store) {
+  ensureDataStore();
+  const normalized = {
+    events: Array.isArray(store?.events) ? store.events : [],
+  };
+  fs.writeFileSync(EVENTS_STORE_FILE, JSON.stringify(normalized, null, 2) + "\n", "utf8");
+}
+
+function readDriveConnectionsStore() {
+  ensureDataStore();
+
+  try {
+    const content = fs.readFileSync(DRIVE_CONNECTIONS_FILE, "utf8").trim();
+    if (!content) {
+      return { connections: {}, pendingStates: {} };
+    }
+    const parsed = JSON.parse(content);
+    return {
+      connections: parsed?.connections && typeof parsed.connections === "object" ? parsed.connections : {},
+      pendingStates: parsed?.pendingStates && typeof parsed.pendingStates === "object" ? parsed.pendingStates : {},
+    };
+  } catch (error) {
+    return { connections: {}, pendingStates: {} };
+  }
+}
+
+function writeDriveConnectionsStore(store) {
+  ensureDataStore();
+  const normalized = {
+    connections: store?.connections && typeof store.connections === "object" ? store.connections : {},
+    pendingStates: store?.pendingStates && typeof store.pendingStates === "object" ? store.pendingStates : {},
+  };
+  fs.writeFileSync(DRIVE_CONNECTIONS_FILE, JSON.stringify(normalized, null, 2) + "\n", "utf8");
+}
+
+function cloneEvent(event) {
+  return JSON.parse(JSON.stringify(event));
+}
+
+function normalizeEventVisibility(event, now = Date.now()) {
+  const startAt = Date.parse(String(event?.startAt || ""));
+  const endAt = Date.parse(String(event?.endAt || ""));
+
+  let phase = "upcoming";
+  if (Number.isFinite(startAt) && Number.isFinite(endAt)) {
+    if (now >= startAt && now <= endAt) {
+      phase = "live";
+    } else if (now > endAt) {
+      phase = "ended";
+    }
+  } else if (Number.isFinite(startAt) && now >= startAt) {
+    phase = "live";
+  }
+
+  return {
+    ...event,
+    phase,
+    queueCount: Array.isArray(event?.queuedPhotos) ? event.queuedPhotos.length : 0,
+    liveCount: Array.isArray(event?.livePhotos) ? event.livePhotos.length : 0,
+  };
+}
+
+function sanitizeEventForClient(event) {
+  const normalized = normalizeEventVisibility(cloneEvent(event));
+  return {
+    id: normalized.id,
+    slug: normalized.slug,
+    name: normalized.name,
+    tagline: normalized.tagline || "",
+    startAt: normalized.startAt || "",
+    endAt: normalized.endAt || "",
+    createdAt: normalized.createdAt || "",
+    phase: normalized.phase,
+    queueCount: normalized.queueCount,
+    liveCount: normalized.liveCount,
+    code: normalized.code || "",
+    uploadUrl: normalized.uploadUrl || "",
+    displayUrl: normalized.displayUrl || "",
+    moderationUrl: normalized.moderationUrl || "",
+    parentFolderUrl: normalized.parentFolderUrl || "",
+    queueFolderUrl: normalized.queueFolderUrl || "",
+    liveFolderUrl: normalized.liveFolderUrl || "",
+    template: normalized.template || "template-1",
+  };
+}
+
+function readAllEvents() {
+  return readEventsStore().events.map((event) => normalizeEventVisibility(event));
+}
+
+function writeAllEvents(events) {
+  writeEventsStore({ events });
+}
+
+function findEventById(eventId) {
+  return readAllEvents().find((event) => event.id === eventId) || null;
+}
+
+function findEventBySlug(slug) {
+  return readAllEvents().find((event) => event.slug === slug) || null;
+}
+
+function findEventByModerationToken(token) {
+  return readAllEvents().find((event) => event.moderationToken === token) || null;
 }
 
 function readPublicPageLikesStore() {
@@ -356,6 +498,27 @@ function normalizeRemoteUrl(url) {
   return String(url || "").trim();
 }
 
+function slugifyValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function createEventPublicSlug(eventName) {
+  const base = slugifyValue(eventName) || "event";
+  return `${base}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function createOpaqueToken(size = 18) {
+  return crypto.randomBytes(size).toString("hex");
+}
+
+function createEventCode() {
+  return generateNumericCode(6);
+}
+
 function getFirebaseServiceAccount() {
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   const base64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
@@ -377,6 +540,47 @@ function getFirebaseServiceAccount() {
   }
 
   return parsed;
+}
+
+function getDriveServiceAccount() {
+  const json = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
+  const base64 = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_BASE64;
+  const jsonPath = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH;
+
+  if (json || base64 || jsonPath) {
+    const parsed = JSON.parse(
+      json ||
+        (jsonPath
+          ? fs.readFileSync(path.resolve(jsonPath), "utf8")
+          : Buffer.from(base64, "base64").toString("utf8"))
+    );
+    if (parsed.private_key) {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
+    }
+    return parsed;
+  }
+
+  return getFirebaseServiceAccount();
+}
+
+function getGoogleDriveOAuthConfig() {
+  const clientId = String(process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || "").trim();
+  const clientSecret = String(process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || "").trim();
+  const redirectUri = String(process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI || "").trim();
+  if (!clientId || !clientSecret || !redirectUri) {
+    return null;
+  }
+  return { clientId, clientSecret, redirectUri };
+}
+
+function getDriveUserConnection(uid) {
+  const normalizedUid = String(uid || "").trim();
+  if (!normalizedUid) {
+    return null;
+  }
+  const store = readDriveConnectionsStore();
+  const connection = store.connections[normalizedUid];
+  return connection && typeof connection === "object" ? connection : null;
 }
 
 function getFirestoreDb() {
@@ -407,6 +611,181 @@ function getFirestoreDb() {
 
   firestoreDb = getFirebaseFirestore();
   return firestoreDb;
+}
+
+async function getDriveServiceAccessToken() {
+  const serviceAccount = getDriveServiceAccount();
+  if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
+    throw new Error(
+      "Drive write access is not configured yet. Add a Google service account and share the parent folder with it before creating events."
+    );
+  }
+
+  if (driveServiceTokenCache?.token && driveServiceTokenCache.expiresAt > Date.now() + 60_000) {
+    return driveServiceTokenCache.token;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const claimSet = Buffer.from(
+    JSON.stringify({
+      iss: serviceAccount.client_email,
+      scope: "https://www.googleapis.com/auth/drive",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    })
+  ).toString("base64url");
+  const unsignedJwt = `${header}.${claimSet}`;
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(unsignedJwt);
+  signer.end();
+  const signature = signer.sign(serviceAccount.private_key).toString("base64url");
+  const assertion = `${unsignedJwt}.${signature}`;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || "Could not get a Google Drive access token.");
+  }
+
+  driveServiceTokenCache = {
+    token: payload.access_token,
+    expiresAt: Date.now() + (Number(payload.expires_in) || 3600) * 1000,
+  };
+
+  return payload.access_token;
+}
+
+async function getDriveUserAccessToken(uid) {
+  const connection = getDriveUserConnection(uid);
+  const oauthConfig = getGoogleDriveOAuthConfig();
+  if (!connection?.refreshToken || !oauthConfig) {
+    throw new Error("Google Drive is not connected for this studio yet. Connect it before creating events.");
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: oauthConfig.clientId,
+      client_secret: oauthConfig.clientSecret,
+      refresh_token: connection.refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || "Could not refresh Google Drive access.");
+  }
+
+  const store = readDriveConnectionsStore();
+  store.connections[String(uid || "").trim()] = {
+    ...store.connections[String(uid || "").trim()],
+    email: connection.email || "",
+    scope: connection.scope || DRIVE_OAUTH_SCOPE,
+    accessToken: payload.access_token,
+    expiresAt: Date.now() + (Number(payload.expires_in) || 3600) * 1000,
+    updatedAt: new Date().toISOString(),
+    refreshToken: connection.refreshToken,
+  };
+  writeDriveConnectionsStore(store);
+  return payload.access_token;
+}
+
+async function getDriveWriteAccessTokenForUser(uid) {
+  const connection = getDriveUserConnection(uid);
+  if (connection?.accessToken && Number(connection.expiresAt || 0) > Date.now() + 60_000) {
+    return connection.accessToken;
+  }
+  return getDriveUserAccessToken(uid);
+}
+
+async function driveWriteRequest(url, { method = "GET", headers = {}, body, accessToken } = {}) {
+  const token = accessToken || await getDriveServiceAccessToken();
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...headers,
+    },
+    body,
+  });
+
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : await response.text().catch(() => "");
+
+  if (!response.ok) {
+    const errorMessage =
+      payload?.error?.message || payload?.error_description || String(payload || "").trim();
+    throw new Error(errorMessage || `Google Drive request failed (${response.status}).`);
+  }
+
+  return payload;
+}
+
+async function driveCreateSubfolder(parentId, folderName, accessToken) {
+  return driveWriteRequest("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: FOLDER_MIME_TYPE,
+      parents: [parentId],
+    }),
+    accessToken,
+  });
+}
+
+async function driveMoveFileToFolder(fileId, fromFolderId, toFolderId, accessToken) {
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`);
+  url.searchParams.set("addParents", toFolderId);
+  if (fromFolderId) {
+    url.searchParams.set("removeParents", fromFolderId);
+  }
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name");
+
+  return driveWriteRequest(url.toString(), {
+    method: "PATCH",
+    accessToken,
+  });
+}
+
+async function driveUploadFileToFolder({ folderId, fileName, mimeType, buffer, accessToken }) {
+  const boundary = `carnivalshowcase-${crypto.randomBytes(12).toString("hex")}`;
+  const metadata = JSON.stringify({
+    name: fileName,
+    parents: [folderId],
+  });
+  const preamble = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
+  );
+  const closing = Buffer.from(`\r\n--${boundary}--`);
+  const body = Buffer.concat([preamble, buffer, closing]);
+
+  return driveWriteRequest(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,webViewLink",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+      accessToken,
+    }
+  );
 }
 
 function parseFirestoreValue(value) {
@@ -708,6 +1087,80 @@ function readRequestBody(req) {
   });
 }
 
+function readRawRequestBuffer(req, maxBytes = EVENT_UPLOAD_MAX_BYTES) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let totalBytes = 0;
+
+    req.on("data", (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        reject(new Error("Upload is too large."));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    req.on("error", reject);
+  });
+}
+
+function parseMultipartForm(buffer, contentType) {
+  const boundaryMatch = String(contentType || "").match(/boundary=([^;]+)/i);
+  if (!boundaryMatch) {
+    throw new Error("Upload boundary is missing.");
+  }
+
+  const boundary = `--${boundaryMatch[1]}`;
+  const raw = buffer.toString("binary");
+  const segments = raw.split(boundary).slice(1, -1);
+  const fields = {};
+  const files = [];
+
+  for (const segment of segments) {
+    const cleaned = segment.replace(/^\r\n/, "").replace(/\r\n$/, "");
+    const headerEnd = cleaned.indexOf("\r\n\r\n");
+    if (headerEnd < 0) {
+      continue;
+    }
+
+    const headerText = cleaned.slice(0, headerEnd);
+    const bodyBinary = cleaned.slice(headerEnd + 4);
+    const headers = Object.fromEntries(
+      headerText.split("\r\n").map((line) => {
+        const index = line.indexOf(":");
+        return [line.slice(0, index).trim().toLowerCase(), line.slice(index + 1).trim()];
+      })
+    );
+    const disposition = headers["content-disposition"] || "";
+    const nameMatch = disposition.match(/name=\"([^\"]+)\"/i);
+    if (!nameMatch) {
+      continue;
+    }
+    const fieldName = nameMatch[1];
+    const fileNameMatch = disposition.match(/filename=\"([^\"]*)\"/i);
+
+    if (fileNameMatch && fileNameMatch[1]) {
+      const contentTypeHeader = headers["content-type"] || "application/octet-stream";
+      files.push({
+        fieldName,
+        fileName: fileNameMatch[1],
+        mimeType: contentTypeHeader,
+        buffer: Buffer.from(bodyBinary, "binary"),
+      });
+    } else {
+      fields[fieldName] = Buffer.from(bodyBinary, "binary").toString("utf8");
+    }
+  }
+
+  return { fields, files };
+}
+
 function getPreferredLanIp() {
   const networks = os.networkInterfaces();
   for (const addresses of Object.values(networks)) {
@@ -734,6 +1187,16 @@ function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function sendHtml(res, statusCode, html) {
+  const body = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CarnivalStories</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;padding:40px;color:#111;background:#fff}h1{font-size:24px;line-height:1.2;margin:0}</style></head><body>${html}</body></html>`;
+  res.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
   });
   res.end(body);
 }
@@ -1033,6 +1496,154 @@ async function requireAdminRequest(req, res) {
   }
 
   return account;
+}
+
+async function requireAuthenticatedRequest(req, res) {
+  const authorization = String(req.headers.authorization || "");
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  const account = await lookupFirebaseAccountByIdToken(token);
+
+  if (!account?.localId) {
+    sendJson(res, 401, { error: "Authentication required." });
+    return null;
+  }
+
+  return account;
+}
+
+function buildGoogleDriveOAuthState() {
+  return createOpaqueToken(24);
+}
+
+function getDriveConnectionStatusPayload(uid) {
+  const connection = getDriveUserConnection(uid);
+  return {
+    connected: Boolean(connection?.refreshToken),
+    email: connection?.email || "",
+    connectedAt: connection?.connectedAt || "",
+    updatedAt: connection?.updatedAt || "",
+    scope: connection?.scope || "",
+  };
+}
+
+async function handleDriveConnectionStatus(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  sendJson(res, 200, getDriveConnectionStatusPayload(account.localId));
+}
+
+async function handleStartDriveOAuth(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  const oauthConfig = getGoogleDriveOAuthConfig();
+  if (!oauthConfig) {
+    sendJson(res, 503, {
+      error: "Google Drive OAuth is not configured on the server yet.",
+    });
+    return;
+  }
+
+  const state = buildGoogleDriveOAuthState();
+  const store = readDriveConnectionsStore();
+  store.pendingStates[state] = {
+    uid: account.localId,
+    email: account.email || "",
+    createdAt: new Date().toISOString(),
+  };
+  writeDriveConnectionsStore(store);
+
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", oauthConfig.clientId);
+  authUrl.searchParams.set("redirect_uri", oauthConfig.redirectUri);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", DRIVE_OAUTH_SCOPE);
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("include_granted_scopes", "true");
+  authUrl.searchParams.set("state", state);
+
+  sendJson(res, 200, { authUrl: authUrl.toString() });
+}
+
+async function handleDriveOAuthCallback(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const oauthConfig = getGoogleDriveOAuthConfig();
+  if (!oauthConfig) {
+    sendHtml(res, 503, "<h1>Google Drive OAuth is not configured.</h1>");
+    return;
+  }
+
+  const state = String(requestUrl.searchParams.get("state") || "").trim();
+  const code = String(requestUrl.searchParams.get("code") || "").trim();
+  const error = String(requestUrl.searchParams.get("error") || "").trim();
+  const store = readDriveConnectionsStore();
+  const pendingState = store.pendingStates[state];
+
+  if (!pendingState?.uid) {
+    sendHtml(res, 400, "<h1>This Google Drive connection link is no longer valid.</h1>");
+    return;
+  }
+
+  delete store.pendingStates[state];
+  writeDriveConnectionsStore(store);
+
+  if (error) {
+    res.writeHead(302, {
+      Location: `/studio?drive=error&message=${encodeURIComponent(error)}`,
+      "Cache-Control": "no-store",
+    });
+    res.end();
+    return;
+  }
+
+  if (!code) {
+    sendHtml(res, 400, "<h1>Missing Google Drive authorization code.</h1>");
+    return;
+  }
+
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: oauthConfig.clientId,
+      client_secret: oauthConfig.clientSecret,
+      redirect_uri: oauthConfig.redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  const tokenPayload = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenPayload.access_token) {
+    sendHtml(res, 400, `<h1>${escapeHtml(tokenPayload.error_description || tokenPayload.error || "Could not connect Google Drive.")}</h1>`);
+    return;
+  }
+
+  const nextStore = readDriveConnectionsStore();
+  nextStore.connections[pendingState.uid] = {
+    uid: pendingState.uid,
+    email: pendingState.email || "",
+    refreshToken: tokenPayload.refresh_token || nextStore.connections[pendingState.uid]?.refreshToken || "",
+    accessToken: tokenPayload.access_token,
+    expiresAt: Date.now() + (Number(tokenPayload.expires_in) || 3600) * 1000,
+    scope: tokenPayload.scope || DRIVE_OAUTH_SCOPE,
+    connectedAt: nextStore.connections[pendingState.uid]?.connectedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  writeDriveConnectionsStore(nextStore);
+
+  res.writeHead(302, {
+    Location: "/studio?drive=connected",
+    "Cache-Control": "no-store",
+  });
+  res.end();
 }
 
 async function hydrateRemoteMappingFolderName(entry) {
@@ -1566,6 +2177,8 @@ function resolveStaticPathname(pathname) {
     pathname === "/direct" ||
     pathname === "/studio" ||
     pathname.startsWith("/studio/") ||
+    pathname.startsWith("/event/") ||
+    pathname.startsWith("/event-moderate/") ||
     pathname === "/folders" ||
     pathname === "/gallery" ||
     pathSegments.length === 2
@@ -2332,6 +2945,429 @@ async function handleDomainAllowance(req, res) {
   }
 }
 
+function buildOriginFromRequest(req) {
+  const host = req.headers.host || "";
+  const proto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim() || "https";
+  return `${proto}://${host}`;
+}
+
+function combineEventDateTime(dateValue, timeValue) {
+  const date = String(dateValue || "").trim();
+  const time = String(timeValue || "").trim();
+  if (!date) {
+    return "";
+  }
+  const normalizedTime = time || "00:00";
+  return new Date(`${date}T${normalizedTime}:00`).toISOString();
+}
+
+function buildEventPhotoRecord(event, driveFile, uploadedAt = new Date().toISOString()) {
+  const driveFileId = String(driveFile?.id || "").trim();
+  return {
+    id: createOpaqueToken(10),
+    driveFileId,
+    name: String(driveFile?.name || "").trim() || "Event photo",
+    mimeType: String(driveFile?.mimeType || IMAGE_MIME_PREFIX).trim() || IMAGE_MIME_PREFIX,
+    uploadedAt,
+    thumbnailUrl: createImageUrl(driveFileId, "thumb"),
+    slideshowUrl: createImageUrl(driveFileId, "screen"),
+    fullUrl: createImageUrl(driveFileId, "full"),
+    webViewLink: String(driveFile?.webViewLink || "").trim(),
+    eventId: event.id,
+  };
+}
+
+function sanitizeEventPhoto(photo) {
+  return {
+    id: photo.id,
+    driveFileId: photo.driveFileId,
+    name: photo.name,
+    mimeType: photo.mimeType,
+    uploadedAt: photo.uploadedAt,
+    thumbnailUrl: photo.thumbnailUrl,
+    slideshowUrl: photo.slideshowUrl,
+    fullUrl: photo.fullUrl,
+    webViewLink: photo.webViewLink || "",
+  };
+}
+
+async function handleCreateEvent(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const name = String(body.name || "").trim();
+    const parentFolderLink = String(body.parentFolderLink || "").trim();
+    const studioName = String(body.studioName || "").trim();
+    const studioSlug = String(body.studioSlug || "").trim();
+    const tagline = String(body.tagline || "").trim();
+    const startAt = combineEventDateTime(body.startDate, body.startTime);
+    const endAt = combineEventDateTime(body.endDate, body.endTime);
+
+    if (!name) {
+      sendJson(res, 400, { error: "Event name is required." });
+      return;
+    }
+
+    const parentFolderId = extractFolderId(parentFolderLink);
+    if (!parentFolderId) {
+      sendJson(res, 400, { error: "Please paste a valid Google Drive parent folder link." });
+      return;
+    }
+
+    const queueFolderName = `${name}_Queue`;
+    const liveFolderName = `${name}_Live`;
+    const driveAccessToken = await getDriveWriteAccessTokenForUser(account.localId);
+    const queueFolder = await driveCreateSubfolder(parentFolderId, queueFolderName, driveAccessToken);
+    const liveFolder = await driveCreateSubfolder(parentFolderId, liveFolderName, driveAccessToken);
+
+    const event = normalizeEventVisibility({
+      id: createOpaqueToken(10),
+      slug: createEventPublicSlug(name),
+      code: createEventCode(),
+      moderationToken: createOpaqueToken(16),
+      ownerUid: account.localId,
+      ownerEmail: account.email || "",
+      studioName,
+      studioSlug,
+      name,
+      tagline,
+      startAt,
+      endAt,
+      createdAt: new Date().toISOString(),
+      parentFolderId,
+      parentFolderUrl: parentFolderLink,
+      queueFolderId: queueFolder.id,
+      queueFolderUrl: String(queueFolder.webViewLink || "").trim(),
+      liveFolderId: liveFolder.id,
+      liveFolderUrl: String(liveFolder.webViewLink || "").trim(),
+      template: "template-1",
+      queuedPhotos: [],
+      livePhotos: [],
+      rejectedPhotos: [],
+    });
+
+    const origin = buildOriginFromRequest(req);
+    event.uploadUrl = `${origin}/event/${event.slug}`;
+    event.displayUrl = `${origin}/event/${event.slug}`;
+    event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
+
+    const store = readEventsStore();
+    store.events.unshift(event);
+    writeEventsStore(store);
+
+    sendJson(res, 200, { event: sanitizeEventForClient(event) });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not create event." });
+  }
+}
+
+async function handleGetModerationEvent(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const token = String(requestUrl.searchParams.get("token") || "").trim();
+  const event = findEventByModerationToken(token);
+
+  if (!event) {
+    sendJson(res, 404, { error: "Event not found." });
+    return;
+  }
+
+  sendJson(res, 200, {
+    event: {
+      ...sanitizeEventForClient(event),
+      queuedPhotos: event.queuedPhotos.map(sanitizeEventPhoto),
+      livePhotos: event.livePhotos.map(sanitizeEventPhoto),
+    },
+  });
+}
+
+async function handleListEvents(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  const events = readAllEvents()
+    .filter((event) => event.ownerUid === account.localId)
+    .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
+
+  sendJson(res, 200, { events: events.map(sanitizeEventForClient) });
+}
+
+async function handleGetManagedEvent(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const eventId = String(requestUrl.searchParams.get("id") || "").trim();
+  const event = findEventById(eventId);
+
+  if (!event || event.ownerUid !== account.localId) {
+    sendJson(res, 404, { error: "Event not found." });
+    return;
+  }
+
+  sendJson(res, 200, {
+    event: {
+      ...sanitizeEventForClient(event),
+      queuedPhotos: event.queuedPhotos.map(sanitizeEventPhoto),
+      livePhotos: event.livePhotos.map(sanitizeEventPhoto),
+    },
+  });
+}
+
+async function handleGetPublicEvent(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const slug = String(requestUrl.searchParams.get("slug") || "").trim();
+  const event = findEventBySlug(slug);
+
+  if (!event) {
+    sendJson(res, 404, { error: "Event not found." });
+    return;
+  }
+
+  sendJson(res, 200, {
+    event: {
+      ...sanitizeEventForClient(event),
+      livePhotos: event.livePhotos.map(sanitizeEventPhoto),
+    },
+  });
+}
+
+async function handleUpdateEvent(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const eventId = String(body.id || "").trim();
+    const store = readEventsStore();
+    const event = store.events.find((entry) => entry.id === eventId && entry.ownerUid === account.localId);
+    if (!event) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    event.name = String(body.name || event.name || "").trim() || event.name;
+    event.tagline = String(body.tagline || "").trim();
+    event.startAt = combineEventDateTime(body.startDate, body.startTime) || event.startAt;
+    event.endAt = combineEventDateTime(body.endDate, body.endTime) || event.endAt;
+    event.template = String(body.template || event.template || "template-1").trim() || "template-1";
+    writeEventsStore(store);
+
+    sendJson(res, 200, { event: sanitizeEventForClient(normalizeEventVisibility(event)) });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not update event." });
+  }
+}
+
+async function handleDeleteEvent(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const eventId = String(body.id || "").trim();
+    const store = readEventsStore();
+    const nextEvents = store.events.filter((event) => !(event.id === eventId && event.ownerUid === account.localId));
+    if (nextEvents.length === store.events.length) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+    writeEventsStore({ events: nextEvents });
+    sendJson(res, 200, { success: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not delete event." });
+  }
+}
+
+async function handleModerateEventPhoto(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const eventId = String(body.eventId || "").trim();
+    const photoId = String(body.photoId || "").trim();
+    const action = String(body.action || "").trim();
+    const store = readEventsStore();
+    const event = store.events.find((entry) => entry.id === eventId && entry.ownerUid === account.localId);
+
+    if (!event) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    const queueIndex = event.queuedPhotos.findIndex((photo) => photo.id === photoId);
+    const liveIndex = event.livePhotos.findIndex((photo) => photo.id === photoId);
+    const driveAccessToken = await getDriveWriteAccessTokenForUser(event.ownerUid);
+
+    if (action === "approve") {
+      if (queueIndex < 0) {
+        sendJson(res, 404, { error: "Queued photo not found." });
+        return;
+      }
+      const [photo] = event.queuedPhotos.splice(queueIndex, 1);
+      await driveMoveFileToFolder(photo.driveFileId, event.queueFolderId, event.liveFolderId, driveAccessToken);
+      event.livePhotos.unshift(photo);
+    } else if (action === "reject") {
+      if (queueIndex < 0) {
+        sendJson(res, 404, { error: "Queued photo not found." });
+        return;
+      }
+      const [photo] = event.queuedPhotos.splice(queueIndex, 1);
+      event.rejectedPhotos.unshift(photo);
+    } else if (action === "remove-live") {
+      if (liveIndex < 0) {
+        sendJson(res, 404, { error: "Live photo not found." });
+        return;
+      }
+      const [photo] = event.livePhotos.splice(liveIndex, 1);
+      await driveMoveFileToFolder(photo.driveFileId, event.liveFolderId, event.queueFolderId, driveAccessToken);
+      event.queuedPhotos.unshift(photo);
+    } else {
+      sendJson(res, 400, { error: "Unknown moderation action." });
+      return;
+    }
+
+    writeEventsStore(store);
+    sendJson(res, 200, {
+      event: {
+        ...sanitizeEventForClient(normalizeEventVisibility(event)),
+        queuedPhotos: event.queuedPhotos.map(sanitizeEventPhoto),
+        livePhotos: event.livePhotos.map(sanitizeEventPhoto),
+      },
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not update event photos." });
+  }
+}
+
+async function handleModerateEventPhotoByToken(req, res) {
+  try {
+    const body = await readRequestBody(req);
+    const token = String(body.token || "").trim();
+    const photoId = String(body.photoId || "").trim();
+    const action = String(body.action || "").trim();
+    const store = readEventsStore();
+    const event = store.events.find((entry) => entry.moderationToken === token);
+
+    if (!event) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    const queueIndex = event.queuedPhotos.findIndex((photo) => photo.id === photoId);
+    const liveIndex = event.livePhotos.findIndex((photo) => photo.id === photoId);
+    const driveAccessToken = await getDriveWriteAccessTokenForUser(event.ownerUid);
+
+    if (action === "approve") {
+      if (queueIndex < 0) {
+        sendJson(res, 404, { error: "Queued photo not found." });
+        return;
+      }
+      const [photo] = event.queuedPhotos.splice(queueIndex, 1);
+      await driveMoveFileToFolder(photo.driveFileId, event.queueFolderId, event.liveFolderId, driveAccessToken);
+      event.livePhotos.unshift(photo);
+    } else if (action === "reject") {
+      if (queueIndex < 0) {
+        sendJson(res, 404, { error: "Queued photo not found." });
+        return;
+      }
+      const [photo] = event.queuedPhotos.splice(queueIndex, 1);
+      event.rejectedPhotos.unshift(photo);
+    } else if (action === "remove-live") {
+      if (liveIndex < 0) {
+        sendJson(res, 404, { error: "Live photo not found." });
+        return;
+      }
+      const [photo] = event.livePhotos.splice(liveIndex, 1);
+      await driveMoveFileToFolder(photo.driveFileId, event.liveFolderId, event.queueFolderId, driveAccessToken);
+      event.queuedPhotos.unshift(photo);
+    } else {
+      sendJson(res, 400, { error: "Unknown moderation action." });
+      return;
+    }
+
+    writeEventsStore(store);
+    sendJson(res, 200, {
+      event: {
+        ...sanitizeEventForClient(normalizeEventVisibility(event)),
+        queuedPhotos: event.queuedPhotos.map(sanitizeEventPhoto),
+        livePhotos: event.livePhotos.map(sanitizeEventPhoto),
+      },
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not update event photos." });
+  }
+}
+
+async function handleEventUpload(req, res) {
+  try {
+    const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+    const contentType = req.headers["content-type"] || "";
+    const rawBody = await readRawRequestBuffer(req);
+    const { fields, files } = parseMultipartForm(rawBody, contentType);
+    const slug = String(fields.slug || requestUrl.searchParams.get("slug") || "").trim();
+    const event = findEventBySlug(slug);
+
+    if (!event) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    const file = files.find((entry) => entry.fieldName === "photo") || files[0];
+    if (!file?.buffer?.length) {
+      sendJson(res, 400, { error: "Please select a photo first." });
+      return;
+    }
+
+    if (!String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)) {
+      sendJson(res, 400, { error: "Only image uploads are supported right now." });
+      return;
+    }
+
+    const driveAccessToken = await getDriveWriteAccessTokenForUser(event.ownerUid);
+    const driveFile = await driveUploadFileToFolder({
+      folderId: event.queueFolderId,
+      fileName: file.fileName || `event-photo-${Date.now()}.jpg`,
+      mimeType: file.mimeType,
+      buffer: file.buffer,
+      accessToken: driveAccessToken,
+    });
+
+    const store = readEventsStore();
+    const mutableEvent = store.events.find((entry) => entry.id === event.id);
+    if (!mutableEvent) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    const photoRecord = buildEventPhotoRecord(mutableEvent, driveFile);
+    mutableEvent.queuedPhotos.unshift(photoRecord);
+    writeEventsStore(store);
+
+    sendJson(res, 200, {
+      success: true,
+      photo: sanitizeEventPhoto(photoRecord),
+      message: "Photo uploaded and queued for moderation.",
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not upload photo." });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const requestHost = normalizeHostname((req.headers.host || "").split(":")[0]);
@@ -2398,6 +3434,71 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/admin/links/delete" && req.method === "POST") {
     await handleAdminDeleteLink(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/drive/connection" && req.method === "GET") {
+    await handleDriveConnectionStatus(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/drive/oauth/start" && req.method === "POST") {
+    await handleStartDriveOAuth(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/drive/oauth/callback" && req.method === "GET") {
+    await handleDriveOAuthCallback(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events" && req.method === "GET") {
+    await handleListEvents(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events" && req.method === "POST") {
+    await handleCreateEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/manage" && req.method === "GET") {
+    await handleGetManagedEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/update" && req.method === "POST") {
+    await handleUpdateEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/delete" && req.method === "POST") {
+    await handleDeleteEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/moderate" && req.method === "POST") {
+    await handleModerateEventPhoto(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/public" && req.method === "GET") {
+    await handleGetPublicEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/upload" && req.method === "POST") {
+    await handleEventUpload(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/moderation" && req.method === "GET") {
+    await handleGetModerationEvent(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/moderation" && req.method === "POST") {
+    await handleModerateEventPhotoByToken(req, res);
     return;
   }
 

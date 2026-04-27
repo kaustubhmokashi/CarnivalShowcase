@@ -2368,13 +2368,23 @@ window.CarnivalGallery = {
 
 updateDurationControls();
 syncPendingSharedSelectionFromLocation();
-if (!window.CarnivalStudioPublicRoute && window.location.pathname !== "/studio") {
+if (
+  !window.CarnivalStudioPublicRoute &&
+  !window.CarnivalEventPublicRoute &&
+  !window.CarnivalEventModerationRoute &&
+  window.location.pathname !== "/studio"
+) {
   setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
 }
 
 window.addEventListener("popstate", () => {
   syncPendingSharedSelectionFromLocation();
-  if (window.CarnivalStudioPublicRoute || window.location.pathname === "/studio") {
+  if (
+    window.CarnivalStudioPublicRoute ||
+    window.CarnivalEventPublicRoute ||
+    window.CarnivalEventModerationRoute ||
+    window.location.pathname === "/studio"
+  ) {
     return;
   }
 

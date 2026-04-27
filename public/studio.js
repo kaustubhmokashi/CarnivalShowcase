@@ -62,6 +62,7 @@ const studioSidebarLogoLink = document.getElementById("studio-sidebar-logo-link"
 const studioSidebarLogo = document.getElementById("studio-sidebar-logo");
 const studioSidebarTabs = Array.from(document.querySelectorAll("[data-studio-section]"));
 const studioPagesSection = document.getElementById("studio-pages-section");
+const studioEventsSection = document.getElementById("studio-events-section");
 const studioBrandingSection = document.getElementById("studio-branding-section");
 const studioAccountSection = document.getElementById("studio-account-section");
 const studioBrandingForm = document.getElementById("studio-branding-form");
@@ -87,11 +88,32 @@ const connectDomainTarget = document.getElementById("connect-domain-target");
 const connectDomainStatus = document.getElementById("connect-domain-status");
 const closeConnectDomainButton = document.getElementById("close-connect-domain");
 const savedPagesTable = document.getElementById("saved-pages-table");
+const savedEventsTable = document.getElementById("saved-events-table");
 const studioToast = document.getElementById("studio-toast");
 const createPageButton = document.getElementById("create-page-button");
 const createEventButton = document.getElementById("create-event-button");
 const linkApprovalNotice = document.getElementById("link-approval-notice");
 const createPagePanel = document.getElementById("create-page-panel");
+const createEventPanel = document.getElementById("create-event-panel");
+const createEventForm = document.getElementById("create-event-form");
+const closeCreateEventButton = document.getElementById("close-create-event");
+const eventNameInput = document.getElementById("event-name-input");
+const connectEventDriveButton = document.getElementById("connect-event-drive");
+const eventDriveConnectionStatus = document.getElementById("event-drive-connection-status");
+const eventParentFolderLinkInput = document.getElementById("event-parent-folder-link");
+const eventStartDateInput = document.getElementById("event-start-date");
+const eventStartTimeInput = document.getElementById("event-start-time");
+const eventEndDateInput = document.getElementById("event-end-date");
+const eventEndTimeInput = document.getElementById("event-end-time");
+const createEventStatus = document.getElementById("create-event-status");
+const manageEventPanel = document.getElementById("manage-event-panel");
+const closeManageEventButton = document.getElementById("close-manage-event");
+const manageEventKicker = document.getElementById("manage-event-kicker");
+const manageEventPhotoGrid = document.getElementById("manage-event-photo-grid");
+const manageEventStatus = document.getElementById("manage-event-status");
+const manageEventTemplateSelect = document.getElementById("manage-event-template-select");
+const shareEventModerationLinkButton = document.getElementById("share-event-moderation-link");
+const eventPhotoFilterTabs = Array.from(document.querySelectorAll("[data-event-photo-filter]"));
 const closeCreatePageButton = document.getElementById("close-create-page");
 const wizardStepLabel = document.getElementById("wizard-step-label");
 const wizardDriveForm = document.getElementById("wizard-drive-form");
@@ -113,6 +135,13 @@ const wizardDetailsStatus = document.getElementById("wizard-details-status");
 const wizardTemplateStep = document.getElementById("wizard-template-step");
 const wizardCreatePage = document.getElementById("wizard-create-page");
 const wizardTemplateStatus = document.getElementById("wizard-template-status");
+const screenEventPublic = document.getElementById("screen-event-public");
+const eventPublicKicker = document.getElementById("event-public-kicker");
+const eventPublicTitle = document.getElementById("event-public-title");
+const eventUploadForm = document.getElementById("event-upload-form");
+const eventUploadInput = document.getElementById("event-upload-input");
+const eventUploadStatus = document.getElementById("event-upload-status");
+const eventPublicGrid = document.getElementById("event-public-grid");
 
 let app = null;
 let auth = null;
@@ -120,6 +149,7 @@ let db = null;
 let currentUser = null;
 let currentProfile = null;
 let savedPages = [];
+let savedEvents = [];
 let allAccounts = [];
 let allAdminLinks = [];
 let pendingAccountStatuses = new Map();
@@ -127,6 +157,13 @@ let activeAdminFilter = "active";
 let wizardState = createEmptyWizardState();
 let authHasResolved = false;
 let currentWizardStep = 1;
+let activeEventPhotoFilter = "live";
+let currentManagedEvent = null;
+let moderationAccessToken = "";
+let driveConnectionStatus = {
+  connected: false,
+  email: "",
+};
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
 
@@ -541,8 +578,18 @@ function getGalleryOptionsForPage(page, extraOptions = {}) {
 
 function getStudioRoute() {
   const pathSegments = window.location.pathname.split("/").filter(Boolean);
+  if (pathSegments[0] === "event-moderate" && pathSegments[1]) {
+    return { name: "event-moderate", token: decodeURIComponent(pathSegments[1]) };
+  }
+
   if (pathSegments[0] !== "studio") {
     return { name: "home" };
+  }
+
+  const currentUrl = new URL(window.location.href);
+  const eventId = String(currentUrl.searchParams.get("event") || "").trim();
+  if (eventId) {
+    return { name: "event-manage", eventId };
   }
 
   if (pathSegments[1] === "connect-domain") {
@@ -551,6 +598,10 @@ function getStudioRoute() {
 
   if (pathSegments[1] === "create") {
     return { name: "create" };
+  }
+
+  if (pathSegments[1] === "events" && pathSegments[2] === "create") {
+    return { name: "event-create" };
   }
 
   if (pathSegments[1] === "edit" && pathSegments[2]) {
@@ -563,9 +614,10 @@ function getStudioRoute() {
 function setStudioScreen(active) {
   screenStudio.classList.toggle("active", active);
   screenDirectLink.classList.toggle("active", !active);
+  screenEventPublic?.classList.remove("active");
   if (active) {
     screenGallery.classList.remove("active");
-    if (!window.location.pathname.startsWith("/studio")) {
+    if (!window.location.pathname.startsWith("/studio") && !window.location.pathname.startsWith("/event-moderate/")) {
       window.history.pushState({ studio: true }, "", "/studio");
     }
   } else {
@@ -612,16 +664,18 @@ function getPublicPageSlugFromPath() {
 function showPublicPageLoadingState() {
   screenStudio.classList.remove("active");
   screenDirectLink.classList.remove("active");
+  screenEventPublic?.classList.remove("active");
   screenGallery.classList.add("active");
   window.CarnivalGallery?.showLoading?.("Loading your albums.");
 }
 
 function showStudioDashboardSection(section) {
-  const activeSection = ["pages", "branding", "account"].includes(section) ? section : "pages";
+  const activeSection = ["pages", "events", "branding", "account"].includes(section) ? section : "pages";
   studioSidebarTabs.forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.studioSection === activeSection);
   });
   studioPagesSection?.classList.toggle("active", activeSection === "pages");
+  studioEventsSection?.classList.toggle("active", activeSection === "events");
   studioBrandingSection?.classList.toggle("active", activeSection === "branding");
   studioAccountSection?.classList.toggle("active", activeSection === "account");
   if (isMobileStudioViewport()) {
@@ -685,11 +739,65 @@ function showStudioView(view) {
   studioAdminPanel?.classList.toggle("hidden", view !== "admin");
   studioDashboardPanel.classList.toggle("hidden", view !== "dashboard");
   createPagePanel.classList.add("hidden");
+  createEventPanel?.classList.add("hidden");
+  manageEventPanel?.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
   studioSidebarName?.classList.toggle("hidden", view === "admin");
   closeStudioSidebarDrawer();
   if (view === "dashboard") {
     showStudioDashboardSection("pages");
+  }
+}
+
+function openCreateEventPanel({ skipHistory = false } = {}) {
+  showStudioView("dashboard");
+  studioDashboardPanel.classList.add("hidden");
+  createEventPanel?.classList.remove("hidden");
+  manageEventPanel?.classList.add("hidden");
+  void loadDriveConnectionStatus().catch((error) => {
+    driveConnectionStatus = { connected: false, email: "" };
+    updateDriveConnectionUi();
+    setStudioStatus(createEventStatus, error.message || "Could not load Google Drive status.", true);
+  });
+  if (!skipHistory) {
+    history.pushState({}, "", "/studio/events/create");
+  }
+}
+
+function closeCreateEventPanel({ skipHistory = false } = {}) {
+  createEventPanel?.classList.add("hidden");
+  studioDashboardPanel.classList.remove("hidden");
+  if (!skipHistory) {
+    history.pushState({}, "", "/studio");
+  }
+}
+
+function closeManageEventPanel({ skipHistory = false } = {}) {
+  manageEventPanel?.classList.add("hidden");
+  studioDashboardPanel.classList.remove("hidden");
+  moderationAccessToken = "";
+  if (!skipHistory) {
+    history.pushState({}, "", "/studio");
+  }
+}
+
+function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
+  currentManagedEvent = event;
+  moderationAccessToken = token || "";
+  studioDashboardPanel?.classList.add("hidden");
+  createEventPanel?.classList.add("hidden");
+  manageEventPanel?.classList.remove("hidden");
+  if (manageEventKicker) {
+    manageEventKicker.textContent = event?.name || "Manage event";
+  }
+  if (manageEventTemplateSelect) {
+    manageEventTemplateSelect.value = event?.template || "template-1";
+    manageEventTemplateSelect.disabled = Boolean(moderationAccessToken);
+  }
+  shareEventModerationLinkButton?.classList.toggle("hidden", Boolean(moderationAccessToken));
+  showEventPhotoFilter("live");
+  if (!skipHistory) {
+    history.pushState({}, "", token ? `/event-moderate/${encodeURIComponent(token)}` : `/studio?event=${encodeURIComponent(event.id)}`);
   }
 }
 
@@ -712,6 +820,25 @@ function showStudioToast(message) {
   }, 2400);
 }
 showStudioToast.timer = null;
+
+function consumeDriveReturnState() {
+  const currentUrl = new URL(window.location.href);
+  const driveState = String(currentUrl.searchParams.get("drive") || "").trim();
+  const message = String(currentUrl.searchParams.get("message") || "").trim();
+  if (!driveState) {
+    return;
+  }
+
+  currentUrl.searchParams.delete("drive");
+  currentUrl.searchParams.delete("message");
+  window.history.replaceState({}, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+
+  if (driveState === "connected") {
+    showStudioToast("Google Drive connected");
+  } else if (driveState === "error") {
+    showStudioToast(message || "Google Drive permission was not completed");
+  }
+}
 
 async function copyTextToClipboard(text) {
   if (navigator.clipboard?.writeText) {
@@ -865,6 +992,193 @@ function renderSavedPagesTable() {
   });
 }
 
+function formatEventPhaseLabel(phase) {
+  if (phase === "live") {
+    return "Live";
+  }
+  if (phase === "ended") {
+    return "Ended";
+  }
+  return "Upcoming";
+}
+
+function formatEventSchedule(event) {
+  const start = event?.startAt ? new Date(event.startAt) : null;
+  const end = event?.endAt ? new Date(event.endAt) : null;
+  if (!start || Number.isNaN(start.getTime())) {
+    return "";
+  }
+
+  const startDate = start.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const startTime = start.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (!end || Number.isNaN(end.getTime())) {
+    return `${startDate} • ${startTime}`;
+  }
+
+  const endDate = end.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const endTime = end.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${startDate} • ${startTime} — ${endDate} • ${endTime}`;
+}
+
+function getEventManageUrl(event) {
+  return `${window.location.origin}/studio?event=${encodeURIComponent(event.id)}`;
+}
+
+function renderSavedEventsTable() {
+  if (!savedEventsTable) {
+    return;
+  }
+
+  if (!savedEvents.length) {
+    savedEventsTable.innerHTML = '<p class="studio-empty">No events yet.</p>';
+    return;
+  }
+
+  savedEventsTable.innerHTML = "";
+  savedEvents.forEach((event) => {
+    const card = document.createElement("article");
+    card.className = "saved-page-card saved-event-card";
+    const phaseLabel = formatEventPhaseLabel(event.phase);
+    card.innerHTML = `
+      <div class="saved-page-thumb saved-event-thumb">
+        <div class="saved-event-badge saved-event-badge-${escapeMarkup(String(event.phase || "upcoming"))}">${escapeMarkup(phaseLabel)}</div>
+      </div>
+      <div class="saved-page-content">
+        <div class="saved-event-meta">
+          <h2>${escapeMarkup(event.name || "Untitled event")}</h2>
+          <p class="saved-page-pairing">${escapeMarkup(event.code || "")}</p>
+          <p class="saved-event-schedule">${escapeMarkup(formatEventSchedule(event))}</p>
+        </div>
+        <div class="saved-page-actions saved-event-actions" aria-label="Event actions">
+          <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share event">
+            <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="saved-page-icon-button" data-action="copy-url" aria-label="Copy event URL">
+            <span class="saved-page-icon icon-mask icon-copy" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="saved-page-icon-button" data-action="edit" aria-label="Edit event">
+            <span class="saved-page-icon icon-mask icon-edit" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="saved-page-icon-button" data-action="download-qr" aria-label="Download event QR">
+            <span class="saved-page-icon icon-mask icon-download" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="saved-page-icon-button" data-action="manage" aria-label="Manage event">
+            <span class="saved-page-icon icon-mask icon-settings" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="saved-page-icon-button danger" data-action="delete" aria-label="Delete event">
+            <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('[data-action="share"]')?.addEventListener("click", async () => {
+      try {
+        const shareText = `${event.name}\n${event.displayUrl}`;
+        if (navigator.share) {
+          await navigator.share({ title: event.name, text: shareText, url: event.displayUrl });
+          return;
+        }
+        await copyTextToClipboard(shareText);
+        showStudioToast("Event link copied to clipboard");
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          showStudioToast("Could not share event");
+        }
+      }
+    });
+    card.querySelector('[data-action="copy-url"]')?.addEventListener("click", async () => {
+      try {
+        await copyTextToClipboard(event.displayUrl || "");
+        showStudioToast("Event URL copied");
+      } catch (error) {
+        showStudioToast("Could not copy event URL");
+      }
+    });
+    card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+      openManageEventPanel(event);
+    });
+    card.querySelector('[data-action="download-qr"]')?.addEventListener("click", async () => {
+      try {
+        await downloadEventQr(event);
+      } catch (error) {
+        showStudioToast(error.message || "Could not download QR");
+      }
+    });
+    card.querySelector('[data-action="manage"]')?.addEventListener("click", () => {
+      openManageEventPanel(event);
+    });
+    card.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
+      await deleteEvent(event);
+    });
+    savedEventsTable.appendChild(card);
+  });
+}
+
+function renderEventPhotoGrid() {
+  if (!manageEventPhotoGrid) {
+    return;
+  }
+
+  const photos = activeEventPhotoFilter === "live"
+    ? currentManagedEvent?.livePhotos || []
+    : currentManagedEvent?.queuedPhotos || [];
+
+  if (!photos.length) {
+    manageEventPhotoGrid.innerHTML = `<p class="studio-empty">No ${activeEventPhotoFilter} photos yet.</p>`;
+    return;
+  }
+
+  manageEventPhotoGrid.innerHTML = "";
+  photos.forEach((photo) => {
+    const card = document.createElement("article");
+    card.className = "event-photo-card";
+    card.innerHTML = `
+      <img class="event-photo-card-image" src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <div class="event-photo-card-actions">
+        ${
+          activeEventPhotoFilter === "queue"
+            ? `
+              <button type="button" class="studio-primary-button event-photo-action" data-action="approve">Approve</button>
+              <button type="button" class="studio-secondary-button event-photo-action" data-action="reject">Reject</button>
+            `
+            : `
+              <button type="button" class="studio-secondary-button event-photo-action" data-action="remove-live">Move to queue</button>
+            `
+        }
+      </div>
+    `;
+    card.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await moderateEventPhoto(photo.id, button.dataset.action || "");
+      });
+    });
+    manageEventPhotoGrid.appendChild(card);
+  });
+}
+
+function showEventPhotoFilter(filter) {
+  activeEventPhotoFilter = filter === "queue" ? "queue" : "live";
+  eventPhotoFilterTabs.forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.eventPhotoFilter === activeEventPhotoFilter);
+  });
+  renderEventPhotoGrid();
+}
+
 function formatRegistrationDate(value) {
   if (!value) {
     return "";
@@ -908,6 +1222,62 @@ async function getAdminAuthHeaders() {
   return {
     Authorization: `Bearer ${token}`,
   };
+}
+
+function updateDriveConnectionUi() {
+  if (!eventDriveConnectionStatus || !connectEventDriveButton) {
+    return;
+  }
+
+  if (driveConnectionStatus.connected) {
+    eventDriveConnectionStatus.textContent = driveConnectionStatus.email
+      ? `Connected as ${driveConnectionStatus.email}`
+      : "Google Drive connected.";
+    connectEventDriveButton.textContent = "Reconnect Google Drive";
+  } else {
+    eventDriveConnectionStatus.textContent = "Connect your Google Drive before creating an event.";
+    connectEventDriveButton.textContent = "Connect Google Drive";
+  }
+}
+
+async function loadDriveConnectionStatus() {
+  if (!currentUser) {
+    driveConnectionStatus = { connected: false, email: "" };
+    updateDriveConnectionUi();
+    return driveConnectionStatus;
+  }
+
+  const response = await fetch("/api/drive/connection", {
+    headers: await getAdminAuthHeaders(),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load Drive connection status.");
+  }
+  driveConnectionStatus = {
+    connected: Boolean(payload.connected),
+    email: String(payload.email || "").trim(),
+    connectedAt: String(payload.connectedAt || "").trim(),
+    updatedAt: String(payload.updatedAt || "").trim(),
+  };
+  updateDriveConnectionUi();
+  return driveConnectionStatus;
+}
+
+async function startDriveOAuth() {
+  const response = await fetch("/api/drive/oauth/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.authUrl) {
+    throw new Error(payload.error || "Could not start Google Drive connection.");
+  }
+  window.location.href = payload.authUrl;
 }
 
 async function getFolderNameForAdminLink(url, fallback = "Google Drive folder") {
@@ -1204,12 +1574,17 @@ async function deleteAdminLink(link) {
 }
 
 function updateLinkCreationGate() {
-  if (!createPageButton || !linkApprovalNotice) {
+  if ((!createPageButton && !createEventButton) || !linkApprovalNotice) {
     return;
   }
 
   const status = getAccountStatus(currentProfile);
-  createPageButton.disabled = status !== "active";
+  if (createPageButton) {
+    createPageButton.disabled = status !== "active";
+  }
+  if (createEventButton) {
+    createEventButton.disabled = status !== "active";
+  }
   linkApprovalNotice.classList.toggle("hidden", status === "active");
   if (status === "new") {
     linkApprovalNotice.textContent = "Awaiting Admin approval for link creation";
@@ -1228,8 +1603,229 @@ async function loadSavedPages() {
   renderSavedPagesTable();
 }
 
+async function loadEvents() {
+  const headers = await getAdminAuthHeaders();
+  const response = await fetch("/api/events", { headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load events.");
+  }
+  savedEvents = Array.isArray(payload.events) ? payload.events : [];
+  renderSavedEventsTable();
+}
+
+async function refreshManagedEvent(eventId = currentManagedEvent?.id) {
+  if (!eventId) {
+    return;
+  }
+
+  const url = moderationAccessToken
+    ? `/api/events/moderation?token=${encodeURIComponent(moderationAccessToken)}`
+    : `/api/events/manage?id=${encodeURIComponent(eventId)}`;
+  const headers = moderationAccessToken ? undefined : await getAdminAuthHeaders();
+  const response = await fetch(url, headers ? { headers } : undefined);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load the event.");
+  }
+  currentManagedEvent = payload.event || null;
+  const eventIndex = savedEvents.findIndex((entry) => entry.id === currentManagedEvent?.id);
+  if (eventIndex >= 0 && currentManagedEvent) {
+    savedEvents.splice(eventIndex, 1, currentManagedEvent);
+    renderSavedEventsTable();
+  }
+  if (manageEventKicker) {
+    manageEventKicker.textContent = currentManagedEvent?.name || "Manage event";
+  }
+  if (manageEventTemplateSelect && currentManagedEvent) {
+    manageEventTemplateSelect.value = currentManagedEvent.template || "template-1";
+  }
+  renderEventPhotoGrid();
+}
+
+async function createEvent(payload) {
+  const response = await fetch("/api/events", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || "Could not create event.");
+  }
+  return body.event;
+}
+
+async function updateEventTemplate(eventId, template) {
+  const response = await fetch("/api/events/update", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({ id: eventId, template }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not update the event.");
+  }
+  return payload.event;
+}
+
+async function moderateEventPhoto(photoId, action) {
+  if (!currentManagedEvent?.id || !photoId || !action) {
+    return;
+  }
+
+  setStudioStatus(manageEventStatus, "Updating photos...");
+  const response = await fetch(moderationAccessToken ? "/api/events/moderation" : "/api/events/moderate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(moderationAccessToken ? {} : await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify(moderationAccessToken ? {
+      token: moderationAccessToken,
+      photoId,
+      action,
+    } : {
+      eventId: currentManagedEvent.id,
+      photoId,
+      action,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not update event photos.");
+  }
+  currentManagedEvent = payload.event || currentManagedEvent;
+  renderEventPhotoGrid();
+  setStudioStatus(manageEventStatus, "Updated.");
+  if (!moderationAccessToken) {
+    await loadEvents().catch(() => {});
+  }
+}
+
+async function deleteEvent(event) {
+  const confirmed = window.confirm(`Delete ${event?.name || "this event"}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await fetch("/api/events/delete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({ id: event.id }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not delete event.");
+  }
+  savedEvents = savedEvents.filter((entry) => entry.id !== event.id);
+  renderSavedEventsTable();
+  showStudioToast("Event deleted");
+}
+
+async function downloadEventQr(event) {
+  if (!event?.displayUrl || typeof QRCode !== "function") {
+    throw new Error("QR code generator is unavailable.");
+  }
+
+  const wrap = document.createElement("div");
+  const qr = new QRCode(wrap, {
+    text: event.displayUrl,
+    width: 1200,
+    height: 1200,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.H,
+  });
+
+  const image = wrap.querySelector("img") || wrap.querySelector("canvas");
+  const href = image?.src || image?.toDataURL?.("image/png");
+  if (!href) {
+    throw new Error("Could not generate QR.");
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = `${(event.name || "event").replace(/\s+/g, "-").toLowerCase()}-qr.png`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+async function loadModerationEventFromToken(token) {
+  moderationAccessToken = token;
+  const response = await fetch(`/api/events/moderation?token=${encodeURIComponent(token)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "This moderation link could not be opened.");
+  }
+  setStudioScreen(true);
+  showStudioView("dashboard");
+  openManageEventPanel(payload.event, { skipHistory: true, token });
+}
+
+async function loadPublicEvent(slug) {
+  const response = await fetch(`/api/events/public?slug=${encodeURIComponent(slug)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "This event could not be opened.");
+  }
+
+  const event = payload.event || {};
+  screenDirectLink.classList.remove("active");
+  screenGallery.classList.remove("active");
+  screenStudio.classList.remove("active");
+  screenEventPublic?.classList.add("active");
+  document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
+  if (eventPublicKicker) {
+    eventPublicKicker.textContent = formatEventPhaseLabel(event.phase || "upcoming");
+  }
+  if (eventPublicTitle) {
+    eventPublicTitle.textContent = event.name || "Event";
+  }
+  renderPublicEventGrid(event.livePhotos || []);
+  eventUploadForm.dataset.slug = event.slug || slug;
+  setStudioStatus(eventUploadStatus, "");
+}
+
+function renderPublicEventGrid(photos) {
+  if (!eventPublicGrid) {
+    return;
+  }
+  if (!Array.isArray(photos) || !photos.length) {
+    eventPublicGrid.innerHTML = '<p class="studio-empty">No live photos yet.</p>';
+    return;
+  }
+  eventPublicGrid.innerHTML = "";
+  photos.forEach((photo) => {
+    const item = document.createElement("article");
+    item.className = "event-public-card";
+    item.innerHTML = `
+      <img class="event-public-card-image" src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+    `;
+    eventPublicGrid.appendChild(item);
+  });
+}
+
 function applyStudioRoute() {
   const route = getStudioRoute();
+  if (route.name === "event-moderate" && route.token) {
+    loadModerationEventFromToken(route.token).catch((error) => {
+      showPublicPageLoadingState();
+      window.CarnivalGallery?.showError?.(error.message || "This moderation link could not be opened.");
+    });
+    return;
+  }
+
   if (route.name === "connect-domain") {
     openConnectDomainPage({ skipHistory: true });
     return;
@@ -1237,6 +1833,11 @@ function applyStudioRoute() {
 
   if (route.name === "create") {
     openCreateWizard({ skipHistory: true });
+    return;
+  }
+
+  if (route.name === "event-create") {
+    openCreateEventPanel({ skipHistory: true });
     return;
   }
 
@@ -1248,7 +1849,18 @@ function applyStudioRoute() {
     }
   }
 
+  if (route.name === "event-manage") {
+    const event = savedEvents.find((item) => item.id === route.eventId);
+    if (event) {
+      openManageEventPanel(event, { skipHistory: true });
+      void refreshManagedEvent(event.id);
+      return;
+    }
+  }
+
   closeCreateWizard({ skipHistory: true });
+  closeCreateEventPanel({ skipHistory: true });
+  closeManageEventPanel({ skipHistory: true });
 }
 
 async function refreshStudioState(user) {
@@ -1289,7 +1901,10 @@ async function refreshStudioState(user) {
   showStudioView("dashboard");
   updateLinkCreationGate();
   await loadSavedPages();
+  await loadEvents();
+  await loadDriveConnectionStatus().catch(() => {});
   applyStudioRoute();
+  consumeDriveReturnState();
 }
 
 async function saveStudioName(name) {
@@ -2147,6 +2762,26 @@ async function deleteSavedPage(page) {
 }
 
 function initializeFirebase() {
+  if (window.CarnivalEventPublicRoute) {
+    loadPublicEvent(window.CarnivalEventPublicRoute).catch((error) => {
+      screenDirectLink.classList.remove("active");
+      screenGallery.classList.remove("active");
+      screenStudio.classList.remove("active");
+      screenEventPublic?.classList.add("active");
+      setStudioStatus(eventUploadStatus, error.message || "This event could not be opened.", true);
+      renderPublicEventGrid([]);
+    });
+    return;
+  }
+
+  if (window.CarnivalEventModerationRoute) {
+    loadModerationEventFromToken(window.CarnivalEventModerationRoute).catch((error) => {
+      showPublicPageLoadingState();
+      window.CarnivalGallery?.showError?.(error.message || "This moderation link could not be opened.");
+    });
+    return;
+  }
+
   if (!hasFirebaseConfig()) {
     setStudioStatus(
       studioAuthStatus,
@@ -2528,13 +3163,98 @@ studioNameForm?.addEventListener("submit", async (event) => {
 
 createPageButton?.addEventListener("click", openCreateWizard);
 createEventButton?.addEventListener("click", () => {
-  showStudioToast("We're working on this feature, it will be live soon");
+  openCreateEventPanel();
 });
 closeCreatePageButton?.addEventListener("click", goBackInWizard);
+closeCreateEventButton?.addEventListener("click", () => {
+  closeCreateEventPanel();
+});
+closeManageEventButton?.addEventListener("click", () => {
+  closeManageEventPanel();
+});
+
+eventPhotoFilterTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    showEventPhotoFilter(tab.dataset.eventPhotoFilter || "live");
+  });
+});
+
+shareEventModerationLinkButton?.addEventListener("click", async () => {
+  if (!currentManagedEvent?.moderationUrl) {
+    return;
+  }
+  try {
+    await copyTextToClipboard(currentManagedEvent.moderationUrl);
+    showStudioToast("Moderation link copied");
+  } catch (error) {
+    showStudioToast("Could not copy moderation link");
+  }
+});
+
+manageEventTemplateSelect?.addEventListener("change", async () => {
+  if (!currentManagedEvent?.id) {
+    return;
+  }
+  try {
+    setStudioStatus(manageEventStatus, "Saving template...");
+    currentManagedEvent = await updateEventTemplate(currentManagedEvent.id, manageEventTemplateSelect.value);
+    setStudioStatus(manageEventStatus, "Template saved.");
+    await loadEvents().catch(() => {});
+  } catch (error) {
+    setStudioStatus(manageEventStatus, error.message || "Could not save template.", true);
+  }
+});
+
+connectEventDriveButton?.addEventListener("click", async () => {
+  try {
+    setStudioStatus(createEventStatus, "Opening Google Drive permission...");
+    await startDriveOAuth();
+  } catch (error) {
+    setStudioStatus(createEventStatus, error.message || "Could not connect Google Drive.", true);
+  }
+});
+
+createEventForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    if (!driveConnectionStatus.connected) {
+      throw new Error("Connect Google Drive first so we can create the Queue and Live folders in your Drive.");
+    }
+    const startAt = new Date(`${eventStartDateInput?.value || ""}T${eventStartTimeInput?.value || "00:00"}`);
+    const endAt = new Date(`${eventEndDateInput?.value || ""}T${eventEndTimeInput?.value || "00:00"}`);
+    if (!Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime()) && endAt < startAt) {
+      throw new Error("End date and time cannot be before the start.");
+    }
+    setStudioStatus(createEventStatus, "Creating event folders...");
+    const createdEvent = await createEvent({
+      name: eventNameInput?.value || "",
+      parentFolderLink: eventParentFolderLinkInput?.value || "",
+      startDate: eventStartDateInput?.value || "",
+      startTime: eventStartTimeInput?.value || "",
+      endDate: eventEndDateInput?.value || "",
+      endTime: eventEndTimeInput?.value || "",
+      studioName: currentProfile?.studioName || "",
+      studioSlug: currentProfile?.studioSlug || "",
+      tagline: "",
+    });
+    setStudioStatus(createEventStatus, "Event created.");
+    createEventForm.reset();
+    await loadEvents();
+    closeCreateEventPanel();
+    showStudioDashboardSection("events");
+    openManageEventPanel(createdEvent);
+    await refreshManagedEvent(createdEvent.id);
+  } catch (error) {
+    setStudioStatus(createEventStatus, error.message || "Could not create event.", true);
+  }
+});
 
 window.addEventListener("popstate", () => {
   closeStudioSidebarDrawer();
-  if (window.location.pathname.startsWith("/studio") && currentProfile?.studioName) {
+  if (
+    (window.location.pathname.startsWith("/studio") || window.location.pathname.startsWith("/event-moderate/")) &&
+    currentProfile?.studioName
+  ) {
     setStudioScreen(true);
     applyStudioRoute();
   }
@@ -2549,6 +3269,38 @@ window.addEventListener("resize", () => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && studioDashboardPanel?.classList.contains("sidebar-open")) {
     closeStudioSidebarDrawer({ restoreFocus: true });
+  }
+});
+
+eventUploadForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const slug = String(eventUploadForm.dataset.slug || "").trim();
+    const file = eventUploadInput?.files?.[0];
+    if (!slug) {
+      throw new Error("This event is not ready yet.");
+    }
+    if (!file) {
+      throw new Error("Please choose a photo first.");
+    }
+
+    const formData = new FormData();
+    formData.append("slug", slug);
+    formData.append("photo", file);
+    setStudioStatus(eventUploadStatus, "Uploading your photo...");
+    const response = await fetch("/api/events/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not upload the photo.");
+    }
+    setStudioStatus(eventUploadStatus, payload.message || "Photo uploaded.");
+    eventUploadForm.reset();
+    await loadPublicEvent(slug);
+  } catch (error) {
+    setStudioStatus(eventUploadStatus, error.message || "Could not upload the photo.", true);
   }
 });
 

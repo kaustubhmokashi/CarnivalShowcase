@@ -8,7 +8,9 @@
       (() => {
         const pathSegments = window.location.pathname.split("/").filter(Boolean);
         const firstSegment = pathSegments[0] || "";
-        const reservedRoutes = new Set(["studio", "privacy-policy", "remote", "remote-tv", "remote-firebase"]);
+        const reservedRoutes = new Set(["studio", "privacy-policy", "remote", "remote-tv", "remote-firebase", "event", "event-moderate"]);
+        window.CarnivalEventPublicRoute = firstSegment === "event" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
+        window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
         window.CarnivalStudioPublicRoute =
           !reservedRoutes.has(firstSegment) &&
           (pathSegments.length === 1 || pathSegments.length >= 2);
@@ -166,6 +168,7 @@
               </div>
               <nav class="studio-sidebar-nav">
                 <button type="button" class="studio-sidebar-tab active" data-studio-section="pages">My Pages</button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="events">Events</button>
                 <button type="button" class="studio-sidebar-tab" data-studio-section="branding">Branding</button>
                 <button type="button" class="studio-sidebar-tab" data-studio-section="account">Account</button>
               </nav>
@@ -181,6 +184,15 @@
 
                 <div id="saved-pages-table" class="saved-pages-grid">
                   <p class="studio-empty">No pages yet.</p>
+                </div>
+              </section>
+
+              <section id="studio-events-section" class="studio-dashboard-section">
+                <div class="studio-dashboard-head">
+                  <h1>Events</h1>
+                </div>
+                <div id="saved-events-table" class="saved-pages-grid">
+                  <p class="studio-empty">No events yet.</p>
                 </div>
               </section>
 
@@ -337,6 +349,82 @@
               <p id="wizard-template-status" class="studio-status"></p>
             </div>
           </section>
+
+          <section id="create-event-panel" class="studio-wizard hidden" aria-live="polite">
+            <div class="studio-wizard-head">
+              <p class="studio-kicker">Create event</p>
+              <button id="close-create-event" type="button" class="studio-text-button">Back</button>
+            </div>
+
+            <form id="create-event-form" class="studio-panel studio-settings-form">
+              <h2>Create an event.</h2>
+              <div class="event-drive-connect-row">
+                <div class="event-drive-connect-copy">
+                  <span>Google Drive</span>
+                  <p id="event-drive-connection-status">Connect your Google Drive before creating an event.</p>
+                </div>
+                <button id="connect-event-drive" type="button" class="studio-secondary-button">Connect Google Drive</button>
+              </div>
+              <label>
+                <span>Event name</span>
+                <input id="event-name-input" type="text" placeholder="EVENT NAME" required />
+              </label>
+              <label>
+                <span>Parent folder link</span>
+                <input id="event-parent-folder-link" type="url" placeholder="SHARED GOOGLE DRIVE FOLDER LINK" required />
+              </label>
+              <div class="date-range-fields event-date-grid">
+                <label>
+                  <span>Event date</span>
+                  <input id="event-start-date" type="date" required />
+                </label>
+                <label>
+                  <span>Start time</span>
+                  <input id="event-start-time" type="time" required />
+                </label>
+                <label>
+                  <span>End date</span>
+                  <input id="event-end-date" type="date" required />
+                </label>
+                <label>
+                  <span>End time</span>
+                  <input id="event-end-time" type="time" required />
+                </label>
+              </div>
+              <button type="submit" class="studio-primary-button">Create event</button>
+              <p id="create-event-status" class="studio-status" aria-live="polite"></p>
+            </form>
+          </section>
+
+          <section id="manage-event-panel" class="studio-wizard hidden" aria-live="polite">
+            <div class="studio-wizard-head">
+              <p id="manage-event-kicker" class="studio-kicker">Manage event</p>
+              <button id="close-manage-event" type="button" class="studio-text-button">Back</button>
+            </div>
+            <div class="manage-event-shell">
+              <div class="manage-event-main">
+                <div class="manage-event-tabs-row">
+                  <div class="admin-tabs manage-event-tabs" aria-label="Event photo status">
+                    <button type="button" class="admin-tab active" data-event-photo-filter="live">Live</button>
+                    <button type="button" class="admin-tab" data-event-photo-filter="queue">Queue</button>
+                  </div>
+                  <div class="manage-event-side-actions">
+                    <button id="share-event-moderation-link" type="button" class="studio-secondary-button">Share moderation link</button>
+                    <label class="manage-event-template-field">
+                      <span>Select template</span>
+                      <select id="manage-event-template-select">
+                        <option value="template-1">Template 1</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div id="manage-event-photo-grid" class="gallery-grid event-photo-grid">
+                  <p class="studio-empty">No photos yet.</p>
+                </div>
+                <p id="manage-event-status" class="studio-status" aria-live="polite"></p>
+              </div>
+            </div>
+          </section>
         </main>
         <div id="studio-toast" class="studio-toast hidden" aria-live="polite"></div>
       </section>
@@ -411,6 +499,32 @@
         <button id="scroll-to-top-button" type="button" class="scroll-top-button hidden" aria-label="Scroll to top">
           <span class="icon-mask icon-arrow-up" aria-hidden="true"></span>
         </button>
+      </section>
+
+      <section id="screen-event-public" class="screen event-public-screen">
+        <div class="event-public-shell">
+          <div class="event-public-head">
+            <a href="/" class="cover-logo-link" aria-label="Go to home page">
+              <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
+            </a>
+            <div class="event-public-title-block">
+              <p id="event-public-kicker" class="studio-kicker">Event</p>
+              <h1 id="event-public-title">Event</h1>
+            </div>
+          </div>
+          <form id="event-upload-form" class="event-upload-bar" enctype="multipart/form-data">
+            <label class="event-upload-trigger" for="event-upload-input">
+              <span class="icon-mask icon-upload" aria-hidden="true"></span>
+              <span>Upload your photo</span>
+            </label>
+            <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
+            <button type="submit" class="studio-primary-button event-upload-submit">Upload</button>
+          </form>
+          <p id="event-upload-status" class="studio-status" aria-live="polite"></p>
+          <div id="event-public-grid" class="gallery-grid event-public-grid">
+            <p class="studio-empty">No live photos yet.</p>
+          </div>
+        </div>
       </section>
     </div>
 
