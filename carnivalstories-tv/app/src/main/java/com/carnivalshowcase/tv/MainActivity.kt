@@ -371,7 +371,7 @@ private fun HomeScreen(
           if (state.lastUsedCode.isNotBlank()) {
             Text(
               text = "Last code used: ${state.lastUsedCode}",
-              color = TextSecondary,
+              color = Color(0x99000000),
               fontSize = 18.sp,
               lineHeight = 26.sp,
               fontWeight = FontWeight.Normal,
