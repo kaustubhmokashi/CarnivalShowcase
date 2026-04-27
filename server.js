@@ -2190,6 +2190,10 @@ function resolveStaticPathname(pathname) {
     return "/privacy-policy.html";
   }
 
+  if (pathname === "/terms-of-service") {
+    return "/terms-of-service.html";
+  }
+
   if (pathname === "/remote") {
     return "/remote.html";
   }
