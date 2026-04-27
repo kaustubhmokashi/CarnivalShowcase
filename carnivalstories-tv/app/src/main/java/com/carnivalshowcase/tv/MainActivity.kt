@@ -1,5 +1,6 @@
 package com.carnivalshowcase.tv
 
+import android.content.Context
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
@@ -177,9 +178,11 @@ class MainActivity : ComponentActivity() {
       baseUrl = BuildConfig.CARNIVAL_SHOWCASE_BASE_URL,
       pairingUrlOverride = BuildConfig.CARNIVAL_SHOWCASE_PAIRING_URL,
     )
+    val lastUsedCodeStore = LastUsedCodeStore(applicationContext)
     val factory = DriveDeckViewModel.Factory(
       repository = repository,
-      initialPairingUrl = BuildConfig.CARNIVAL_SHOWCASE_PAIRING_URL
+      initialPairingUrl = BuildConfig.CARNIVAL_SHOWCASE_PAIRING_URL,
+      lastUsedCodeStore = lastUsedCodeStore,
     )
 
     setContent {
@@ -364,6 +367,15 @@ private fun HomeScreen(
             sharpCorners = true,
           ) {
             Text("Open folder", color = Color.White, fontWeight = FontWeight.SemiBold)
+          }
+          if (state.lastUsedCode.isNotBlank()) {
+            Text(
+              text = "Last code used: ${state.lastUsedCode}",
+              color = TextSecondary,
+              fontSize = 18.sp,
+              lineHeight = 26.sp,
+              fontWeight = FontWeight.Normal,
+            )
           }
           if (state.status.isNotBlank()) {
             Text(
@@ -2003,6 +2015,7 @@ sealed interface TvScreen {
 data class DriveDeckUiState(
   val screen: TvScreen = TvScreen.Home,
   val pairingCode: String = "",
+  val lastUsedCode: String = "",
   val pairingUrl: String = "",
   val directLink: String = "",
   val status: String = "",
@@ -2035,8 +2048,14 @@ enum class StatusTone {
 class DriveDeckViewModel(
   private val repository: DriveDeckRepository,
   private val initialPairingUrl: String = "",
+  private val lastUsedCodeStore: LastUsedCodeStore,
 ) : ViewModel() {
-  var uiState by mutableStateOf(DriveDeckUiState(pairingUrl = initialPairingUrl))
+  var uiState by mutableStateOf(
+    DriveDeckUiState(
+      pairingUrl = initialPairingUrl,
+      lastUsedCode = lastUsedCodeStore.get(),
+    )
+  )
     private set
 
   init {
@@ -2114,6 +2133,8 @@ class DriveDeckViewModel(
       runCatching {
         repository.resolvePairing(code)
       }.onSuccess { resolution ->
+        lastUsedCodeStore.set(code)
+        uiState = uiState.copy(lastUsedCode = code)
         loadResolvedPairing(resolution)
       }.onFailure {
         uiState = uiState.copy(
@@ -2443,11 +2464,22 @@ class DriveDeckViewModel(
   class Factory(
     private val repository: DriveDeckRepository,
     private val initialPairingUrl: String = "",
+    private val lastUsedCodeStore: LastUsedCodeStore,
   ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-      return DriveDeckViewModel(repository, initialPairingUrl) as T
+      return DriveDeckViewModel(repository, initialPairingUrl, lastUsedCodeStore) as T
     }
+  }
+}
+
+class LastUsedCodeStore(private val context: Context) {
+  private val preferences = context.getSharedPreferences("carnivalstories_tv", Context.MODE_PRIVATE)
+
+  fun get(): String = preferences.getString("last_used_pairing_code", "")?.trim().orEmpty()
+
+  fun set(code: String) {
+    preferences.edit().putString("last_used_pairing_code", code.trim()).apply()
   }
 }
 
