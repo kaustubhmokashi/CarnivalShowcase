@@ -3056,7 +3056,7 @@ async function handleCreateEvent(req, res) {
 
     const origin = buildOriginFromRequest(req);
     event.uploadUrl = `${origin}/event/${event.slug}`;
-    event.displayUrl = `${origin}/event/${event.slug}`;
+    event.displayUrl = `${origin}/event/${event.slug}/present`;
     event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
 
     const store = readEventsStore();

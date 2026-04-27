@@ -219,6 +219,31 @@ label:focus-within {
   -webkit-mask-image: url("/assets/icons/Share.svg?v=20260424b");
 }
 
+.icon-present {
+  mask-image: url("/assets/icons/Present.svg?v=20260427a");
+  -webkit-mask-image: url("/assets/icons/Present.svg?v=20260427a");
+}
+
+.icon-manage {
+  mask-image: url("/assets/icons/Manage.svg?v=20260427a");
+  -webkit-mask-image: url("/assets/icons/Manage.svg?v=20260427a");
+}
+
+.icon-camera {
+  mask-image: url("/assets/icons/Camera.svg?v=20260427a");
+  -webkit-mask-image: url("/assets/icons/Camera.svg?v=20260427a");
+}
+
+.icon-tick {
+  mask-image: url("/assets/icons/Tick.svg?v=20260427a");
+  -webkit-mask-image: url("/assets/icons/Tick.svg?v=20260427a");
+}
+
+.icon-cross {
+  mask-image: url("/assets/icons/Cross.svg?v=20260427a");
+  -webkit-mask-image: url("/assets/icons/Cross.svg?v=20260427a");
+}
+
 .icon-download {
   mask-image: url("/assets/icons/Download.svg?v=20260424b");
   -webkit-mask-image: url("/assets/icons/Download.svg?v=20260424b");
@@ -2947,9 +2972,19 @@ input[type="checkbox"]:checked {
 .saved-event-thumb {
   position: relative;
   min-height: 220px;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.08)),
-    #ffffff;
+  background: #000000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.saved-event-thumb-title {
+  margin: 0;
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 600;
+  text-align: center;
 }
 
 .saved-event-badge {
@@ -2993,30 +3028,6 @@ input[type="checkbox"]:checked {
   gap: 24px;
 }
 
-.event-photo-card,
-.event-public-card {
-  display: grid;
-  gap: 12px;
-}
-
-.event-photo-card-image,
-.event-public-card-image {
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  display: block;
-  object-fit: cover;
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.event-photo-card-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.event-photo-action {
-  min-width: 0;
-}
-
 .manage-event-shell {
   width: min(1180px, calc(100vw - 360px));
 }
@@ -3027,28 +3038,7 @@ input[type="checkbox"]:checked {
 }
 
 .manage-event-tabs-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 24px;
-}
-
-.manage-event-side-actions {
-  display: grid;
-  gap: 16px;
-  justify-items: start;
-}
-
-.manage-event-template-field {
-  display: grid;
-  gap: 8px;
-}
-
-.manage-event-template-field span {
-  color: rgba(0, 0, 0, 0.58);
-  font-size: 0.72rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  display: block;
 }
 
 .event-drive-connect-row {
@@ -3097,24 +3087,21 @@ input[type="checkbox"]:checked {
   gap: 24px;
 }
 
-.event-public-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.event-public-title-block {
+.event-public-cover {
+  min-height: 220px;
   display: grid;
-  justify-items: end;
-  gap: 10px;
+  place-items: center;
+  background: #000000;
+  padding: 24px;
 }
 
-.event-public-title-block h1 {
+.event-public-cover-title {
   margin: 0;
-  color: #000000;
+  color: #ffffff;
   font-size: clamp(2rem, 3vw, 3.25rem);
-  line-height: 0.95;
+  line-height: 1;
+  font-weight: 600;
+  text-align: center;
 }
 
 .event-upload-bar {
@@ -3145,6 +3132,96 @@ input[type="checkbox"]:checked {
   min-height: 50px;
   padding-top: 0;
   padding-bottom: 0;
+}
+
+.event-public-photo-card,
+.event-photo-review-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.event-public-photo-card img,
+.event-photo-review-card img {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  display: block;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.event-public-photo-overlay,
+.event-photo-review-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.event-public-like-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.event-photo-review-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.event-photo-review-button {
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.event-photo-review-button.approve {
+  color: #0a8f3c;
+}
+
+.event-photo-review-button.reject {
+  color: #d63b30;
+}
+
+.event-photo-review-button .saved-page-icon {
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+}
+
+.event-present-screen {
+  display: none;
+  min-height: 100vh;
+  background: #000000;
+}
+
+.event-present-screen.active {
+  display: block;
+}
+
+.event-present-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #000000;
+}
+
+.event-present-image {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  object-fit: contain;
+  background: #000000;
 }
 
 .studio-toast {
@@ -3541,14 +3618,6 @@ input[type="checkbox"]:checked {
     width: 100%;
   }
 
-  .manage-event-tabs-row {
-    grid-template-columns: 1fr;
-  }
-
-  .manage-event-side-actions {
-    justify-items: stretch;
-  }
-
   .event-drive-connect-row {
     grid-template-columns: 1fr;
   }
@@ -3616,15 +3685,6 @@ input[type="checkbox"]:checked {
     width: min(220px, 100%);
     min-width: 220px;
     padding: 18px 24px;
-  }
-
-  .event-public-head {
-    display: grid;
-    justify-items: start;
-  }
-
-  .event-public-title-block {
-    justify-items: start;
   }
 
   .event-upload-bar {

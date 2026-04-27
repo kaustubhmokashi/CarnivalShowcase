@@ -9,7 +9,13 @@
         const pathSegments = window.location.pathname.split("/").filter(Boolean);
         const firstSegment = pathSegments[0] || "";
         const reservedRoutes = new Set(["studio", "privacy-policy", "terms-of-service", "remote", "remote-tv", "remote-firebase", "event", "event-moderate"]);
-        window.CarnivalEventPublicRoute = firstSegment === "event" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
+        window.CarnivalEventPublicRoute =
+          firstSegment === "event" && pathSegments.length >= 2
+            ? {
+                slug: decodeURIComponent(pathSegments[1]),
+                mode: pathSegments[2] === "present" ? "present" : "upload",
+              }
+            : null;
         window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
         window.CarnivalStudioPublicRoute =
           !reservedRoutes.has(firstSegment) &&
@@ -39,7 +45,7 @@
     <link rel="preload" as="image" href="/assets/icons/Full-screen.svg?v=20260426a" type="image/svg+xml" />
     <link rel="preload" as="image" href="/assets/icons/Heart-empty.svg?v=20260426a" type="image/svg+xml" />
     <link rel="preload" as="image" href="/assets/icons/Heart-selected.svg?v=20260426a" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260426b" />
+    <link rel="stylesheet" href="/styles.css?v=20260427b" />
   </head>
   <body>
     <div class="app-shell">
@@ -419,15 +425,6 @@
                     <button type="button" class="admin-tab active" data-event-photo-filter="live">Live</button>
                     <button type="button" class="admin-tab" data-event-photo-filter="queue">Queue</button>
                   </div>
-                  <div class="manage-event-side-actions">
-                    <button id="share-event-moderation-link" type="button" class="studio-secondary-button">Share moderation link</button>
-                    <label class="manage-event-template-field">
-                      <span>Select template</span>
-                      <select id="manage-event-template-select">
-                        <option value="template-1">Template 1</option>
-                      </select>
-                    </label>
-                  </div>
                 </div>
                 <div id="manage-event-photo-grid" class="gallery-grid event-photo-grid">
                   <p class="studio-empty">No photos yet.</p>
@@ -514,18 +511,12 @@
 
       <section id="screen-event-public" class="screen event-public-screen">
         <div class="event-public-shell">
-          <div class="event-public-head">
-            <a href="/" class="cover-logo-link" aria-label="Go to home page">
-              <img class="cover-logo" src="/assets/carnivalstories-logo.svg?v=20260424b" alt="Carnival Stories" />
-            </a>
-            <div class="event-public-title-block">
-              <p id="event-public-kicker" class="studio-kicker">Event</p>
-              <h1 id="event-public-title">Event</h1>
-            </div>
+          <div class="event-public-cover">
+            <p id="event-public-title" class="event-public-cover-title">Event</p>
           </div>
           <form id="event-upload-form" class="event-upload-bar" enctype="multipart/form-data">
             <label class="event-upload-trigger" for="event-upload-input">
-              <span class="icon-mask icon-upload" aria-hidden="true"></span>
+              <span class="icon-mask icon-camera" aria-hidden="true"></span>
               <span>Upload your photo</span>
             </label>
             <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
@@ -535,6 +526,12 @@
           <div id="event-public-grid" class="gallery-grid event-public-grid">
             <p class="studio-empty">No live photos yet.</p>
           </div>
+        </div>
+      </section>
+
+      <section id="screen-event-present" class="screen event-present-screen">
+        <div class="event-present-shell">
+          <img id="event-present-image" class="event-present-image" alt="" />
         </div>
       </section>
     </div>

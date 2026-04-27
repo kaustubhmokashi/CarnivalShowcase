@@ -111,8 +111,6 @@ const closeManageEventButton = document.getElementById("close-manage-event");
 const manageEventKicker = document.getElementById("manage-event-kicker");
 const manageEventPhotoGrid = document.getElementById("manage-event-photo-grid");
 const manageEventStatus = document.getElementById("manage-event-status");
-const manageEventTemplateSelect = document.getElementById("manage-event-template-select");
-const shareEventModerationLinkButton = document.getElementById("share-event-moderation-link");
 const eventPhotoFilterTabs = Array.from(document.querySelectorAll("[data-event-photo-filter]"));
 const closeCreatePageButton = document.getElementById("close-create-page");
 const wizardStepLabel = document.getElementById("wizard-step-label");
@@ -136,12 +134,13 @@ const wizardTemplateStep = document.getElementById("wizard-template-step");
 const wizardCreatePage = document.getElementById("wizard-create-page");
 const wizardTemplateStatus = document.getElementById("wizard-template-status");
 const screenEventPublic = document.getElementById("screen-event-public");
-const eventPublicKicker = document.getElementById("event-public-kicker");
 const eventPublicTitle = document.getElementById("event-public-title");
 const eventUploadForm = document.getElementById("event-upload-form");
 const eventUploadInput = document.getElementById("event-upload-input");
 const eventUploadStatus = document.getElementById("event-upload-status");
 const eventPublicGrid = document.getElementById("event-public-grid");
+const screenEventPresent = document.getElementById("screen-event-present");
+const eventPresentImage = document.getElementById("event-present-image");
 
 let app = null;
 let auth = null;
@@ -164,6 +163,10 @@ let driveConnectionStatus = {
   connected: false,
   email: "",
 };
+let currentEditingEventId = "";
+let currentEventPresentationTimer = null;
+let currentEventPresentationPhotos = [];
+let currentEventPresentationIndex = 0;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
 
@@ -588,8 +591,12 @@ function getStudioRoute() {
 
   const currentUrl = new URL(window.location.href);
   const eventId = String(currentUrl.searchParams.get("event") || "").trim();
+  const eventEditId = String(currentUrl.searchParams.get("event-edit") || "").trim();
   if (eventId) {
     return { name: "event-manage", eventId };
+  }
+  if (eventEditId) {
+    return { name: "event-edit", eventId: eventEditId };
   }
 
   if (pathSegments[1] === "connect-domain") {
@@ -615,6 +622,7 @@ function setStudioScreen(active) {
   screenStudio.classList.toggle("active", active);
   screenDirectLink.classList.toggle("active", !active);
   screenEventPublic?.classList.remove("active");
+  screenEventPresent?.classList.remove("active");
   if (active) {
     screenGallery.classList.remove("active");
     if (!window.location.pathname.startsWith("/studio") && !window.location.pathname.startsWith("/event-moderate/")) {
@@ -749,24 +757,58 @@ function showStudioView(view) {
   }
 }
 
-function openCreateEventPanel({ skipHistory = false } = {}) {
+function openCreateEventPanel({ skipHistory = false, eventToEdit = null } = {}) {
   showStudioView("dashboard");
   studioDashboardPanel.classList.add("hidden");
   createEventPanel?.classList.remove("hidden");
   manageEventPanel?.classList.add("hidden");
+  currentEditingEventId = eventToEdit?.id || "";
+  if (eventNameInput) {
+    eventNameInput.value = eventToEdit?.name || "";
+  }
+  if (eventParentFolderLinkInput) {
+    eventParentFolderLinkInput.value = eventToEdit?.parentFolderUrl || "";
+    eventParentFolderLinkInput.disabled = Boolean(eventToEdit);
+  }
+  if (eventStartDateInput) {
+    eventStartDateInput.value = eventToEdit?.startAt ? String(eventToEdit.startAt).slice(0, 10) : "";
+  }
+  if (eventStartTimeInput) {
+    eventStartTimeInput.value = eventToEdit?.startAt ? new Date(eventToEdit.startAt).toISOString().slice(11, 16) : "";
+  }
+  if (eventEndDateInput) {
+    eventEndDateInput.value = eventToEdit?.endAt ? String(eventToEdit.endAt).slice(0, 10) : "";
+  }
+  if (eventEndTimeInput) {
+    eventEndTimeInput.value = eventToEdit?.endAt ? new Date(eventToEdit.endAt).toISOString().slice(11, 16) : "";
+  }
+  const createEventSubmitButton = createEventForm?.querySelector('button[type="submit"]');
+  if (createEventSubmitButton) {
+    createEventSubmitButton.textContent = eventToEdit ? "Save event" : "Create event";
+  }
+  setStudioStatus(createEventStatus, "");
   void loadDriveConnectionStatus().catch((error) => {
     driveConnectionStatus = { connected: false, email: "" };
     updateDriveConnectionUi();
     setStudioStatus(createEventStatus, error.message || "Could not load Google Drive status.", true);
   });
   if (!skipHistory) {
-    history.pushState({}, "", "/studio/events/create");
+    history.pushState({}, "", eventToEdit ? `/studio?event-edit=${encodeURIComponent(eventToEdit.id)}` : "/studio/events/create");
   }
 }
 
 function closeCreateEventPanel({ skipHistory = false } = {}) {
   createEventPanel?.classList.add("hidden");
   studioDashboardPanel.classList.remove("hidden");
+  currentEditingEventId = "";
+  createEventForm?.reset();
+  if (eventParentFolderLinkInput) {
+    eventParentFolderLinkInput.disabled = false;
+  }
+  const createEventSubmitButton = createEventForm?.querySelector('button[type="submit"]');
+  if (createEventSubmitButton) {
+    createEventSubmitButton.textContent = "Create event";
+  }
   if (!skipHistory) {
     history.pushState({}, "", "/studio");
   }
@@ -790,11 +832,6 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   if (manageEventKicker) {
     manageEventKicker.textContent = event?.name || "Manage event";
   }
-  if (manageEventTemplateSelect) {
-    manageEventTemplateSelect.value = event?.template || "template-1";
-    manageEventTemplateSelect.disabled = Boolean(moderationAccessToken);
-  }
-  shareEventModerationLinkButton?.classList.toggle("hidden", Boolean(moderationAccessToken));
   showEventPhotoFilter("live");
   if (!skipHistory) {
     history.pushState({}, "", token ? `/event-moderate/${encodeURIComponent(token)}` : `/studio?event=${encodeURIComponent(event.id)}`);
@@ -1038,6 +1075,14 @@ function getEventManageUrl(event) {
   return `${window.location.origin}/studio?event=${encodeURIComponent(event.id)}`;
 }
 
+function getEventPresentUrl(event) {
+  return `${window.location.origin}/event/${encodeURIComponent(event.slug || "")}/present`;
+}
+
+function getEventUploadUrl(event) {
+  return `${window.location.origin}/event/${encodeURIComponent(event.slug || "")}`;
+}
+
 function renderSavedEventsTable() {
   if (!savedEventsTable) {
     return;
@@ -1055,6 +1100,7 @@ function renderSavedEventsTable() {
     const phaseLabel = formatEventPhaseLabel(event.phase);
     card.innerHTML = `
       <div class="saved-page-thumb saved-event-thumb">
+        <p class="saved-event-thumb-title">${escapeMarkup(event.name || "Untitled event")}</p>
         <div class="saved-event-badge saved-event-badge-${escapeMarkup(String(event.phase || "upcoming"))}">${escapeMarkup(phaseLabel)}</div>
       </div>
       <div class="saved-page-content">
@@ -1064,20 +1110,20 @@ function renderSavedEventsTable() {
           <p class="saved-event-schedule">${escapeMarkup(formatEventSchedule(event))}</p>
         </div>
         <div class="saved-page-actions saved-event-actions" aria-label="Event actions">
-          <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share event">
-            <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
+          <button type="button" class="saved-page-icon-button" data-action="present" aria-label="Open presentation mode">
+            <span class="saved-page-icon icon-mask icon-present" aria-hidden="true"></span>
           </button>
-          <button type="button" class="saved-page-icon-button" data-action="copy-url" aria-label="Copy event URL">
-            <span class="saved-page-icon icon-mask icon-copy" aria-hidden="true"></span>
+          <button type="button" class="saved-page-icon-button" data-action="manage" aria-label="Open moderation page">
+            <span class="saved-page-icon icon-mask icon-manage" aria-hidden="true"></span>
           </button>
           <button type="button" class="saved-page-icon-button" data-action="edit" aria-label="Edit event">
             <span class="saved-page-icon icon-mask icon-edit" aria-hidden="true"></span>
           </button>
+          <button type="button" class="saved-page-icon-button" data-action="camera" aria-label="Open upload page">
+            <span class="saved-page-icon icon-mask icon-camera" aria-hidden="true"></span>
+          </button>
           <button type="button" class="saved-page-icon-button" data-action="download-qr" aria-label="Download event QR">
             <span class="saved-page-icon icon-mask icon-download" aria-hidden="true"></span>
-          </button>
-          <button type="button" class="saved-page-icon-button" data-action="manage" aria-label="Manage event">
-            <span class="saved-page-icon icon-mask icon-settings" aria-hidden="true"></span>
           </button>
           <button type="button" class="saved-page-icon-button danger" data-action="delete" aria-label="Delete event">
             <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
@@ -1085,32 +1131,17 @@ function renderSavedEventsTable() {
         </div>
       </div>
     `;
-
-    card.querySelector('[data-action="share"]')?.addEventListener("click", async () => {
-      try {
-        const shareText = `${event.name}\n${event.displayUrl}`;
-        if (navigator.share) {
-          await navigator.share({ title: event.name, text: shareText, url: event.displayUrl });
-          return;
-        }
-        await copyTextToClipboard(shareText);
-        showStudioToast("Event link copied to clipboard");
-      } catch (error) {
-        if (error?.name !== "AbortError") {
-          showStudioToast("Could not share event");
-        }
-      }
+    card.querySelector('[data-action="present"]')?.addEventListener("click", () => {
+      window.open(getEventPresentUrl(event), "_blank", "noopener,noreferrer");
     });
-    card.querySelector('[data-action="copy-url"]')?.addEventListener("click", async () => {
-      try {
-        await copyTextToClipboard(event.displayUrl || "");
-        showStudioToast("Event URL copied");
-      } catch (error) {
-        showStudioToast("Could not copy event URL");
-      }
+    card.querySelector('[data-action="manage"]')?.addEventListener("click", () => {
+      window.location.href = event.moderationUrl || getEventManageUrl(event);
     });
     card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
-      openManageEventPanel(event);
+      openCreateEventPanel({ eventToEdit: event });
+    });
+    card.querySelector('[data-action="camera"]')?.addEventListener("click", () => {
+      window.open(getEventUploadUrl(event), "_blank", "noopener,noreferrer");
     });
     card.querySelector('[data-action="download-qr"]')?.addEventListener("click", async () => {
       try {
@@ -1118,9 +1149,6 @@ function renderSavedEventsTable() {
       } catch (error) {
         showStudioToast(error.message || "Could not download QR");
       }
-    });
-    card.querySelector('[data-action="manage"]')?.addEventListener("click", () => {
-      openManageEventPanel(event);
     });
     card.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
       await deleteEvent(event);
@@ -1145,20 +1173,24 @@ function renderEventPhotoGrid() {
 
   manageEventPhotoGrid.innerHTML = "";
   photos.forEach((photo) => {
-    const card = document.createElement("article");
-    card.className = "event-photo-card";
+    const card = document.createElement("div");
+    card.className = "photo-card event-photo-review-card";
     card.innerHTML = `
-      <img class="event-photo-card-image" src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
-      <div class="event-photo-card-actions">
+      <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <div class="event-photo-review-overlay">
         ${
           activeEventPhotoFilter === "queue"
             ? `
-              <button type="button" class="studio-primary-button event-photo-action" data-action="approve">Approve</button>
-              <button type="button" class="studio-secondary-button event-photo-action" data-action="reject">Reject</button>
+              <div class="event-photo-review-actions">
+              <button type="button" class="event-photo-review-button approve" data-action="approve" aria-label="Approve photo">
+                <span class="saved-page-icon icon-mask icon-tick" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="event-photo-review-button reject" data-action="reject" aria-label="Reject photo">
+                <span class="saved-page-icon icon-mask icon-cross" aria-hidden="true"></span>
+              </button>
+              </div>
             `
-            : `
-              <button type="button" class="studio-secondary-button event-photo-action" data-action="remove-live">Move to queue</button>
-            `
+            : ``
         }
       </div>
     `;
@@ -1637,9 +1669,6 @@ async function refreshManagedEvent(eventId = currentManagedEvent?.id) {
   if (manageEventKicker) {
     manageEventKicker.textContent = currentManagedEvent?.name || "Manage event";
   }
-  if (manageEventTemplateSelect && currentManagedEvent) {
-    manageEventTemplateSelect.value = currentManagedEvent.template || "template-1";
-  }
   renderEventPhotoGrid();
 }
 
@@ -1659,20 +1688,20 @@ async function createEvent(payload) {
   return body.event;
 }
 
-async function updateEventTemplate(eventId, template) {
+async function updateEvent(payload) {
   const response = await fetch("/api/events/update", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(await getAdminAuthHeaders()),
     },
-    body: JSON.stringify({ id: eventId, template }),
+    body: JSON.stringify(payload),
   });
-  const payload = await response.json().catch(() => ({}));
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || "Could not update the event.");
+    throw new Error(body.error || "Could not update event.");
   }
-  return payload.event;
+  return body.event;
 }
 
 async function moderateEventPhoto(photoId, action) {
@@ -1733,13 +1762,14 @@ async function deleteEvent(event) {
 }
 
 async function downloadEventQr(event) {
-  if (!event?.displayUrl || typeof QRCode !== "function") {
+  const qrTarget = getEventUploadUrl(event);
+  if (!qrTarget || typeof QRCode !== "function") {
     throw new Error("QR code generator is unavailable.");
   }
 
   const wrap = document.createElement("div");
   const qr = new QRCode(wrap, {
-    text: event.displayUrl,
+    text: qrTarget,
     width: 1200,
     height: 1200,
     colorDark: "#000000",
@@ -1784,11 +1814,9 @@ async function loadPublicEvent(slug) {
   screenDirectLink.classList.remove("active");
   screenGallery.classList.remove("active");
   screenStudio.classList.remove("active");
+  screenEventPresent?.classList.remove("active");
   screenEventPublic?.classList.add("active");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
-  if (eventPublicKicker) {
-    eventPublicKicker.textContent = formatEventPhaseLabel(event.phase || "upcoming");
-  }
   if (eventPublicTitle) {
     eventPublicTitle.textContent = event.name || "Event";
   }
@@ -1807,13 +1835,79 @@ function renderPublicEventGrid(photos) {
   }
   eventPublicGrid.innerHTML = "";
   photos.forEach((photo) => {
-    const item = document.createElement("article");
-    item.className = "event-public-card";
+    const item = document.createElement("div");
+    item.className = "photo-card event-public-photo-card";
     item.innerHTML = `
-      <img class="event-public-card-image" src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <div class="event-public-photo-overlay" aria-hidden="true">
+        <div class="photo-like-badge event-public-like-badge">
+          <span class="photo-like-badge-icon icon-mask icon-heart-empty" aria-hidden="true"></span>
+        </div>
+      </div>
     `;
     eventPublicGrid.appendChild(item);
   });
+}
+
+function stopEventPresentation() {
+  if (currentEventPresentationTimer) {
+    window.clearTimeout(currentEventPresentationTimer);
+    currentEventPresentationTimer = null;
+  }
+}
+
+function queueNextEventPresentationSlide() {
+  if (!currentEventPresentationPhotos.length) {
+    return;
+  }
+  currentEventPresentationTimer = window.setTimeout(() => {
+    currentEventPresentationIndex = (currentEventPresentationIndex + 1) % currentEventPresentationPhotos.length;
+    void renderEventPresentationSlide();
+  }, 4000);
+}
+
+async function renderEventPresentationSlide() {
+  const photo = currentEventPresentationPhotos[currentEventPresentationIndex];
+  if (!photo || !eventPresentImage) {
+    return;
+  }
+  stopEventPresentation();
+  const preload = new Image();
+  preload.onload = () => {
+    eventPresentImage.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
+    eventPresentImage.alt = photo.name || "Event photo";
+    queueNextEventPresentationSlide();
+  };
+  preload.onerror = () => {
+    queueNextEventPresentationSlide();
+  };
+  preload.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
+}
+
+async function loadEventPresentation(slug) {
+  const response = await fetch(`/api/events/public?slug=${encodeURIComponent(slug)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "This presentation could not be opened.");
+  }
+
+  const event = payload.event || {};
+  currentEventPresentationPhotos = Array.isArray(event.livePhotos) ? event.livePhotos : [];
+  currentEventPresentationIndex = 0;
+  screenDirectLink.classList.remove("active");
+  screenGallery.classList.remove("active");
+  screenStudio.classList.remove("active");
+  screenEventPublic?.classList.remove("active");
+  screenEventPresent?.classList.add("active");
+  document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
+  if (!currentEventPresentationPhotos.length) {
+    if (eventPresentImage) {
+      eventPresentImage.removeAttribute("src");
+      eventPresentImage.alt = "";
+    }
+    return;
+  }
+  await renderEventPresentationSlide();
 }
 
 function applyStudioRoute() {
@@ -1839,6 +1933,14 @@ function applyStudioRoute() {
   if (route.name === "event-create") {
     openCreateEventPanel({ skipHistory: true });
     return;
+  }
+
+  if (route.name === "event-edit") {
+    const event = savedEvents.find((item) => item.id === route.eventId);
+    if (event) {
+      openCreateEventPanel({ skipHistory: true, eventToEdit: event });
+      return;
+    }
   }
 
   if (route.name === "edit") {
@@ -2763,10 +2865,13 @@ async function deleteSavedPage(page) {
 
 function initializeFirebase() {
   if (window.CarnivalEventPublicRoute) {
-    loadPublicEvent(window.CarnivalEventPublicRoute).catch((error) => {
+    const route = window.CarnivalEventPublicRoute;
+    const loadRoute = route.mode === "present" ? loadEventPresentation(route.slug) : loadPublicEvent(route.slug);
+    loadRoute.catch((error) => {
       screenDirectLink.classList.remove("active");
       screenGallery.classList.remove("active");
       screenStudio.classList.remove("active");
+      screenEventPresent?.classList.remove("active");
       screenEventPublic?.classList.add("active");
       setStudioStatus(eventUploadStatus, error.message || "This event could not be opened.", true);
       renderPublicEventGrid([]);
@@ -3179,32 +3284,6 @@ eventPhotoFilterTabs.forEach((tab) => {
   });
 });
 
-shareEventModerationLinkButton?.addEventListener("click", async () => {
-  if (!currentManagedEvent?.moderationUrl) {
-    return;
-  }
-  try {
-    await copyTextToClipboard(currentManagedEvent.moderationUrl);
-    showStudioToast("Moderation link copied");
-  } catch (error) {
-    showStudioToast("Could not copy moderation link");
-  }
-});
-
-manageEventTemplateSelect?.addEventListener("change", async () => {
-  if (!currentManagedEvent?.id) {
-    return;
-  }
-  try {
-    setStudioStatus(manageEventStatus, "Saving template...");
-    currentManagedEvent = await updateEventTemplate(currentManagedEvent.id, manageEventTemplateSelect.value);
-    setStudioStatus(manageEventStatus, "Template saved.");
-    await loadEvents().catch(() => {});
-  } catch (error) {
-    setStudioStatus(manageEventStatus, error.message || "Could not save template.", true);
-  }
-});
-
 connectEventDriveButton?.addEventListener("click", async () => {
   try {
     setStudioStatus(createEventStatus, "Opening Google Drive permission...");
@@ -3217,7 +3296,7 @@ connectEventDriveButton?.addEventListener("click", async () => {
 createEventForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    if (!driveConnectionStatus.connected) {
+    if (!currentEditingEventId && !driveConnectionStatus.connected) {
       throw new Error("Connect Google Drive first so we can create the Queue and Live folders in your Drive.");
     }
     const startAt = new Date(`${eventStartDateInput?.value || ""}T${eventStartTimeInput?.value || "00:00"}`);
@@ -3225,8 +3304,9 @@ createEventForm?.addEventListener("submit", async (event) => {
     if (!Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime()) && endAt < startAt) {
       throw new Error("End date and time cannot be before the start.");
     }
-    setStudioStatus(createEventStatus, "Creating event folders...");
-    const createdEvent = await createEvent({
+    setStudioStatus(createEventStatus, currentEditingEventId ? "Saving event..." : "Creating event folders...");
+    const eventPayload = {
+      id: currentEditingEventId,
       name: eventNameInput?.value || "",
       parentFolderLink: eventParentFolderLinkInput?.value || "",
       startDate: eventStartDateInput?.value || "",
@@ -3236,16 +3316,19 @@ createEventForm?.addEventListener("submit", async (event) => {
       studioName: currentProfile?.studioName || "",
       studioSlug: currentProfile?.studioSlug || "",
       tagline: "",
-    });
-    setStudioStatus(createEventStatus, "Event created.");
+    };
+    const savedEvent = currentEditingEventId
+      ? await updateEvent(eventPayload)
+      : await createEvent(eventPayload);
+    setStudioStatus(createEventStatus, currentEditingEventId ? "Event saved." : "Event created.");
     createEventForm.reset();
     await loadEvents();
     closeCreateEventPanel();
     showStudioDashboardSection("events");
-    openManageEventPanel(createdEvent);
-    await refreshManagedEvent(createdEvent.id);
+    openManageEventPanel(savedEvent);
+    await refreshManagedEvent(savedEvent.id);
   } catch (error) {
-    setStudioStatus(createEventStatus, error.message || "Could not create event.", true);
+    setStudioStatus(createEventStatus, error.message || "Could not save event.", true);
   }
 });
 
