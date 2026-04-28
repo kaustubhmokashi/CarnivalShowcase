@@ -96,6 +96,8 @@ const linkApprovalNotice = document.getElementById("link-approval-notice");
 const createPagePanel = document.getElementById("create-page-panel");
 const createEventPanel = document.getElementById("create-event-panel");
 const createEventForm = document.getElementById("create-event-form");
+const createEventLogoLink = document.getElementById("create-event-logo-link");
+const createEventLogo = document.getElementById("create-event-logo");
 const closeCreateEventButton = document.getElementById("close-create-event");
 const eventNameInput = document.getElementById("event-name-input");
 const connectEventDriveButton = document.getElementById("connect-event-drive");
@@ -371,6 +373,13 @@ function hydrateStudioSettingsForms() {
     studioSidebarLogo.src = logoSource || "";
     studioSidebarLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "";
     studioSidebarLogoLink.href = branding.homepageLink || "/";
+  }
+  if (createEventLogo && createEventLogoLink) {
+    createEventLogoLink.classList.toggle("is-empty", !logoSource);
+    createEventLogo.hidden = !logoSource;
+    createEventLogo.src = logoSource || "";
+    createEventLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "";
+    createEventLogoLink.href = branding.homepageLink || "/";
   }
 }
 
