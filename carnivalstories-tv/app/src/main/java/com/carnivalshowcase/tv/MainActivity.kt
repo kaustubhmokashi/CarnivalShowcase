@@ -103,6 +103,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.animateLottieCompositionAsState
+import com.airbnb.lottie.compose.rememberLottieComposition
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
@@ -205,7 +210,7 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
   val state = viewModel.uiState
 
   LaunchedEffect(Unit) {
-    delay(3000)
+    delay(6000)
     showSplash = false
   }
 
@@ -273,13 +278,23 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
 
 @Composable
 private fun SplashScreen() {
+  val composition by rememberLottieComposition(
+    LottieCompositionSpec.RawRes(R.raw.splash_screen_animation)
+  )
+  val progress by animateLottieCompositionAsState(
+    composition = composition,
+    iterations = LottieConstants.IterateForever,
+  )
+
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(AppBackgroundMuted),
     contentAlignment = Alignment.Center
   ) {
-    BrandLogo(
+    LottieAnimation(
+      composition = composition,
+      progress = { progress },
       modifier = Modifier
         .fillMaxWidth(0.34f)
     )
