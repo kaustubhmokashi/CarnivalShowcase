@@ -628,6 +628,7 @@ function getStudioRoute() {
 }
 
 function setStudioScreen(active) {
+  document.body.classList.toggle("studio-scroll-lock", active);
   screenStudio.classList.toggle("active", active);
   screenDirectLink.classList.toggle("active", !active);
   screenEventPublic?.classList.remove("active");
@@ -679,6 +680,7 @@ function getPublicPageSlugFromPath() {
 }
 
 function showPublicPageLoadingState() {
+  document.body.classList.remove("studio-scroll-lock");
   screenStudio.classList.remove("active");
   screenDirectLink.classList.remove("active");
   screenEventPublic?.classList.remove("active");
@@ -1825,6 +1827,7 @@ async function loadPublicEvent(slug) {
   screenStudio.classList.remove("active");
   screenEventPresent?.classList.remove("active");
   screenEventPublic?.classList.add("active");
+  document.body.classList.add("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
   if (eventPublicTitle) {
     eventPublicTitle.textContent = event.name || "Event";
@@ -1908,6 +1911,7 @@ async function loadEventPresentation(slug) {
   screenStudio.classList.remove("active");
   screenEventPublic?.classList.remove("active");
   screenEventPresent?.classList.add("active");
+  document.body.classList.remove("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
   if (!currentEventPresentationPhotos.length) {
     if (eventPresentImage) {

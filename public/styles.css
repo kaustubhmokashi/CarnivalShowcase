@@ -56,6 +56,10 @@ body {
   overflow-x: hidden;
 }
 
+body.studio-scroll-lock {
+  overflow: hidden;
+}
+
 button,
 input {
   font: inherit;
@@ -2394,7 +2398,7 @@ input[type="checkbox"]:checked {
 
 .studio-screen {
   min-height: 100vh;
-  background: #ffffff;
+  background: transparent;
 }
 
 .cover-logo-link {
@@ -2446,7 +2450,10 @@ input[type="checkbox"]:checked {
 .studio-main {
   position: relative;
   width: 100%;
+  min-height: 100vh;
+  height: 100vh;
   margin: 0;
+  overflow: hidden;
   padding: 0 0 var(--space-5) 0;
 }
 
@@ -2467,12 +2474,18 @@ input[type="checkbox"]:checked {
 .studio-auth-panel,
 .studio-name-panel {
   min-height: 100vh;
+  max-height: 100vh;
   align-content: center;
   margin: 0 auto;
+  overflow-y: auto;
   padding: calc(var(--space-4) + var(--studio-page-offset)) var(--space-2) var(--space-4);
 }
 
 .studio-auth-header {
+  position: fixed;
+  top: var(--brand-logo-top);
+  left: var(--brand-logo-left);
+  z-index: 12;
   display: flex;
   align-items: center;
 }
@@ -2570,7 +2583,7 @@ input[type="checkbox"]:checked {
 
 .studio-primary-button {
   width: fit-content;
-  min-width: 220px;
+  min-width: 224px;
   padding: var(--space-1) var(--space-2);
   background: #000000;
   color: #ffffff;
@@ -2578,7 +2591,7 @@ input[type="checkbox"]:checked {
 
 .studio-secondary-button {
   width: fit-content;
-  min-width: 220px;
+  min-width: 224px;
   padding: var(--space-1) var(--space-2);
   border: 1px solid #000000;
   background: #ffffff;
@@ -2610,7 +2623,7 @@ input[type="checkbox"]:checked {
 
 .studio-dashboard {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: 288px minmax(0, 1fr);
   gap: 48px;
   min-height: 100vh;
   align-items: start;
@@ -2619,10 +2632,12 @@ input[type="checkbox"]:checked {
 .studio-admin {
   width: min(1240px, calc(100vw - 64px));
   min-height: 100vh;
+  max-height: 100vh;
   display: grid;
   align-content: start;
   gap: var(--space-3);
   margin: 0 auto;
+  overflow-y: auto;
   padding: calc(var(--space-5) + var(--studio-page-offset)) 0 var(--space-5);
 }
 
@@ -2779,11 +2794,13 @@ input[type="checkbox"]:checked {
   display: grid;
   grid-template-rows: auto auto auto 1fr;
   row-gap: var(--space-2);
-  width: 280px;
+  width: 288px;
   min-height: 100vh;
   height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: var(--brand-logo-top) var(--space-2) var(--space-2) var(--brand-logo-left);
+  background: #ffffff;
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 }
 
@@ -2846,12 +2863,12 @@ input[type="checkbox"]:checked {
 
 .studio-sidebar-primary-action,
 .studio-sidebar-secondary-action {
-  width: min(220px, 100%);
+  width: min(224px, 100%);
   justify-self: start;
 }
 
 .studio-sidebar-name {
-  margin: 6px 0 0;
+  margin: var(--space-1) 0 0;
   color: rgba(0, 0, 0, 0.46);
   font-size: 14px;
   font-weight: 400;
@@ -2875,7 +2892,7 @@ input[type="checkbox"]:checked {
 
 .studio-sidebar-tab {
   width: fit-content;
-  padding: 0 0 6px;
+  padding: 0 0 8px;
   color: rgba(0, 0, 0, 0.58);
   cursor: pointer;
   font-size: 16px;
@@ -2895,8 +2912,8 @@ input[type="checkbox"]:checked {
   left: var(--brand-logo-left);
   bottom: var(--space-2);
   display: block;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
 }
 
@@ -2904,7 +2921,10 @@ input[type="checkbox"]:checked {
   grid-column: 2;
   min-width: 0;
   display: grid;
+  max-height: 100vh;
+  overflow-y: auto;
   padding-top: var(--studio-page-offset);
+  padding-bottom: var(--space-5);
 }
 
 .studio-dashboard-section {
@@ -2920,8 +2940,10 @@ input[type="checkbox"]:checked {
 .studio-wizard {
   width: min(720px, calc(100vw - 48px));
   min-height: 100vh;
+  max-height: 100vh;
   align-content: center;
   margin: 0 auto;
+  overflow-y: auto;
   padding: calc(var(--space-4) + var(--studio-page-offset)) 0 var(--space-4);
 }
 
@@ -3129,16 +3151,21 @@ input[type="checkbox"]:checked {
 .event-public-screen {
   display: none;
   min-height: 100vh;
-  background: #ffffff;
+  background: transparent;
 }
 
 .event-public-screen.active {
   display: block;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .event-public-shell {
   width: min(1180px, calc(100vw - 48px));
+  min-height: 100vh;
+  max-height: 100vh;
   margin: 0 auto;
+  overflow-y: auto;
   padding: var(--space-3) var(--space-2) var(--space-5);
   display: grid;
   gap: var(--space-2);
@@ -3509,6 +3536,10 @@ input[type="checkbox"]:checked {
 }
 
 @media (max-width: 900px) {
+  body.studio-scroll-lock {
+    overflow: hidden;
+  }
+
   .studio-user-label {
     display: none;
   }
@@ -3519,8 +3550,11 @@ input[type="checkbox"]:checked {
 
   .studio-main {
     display: grid;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
     justify-items: center;
-    row-gap: 18px;
+    row-gap: var(--space-1);
   }
 
   .studio-floating-actions {
@@ -3530,12 +3564,12 @@ input[type="checkbox"]:checked {
     margin: 0 auto;
     padding: 16px 16px 0;
     justify-items: stretch;
-    gap: 14px;
+    gap: var(--space-1);
   }
 
   .studio-floating-action-row {
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-1);
   }
 
   .studio-sidebar-name {
@@ -3565,11 +3599,11 @@ input[type="checkbox"]:checked {
     top: 0;
     left: 0;
     z-index: 30;
-    width: min(320px, calc(100vw - 48px));
+    width: min(320px, calc(100vw - 32px));
     min-height: 100vh;
     height: 100vh;
     grid-template-rows: auto auto 1fr auto;
-    row-gap: 24px;
+    row-gap: var(--space-2);
     padding: 16px;
     background: #ffffff;
     border-right: 1px solid rgba(0, 0, 0, 0.12);
@@ -3595,17 +3629,17 @@ input[type="checkbox"]:checked {
 
   .studio-event-logo-link {
     min-height: 48px;
-    margin-bottom: 18px;
+    margin-bottom: var(--space-1);
   }
 
   .studio-sidebar-actions {
-    margin-top: 24px;
+    margin-top: var(--space-2);
   }
 
   .studio-sidebar-nav {
     align-content: start;
-    gap: 22px;
-    margin-top: 24px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .studio-sidebar-favicon {
@@ -3622,7 +3656,9 @@ input[type="checkbox"]:checked {
   .studio-wizard {
     width: min(100%, 720px);
     max-width: 100%;
+    max-height: none;
     margin: 0 auto;
+    overflow-y: visible;
     padding-left: 16px;
     padding-right: 16px;
     box-sizing: border-box;
@@ -3654,6 +3690,8 @@ input[type="checkbox"]:checked {
   .studio-name-panel {
     width: min(100%, 720px);
     max-width: 100%;
+    max-height: none;
+    overflow-y: visible;
     padding-left: 16px;
     padding-right: 16px;
     box-sizing: border-box;
@@ -3686,6 +3724,9 @@ input[type="checkbox"]:checked {
 
   .event-public-shell {
     width: 100%;
+    min-height: auto;
+    max-height: none;
+    overflow-y: visible;
     padding-left: 16px;
     padding-right: 16px;
   }
