@@ -736,14 +736,18 @@ async function driveWriteRequest(url, { method = "GET", headers = {}, body, acce
 }
 
 async function driveCreateSubfolder(parentId, folderName, accessToken) {
+  const metadata = {
+    name: folderName,
+    mimeType: FOLDER_MIME_TYPE,
+  };
+  if (parentId) {
+    metadata.parents = [parentId];
+  }
+
   return driveWriteRequest("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,name,webViewLink", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: folderName,
-      mimeType: FOLDER_MIME_TYPE,
-      parents: [parentId],
-    }),
+    body: JSON.stringify(metadata),
     accessToken,
   });
 }
@@ -1534,6 +1538,21 @@ async function handleDriveConnectionStatus(req, res) {
   }
 
   sendJson(res, 200, getDriveConnectionStatusPayload(account.localId));
+}
+
+async function handleRemoveDriveConnection(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  const store = readDriveConnectionsStore();
+  if (store.connections && store.connections[account.localId]) {
+    delete store.connections[account.localId];
+    writeDriveConnectionsStore(store);
+  }
+
+  sendJson(res, 200, { ok: true });
 }
 
 async function handleStartDriveOAuth(req, res) {
@@ -3004,7 +3023,6 @@ async function handleCreateEvent(req, res) {
   try {
     const body = await readRequestBody(req);
     const name = String(body.name || "").trim();
-    const parentFolderLink = String(body.parentFolderLink || "").trim();
     const studioName = String(body.studioName || "").trim();
     const studioSlug = String(body.studioSlug || "").trim();
     const tagline = String(body.tagline || "").trim();
@@ -3016,17 +3034,13 @@ async function handleCreateEvent(req, res) {
       return;
     }
 
-    const parentFolderId = extractFolderId(parentFolderLink);
-    if (!parentFolderId) {
-      sendJson(res, 400, { error: "Please paste a valid Google Drive parent folder link." });
-      return;
-    }
-
-    const queueFolderName = `${name}_Queue`;
-    const liveFolderName = `${name}_Live`;
+    const parentFolderName = `CarnivalStories_${name}`;
+    const queueFolderName = "Queue";
+    const liveFolderName = "Live";
     const driveAccessToken = await getDriveWriteAccessTokenForUser(account.localId);
-    const queueFolder = await driveCreateSubfolder(parentFolderId, queueFolderName, driveAccessToken);
-    const liveFolder = await driveCreateSubfolder(parentFolderId, liveFolderName, driveAccessToken);
+    const parentFolder = await driveCreateSubfolder("root", parentFolderName, driveAccessToken);
+    const queueFolder = await driveCreateSubfolder(parentFolder.id, queueFolderName, driveAccessToken);
+    const liveFolder = await driveCreateSubfolder(parentFolder.id, liveFolderName, driveAccessToken);
 
     const event = normalizeEventVisibility({
       id: createOpaqueToken(10),
@@ -3042,8 +3056,8 @@ async function handleCreateEvent(req, res) {
       startAt,
       endAt,
       createdAt: new Date().toISOString(),
-      parentFolderId,
-      parentFolderUrl: parentFolderLink,
+      parentFolderId: parentFolder.id,
+      parentFolderUrl: String(parentFolder.webViewLink || "").trim(),
       queueFolderId: queueFolder.id,
       queueFolderUrl: String(queueFolder.webViewLink || "").trim(),
       liveFolderId: liveFolder.id,
@@ -3443,6 +3457,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/drive/connection" && req.method === "GET") {
     await handleDriveConnectionStatus(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/drive/connection/remove" && req.method === "POST") {
+    await handleRemoveDriveConnection(req, res);
     return;
   }
 

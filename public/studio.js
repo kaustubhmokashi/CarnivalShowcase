@@ -78,6 +78,8 @@ const brandingCustomDomain = document.getElementById("branding-custom-domain");
 const studioBrandingStatus = document.getElementById("studio-branding-status");
 const studioAccountForm = document.getElementById("studio-account-form");
 const accountStudioName = document.getElementById("account-studio-name");
+const studioDriveCopy = document.getElementById("studio-drive-copy");
+const accountRemoveDriveButton = document.getElementById("account-remove-drive");
 const accountConnectDomainButton = document.getElementById("account-connect-domain");
 const studioDomainCopy = document.getElementById("studio-domain-copy");
 const studioAccountStatus = document.getElementById("studio-account-status");
@@ -100,9 +102,10 @@ const createEventLogoLink = document.getElementById("create-event-logo-link");
 const createEventLogo = document.getElementById("create-event-logo");
 const closeCreateEventButton = document.getElementById("close-create-event");
 const eventNameInput = document.getElementById("event-name-input");
+const eventDriveStep = document.getElementById("event-drive-step");
+const eventDetailsStep = document.getElementById("event-details-step");
 const connectEventDriveButton = document.getElementById("connect-event-drive");
 const eventDriveConnectionStatus = document.getElementById("event-drive-connection-status");
-const eventParentFolderLinkInput = document.getElementById("event-parent-folder-link");
 const eventStartDateInput = document.getElementById("event-start-date");
 const eventStartTimeInput = document.getElementById("event-start-time");
 const eventEndDateInput = document.getElementById("event-end-date");
@@ -341,6 +344,7 @@ function setColorInputs(hexInput, pickerInput, value) {
 function hydrateStudioSettingsForms() {
   const branding = getProfileBranding();
   const logoSource = resolveStudioLogoSource(branding.logoLink);
+  const eventLogoSource = logoSource || "/assets/carnivalstories-logo.svg?v=20260424b";
   setColorInputs(brandingBackgroundHex, brandingBackgroundPicker, branding.backgroundColor);
   setColorInputs(brandingAccentHex, brandingAccentPicker, branding.accentColor);
   if (brandingLogoLink) {
@@ -375,10 +379,10 @@ function hydrateStudioSettingsForms() {
     studioSidebarLogoLink.href = branding.homepageLink || "/";
   }
   if (createEventLogo && createEventLogoLink) {
-    createEventLogoLink.classList.toggle("is-empty", !logoSource);
-    createEventLogo.hidden = !logoSource;
-    createEventLogo.src = logoSource || "";
-    createEventLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "";
+    createEventLogoLink.classList.toggle("is-empty", !eventLogoSource);
+    createEventLogo.hidden = !eventLogoSource;
+    createEventLogo.src = eventLogoSource;
+    createEventLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "Carnival Stories";
     createEventLogoLink.href = branding.homepageLink || "/";
   }
 }
@@ -785,10 +789,6 @@ function openCreateEventPanel({ skipHistory = false, eventToEdit = null } = {}) 
   if (eventNameInput) {
     eventNameInput.value = eventToEdit?.name || "";
   }
-  if (eventParentFolderLinkInput) {
-    eventParentFolderLinkInput.value = eventToEdit?.parentFolderUrl || "";
-    eventParentFolderLinkInput.disabled = Boolean(eventToEdit);
-  }
   if (eventStartDateInput) {
     eventStartDateInput.value = eventToEdit?.startAt ? String(eventToEdit.startAt).slice(0, 10) : "";
   }
@@ -807,7 +807,7 @@ function openCreateEventPanel({ skipHistory = false, eventToEdit = null } = {}) 
   }
   setStudioStatus(createEventStatus, "");
   void loadDriveConnectionStatus().catch((error) => {
-    driveConnectionStatus = { connected: false, email: "" };
+    driveConnectionStatus = { connected: false, email: "", connectedAt: "", updatedAt: "" };
     updateDriveConnectionUi();
     setStudioStatus(createEventStatus, error.message || "Could not load Google Drive status.", true);
   });
@@ -821,9 +821,6 @@ function closeCreateEventPanel({ skipHistory = false } = {}) {
   studioDashboardPanel.classList.remove("hidden");
   currentEditingEventId = "";
   createEventForm?.reset();
-  if (eventParentFolderLinkInput) {
-    eventParentFolderLinkInput.disabled = false;
-  }
   const createEventSubmitButton = createEventForm?.querySelector('button[type="submit"]');
   if (createEventSubmitButton) {
     createEventSubmitButton.textContent = "Create event";
@@ -1286,14 +1283,31 @@ function updateDriveConnectionUi() {
       : "Google Drive connected.";
     connectEventDriveButton.textContent = "Reconnect Google Drive";
   } else {
-    eventDriveConnectionStatus.textContent = "Connect your Google Drive before creating an event.";
+    eventDriveConnectionStatus.textContent = "Connect your Google Drive before creating an event folder.";
     connectEventDriveButton.textContent = "Connect Google Drive";
+  }
+
+  if (eventDriveStep) {
+    eventDriveStep.classList.toggle("hidden", driveConnectionStatus.connected);
+  }
+  if (eventDetailsStep) {
+    eventDetailsStep.classList.toggle("hidden", !currentEditingEventId && !driveConnectionStatus.connected);
+  }
+  if (studioDriveCopy) {
+    studioDriveCopy.textContent = driveConnectionStatus.connected
+      ? (driveConnectionStatus.email
+        ? `Connected as ${driveConnectionStatus.email}`
+        : "Google Drive connected.")
+      : "No Google Drive account connected.";
+  }
+  if (accountRemoveDriveButton) {
+    accountRemoveDriveButton.classList.toggle("hidden", !driveConnectionStatus.connected);
   }
 }
 
 async function loadDriveConnectionStatus() {
   if (!currentUser) {
-    driveConnectionStatus = { connected: false, email: "" };
+    driveConnectionStatus = { connected: false, email: "", connectedAt: "", updatedAt: "" };
     updateDriveConnectionUi();
     return driveConnectionStatus;
   }
@@ -1329,6 +1343,28 @@ async function startDriveOAuth() {
     throw new Error(payload.error || "Could not start Google Drive connection.");
   }
   window.location.href = payload.authUrl;
+}
+
+async function removeDriveConnection() {
+  const response = await fetch("/api/drive/connection/remove", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not remove Google Drive connection.");
+  }
+  driveConnectionStatus = {
+    connected: false,
+    email: "",
+    connectedAt: "",
+    updatedAt: "",
+  };
+  updateDriveConnectionUi();
 }
 
 async function getFolderNameForAdminLink(url, fallback = "Google Drive folder") {
@@ -3217,6 +3253,18 @@ accountConnectDomainButton?.addEventListener("click", () => {
 
   openConnectDomainPage();
 });
+accountRemoveDriveButton?.addEventListener("click", async () => {
+  try {
+    setStudioStatus(studioAccountStatus, "Removing Google Drive connection...");
+    await removeDriveConnection();
+    setStudioStatus(studioAccountStatus, "Google Drive connection removed.");
+    if (!createEventPanel?.classList.contains("hidden")) {
+      setStudioStatus(createEventStatus, "Reconnect Google Drive to create a new event.");
+    }
+  } catch (error) {
+    setStudioStatus(studioAccountStatus, error.message || "Could not remove Google Drive connection.", true);
+  }
+});
 
 closeConnectDomainButton?.addEventListener("click", () => {
   closeConnectDomainPage();
@@ -3331,7 +3379,7 @@ createEventForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     if (!currentEditingEventId && !driveConnectionStatus.connected) {
-      throw new Error("Connect Google Drive first so we can create the Queue and Live folders in your Drive.");
+      throw new Error("Connect Google Drive first so we can create the event folder in your Drive.");
     }
     const startAt = new Date(`${eventStartDateInput?.value || ""}T${eventStartTimeInput?.value || "00:00"}`);
     const endAt = new Date(`${eventEndDateInput?.value || ""}T${eventEndTimeInput?.value || "00:00"}`);
@@ -3342,7 +3390,6 @@ createEventForm?.addEventListener("submit", async (event) => {
     const eventPayload = {
       id: currentEditingEventId,
       name: eventNameInput?.value || "",
-      parentFolderLink: eventParentFolderLinkInput?.value || "",
       startDate: eventStartDateInput?.value || "",
       startTime: eventStartTimeInput?.value || "",
       endDate: eventEndDateInput?.value || "",

@@ -268,6 +268,13 @@
                     <input id="account-studio-name" type="text" placeholder="STUDIO NAME" autocomplete="organization" required />
                   </label>
                   <button type="submit" class="studio-primary-button">Update studio</button>
+                  <section class="studio-domain-summary" aria-labelledby="studio-drive-title">
+                    <p id="studio-drive-title" class="studio-domain-title">Google Drive</p>
+                    <p id="studio-drive-copy" class="studio-domain-copy">No Google Drive account connected.</p>
+                    <button id="account-remove-drive" type="button" class="studio-secondary-button hidden">
+                      Remove connection
+                    </button>
+                  </section>
                   <section class="studio-domain-summary" aria-labelledby="studio-domain-title">
                     <p id="studio-domain-title" class="studio-domain-title">Plug your domain</p>
                     <p id="studio-domain-copy" class="studio-domain-copy"></p>
@@ -387,40 +394,38 @@
 
             <form id="create-event-form" class="studio-panel studio-settings-form">
               <h2>Create an event.</h2>
-              <div class="event-drive-connect-row">
+              <div id="event-drive-step" class="event-drive-connect-row">
                 <div class="event-drive-connect-copy">
                   <span>Google Drive</span>
-                  <p id="event-drive-connection-status">Connect your Google Drive before creating an event.</p>
+                  <p id="event-drive-connection-status">Connect your Google Drive before creating an event folder.</p>
                 </div>
                 <button id="connect-event-drive" type="button" class="studio-secondary-button">Connect Google Drive</button>
               </div>
-              <label>
-                <span>Event name</span>
-                <input id="event-name-input" type="text" placeholder="EVENT NAME" required />
-              </label>
-              <label>
-                <span>Parent folder link</span>
-                <input id="event-parent-folder-link" type="url" placeholder="SHARED GOOGLE DRIVE FOLDER LINK" required />
-              </label>
-              <div class="date-range-fields event-date-grid">
+              <div id="event-details-step" class="event-details-step hidden">
                 <label>
-                  <span>Event date</span>
-                  <input id="event-start-date" type="date" required />
+                  <span>Event name</span>
+                  <input id="event-name-input" type="text" placeholder="EVENT NAME" required />
                 </label>
-                <label>
-                  <span>Start time</span>
-                  <input id="event-start-time" type="time" required />
-                </label>
-                <label>
-                  <span>End date</span>
-                  <input id="event-end-date" type="date" required />
-                </label>
-                <label>
-                  <span>End time</span>
-                  <input id="event-end-time" type="time" required />
-                </label>
+                <div class="date-range-fields event-date-grid">
+                  <label>
+                    <span>Event date</span>
+                    <input id="event-start-date" type="date" required />
+                  </label>
+                  <label>
+                    <span>Start time</span>
+                    <input id="event-start-time" type="time" required />
+                  </label>
+                  <label>
+                    <span>End date</span>
+                    <input id="event-end-date" type="date" required />
+                  </label>
+                  <label>
+                    <span>End time</span>
+                    <input id="event-end-time" type="time" required />
+                  </label>
+                </div>
+                <button type="submit" class="studio-primary-button">Create event</button>
               </div>
-              <button type="submit" class="studio-primary-button">Create event</button>
               <p id="create-event-status" class="studio-status" aria-live="polite"></p>
             </form>
           </section>

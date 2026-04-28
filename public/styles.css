@@ -2867,11 +2867,14 @@ input[type="checkbox"]:checked {
 }
 
 .studio-event-logo-link {
+  position: fixed;
+  top: var(--brand-logo-top);
+  left: var(--brand-logo-left);
+  z-index: 12;
   display: flex;
   align-items: flex-start;
   width: min(var(--brand-logo-width), 100%);
   min-height: 64px;
-  margin: 0 0 var(--space-2);
   line-height: 0;
 }
 
@@ -3188,6 +3191,11 @@ input[type="checkbox"]:checked {
   color: #000000;
   font-size: 15px;
   line-height: 1.5;
+}
+
+.event-details-step {
+  display: grid;
+  gap: var(--space-1);
 }
 
 .event-public-screen {
@@ -3671,7 +3679,6 @@ input[type="checkbox"]:checked {
 
   .studio-event-logo-link {
     min-height: 48px;
-    margin-bottom: var(--space-1);
   }
 
   .studio-sidebar-actions {
