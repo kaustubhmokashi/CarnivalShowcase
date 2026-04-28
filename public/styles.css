@@ -3096,7 +3096,7 @@ input[type="checkbox"]:checked {
 .saved-event-thumb {
   position: relative;
   min-height: 220px;
-  background: #000000;
+  background: var(--event-card-bg, #000000);
   display: grid;
   place-items: center;
   padding: var(--space-2);
@@ -3104,11 +3104,14 @@ input[type="checkbox"]:checked {
 
 .saved-event-thumb-title {
   margin: 0;
-  color: #ffffff;
+  color: var(--event-card-text, #ffffff);
   font-size: 28px;
   line-height: 1.1;
   font-weight: 600;
   text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  text-wrap: balance;
 }
 
 .saved-event-badge {
@@ -3134,7 +3137,7 @@ input[type="checkbox"]:checked {
 }
 
 .saved-event-schedule {
-  margin: -8px 0 0;
+  margin: 8px 0 0;
   color: rgba(0, 0, 0, 0.58);
   font-size: 13px;
   line-height: 1.5;
@@ -3145,11 +3148,16 @@ input[type="checkbox"]:checked {
   row-gap: 12px;
 }
 
-.event-photo-grid,
 .event-public-grid {
   width: min(1180px, calc(100vw - 360px));
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-2);
+  column-width: 220px;
+  column-gap: var(--space-2);
+}
+
+.event-photo-grid {
+  width: min(1180px, calc(100vw - 360px));
+  column-width: 220px;
+  column-gap: var(--space-2);
 }
 
 .manage-event-shell {
@@ -3163,6 +3171,8 @@ input[type="checkbox"]:checked {
 
 .manage-event-tabs-row {
   display: block;
+  padding-top: 64px;
+  padding-left: 32px;
 }
 
 .event-drive-connect-row {
@@ -3221,6 +3231,10 @@ input[type="checkbox"]:checked {
   gap: var(--space-2);
 }
 
+.event-public-logo-link {
+  position: fixed;
+}
+
 .event-public-cover {
   min-height: 220px;
   display: grid;
@@ -3240,32 +3254,76 @@ input[type="checkbox"]:checked {
 
 .event-upload-bar {
   min-height: 50px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
+  display: block;
 }
 
 .event-upload-trigger {
   min-height: 50px;
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  border: 1px solid #000000;
-  color: #000000;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 6px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.48);
+  color: #ffffff;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.event-upload-trigger.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.event-upload-inner {
+  display: inline-grid;
+  justify-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
 }
 
 .event-upload-trigger .icon-mask {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
 }
 
-.event-upload-submit {
-  min-height: 50px;
-  padding-top: 0;
-  padding-bottom: 0;
+.event-upload-inner span:last-child {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.event-upload-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.event-upload-loader {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #ffffff;
+  animation: studio-spin 0.8s linear infinite;
+  z-index: 2;
+}
+
+.event-upload-bar.has-preview .event-upload-inner {
+  opacity: 0;
+}
+
+.event-upload-bar.is-uploading .event-upload-loader {
+  display: block;
 }
 
 .event-public-photo-card,
@@ -3274,12 +3332,41 @@ input[type="checkbox"]:checked {
   overflow: hidden;
 }
 
+.event-public-photo-card {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 var(--space-2);
+  break-inside: avoid;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+@keyframes studio-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.event-photo-review-card {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 var(--space-2);
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
+
 .event-public-photo-card img,
 .event-photo-review-card img {
   width: 100%;
-  aspect-ratio: 4 / 5;
+  height: auto;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   background: rgba(0, 0, 0, 0.04);
 }
 
@@ -3348,6 +3435,24 @@ input[type="checkbox"]:checked {
   display: grid;
   place-items: center;
   background: #000000;
+  position: relative;
+}
+
+.event-present-exit {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 3;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .event-present-image {
@@ -3767,6 +3872,11 @@ input[type="checkbox"]:checked {
     width: 100%;
   }
 
+  .manage-event-tabs-row {
+    padding-top: 64px;
+    padding-left: 0;
+  }
+
   .event-drive-connect-row {
     grid-template-columns: 1fr;
   }
@@ -3840,6 +3950,6 @@ input[type="checkbox"]:checked {
   }
 
   .event-upload-bar {
-    grid-template-columns: 1fr;
+    min-height: 50px;
   }
 }

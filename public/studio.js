@@ -33,6 +33,7 @@ const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
 const ALBUM_SNAPSHOT_VERSION = 1;
 const ALBUM_SNAPSHOT_TARGET_CHARS = 240000;
 const PRODUCT_HOME_URL = "https://carnivalshowcase.kaustubhmokashi.com/";
+const PRODUCT_LOGO_PATH = "/assets/carnivalstories-logo.svg?v=20260424b";
 
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
@@ -100,6 +101,8 @@ const createEventPanel = document.getElementById("create-event-panel");
 const createEventForm = document.getElementById("create-event-form");
 const createEventLogoLink = document.getElementById("create-event-logo-link");
 const createEventLogo = document.getElementById("create-event-logo");
+const manageEventLogoLink = document.getElementById("manage-event-logo-link");
+const manageEventLogo = document.getElementById("manage-event-logo");
 const closeCreateEventButton = document.getElementById("close-create-event");
 const eventNameInput = document.getElementById("event-name-input");
 const eventDriveStep = document.getElementById("event-drive-step");
@@ -139,13 +142,17 @@ const wizardTemplateStep = document.getElementById("wizard-template-step");
 const wizardCreatePage = document.getElementById("wizard-create-page");
 const wizardTemplateStatus = document.getElementById("wizard-template-status");
 const screenEventPublic = document.getElementById("screen-event-public");
+const eventPublicLogoLink = document.getElementById("event-public-logo-link");
+const eventPublicLogo = document.getElementById("event-public-logo");
 const eventPublicTitle = document.getElementById("event-public-title");
 const eventUploadForm = document.getElementById("event-upload-form");
 const eventUploadInput = document.getElementById("event-upload-input");
 const eventUploadStatus = document.getElementById("event-upload-status");
 const eventPublicGrid = document.getElementById("event-public-grid");
+const eventUploadPreview = document.getElementById("event-upload-preview");
 const screenEventPresent = document.getElementById("screen-event-present");
 const eventPresentImage = document.getElementById("event-present-image");
+const eventPresentExitButton = document.getElementById("event-present-exit");
 
 let app = null;
 let auth = null;
@@ -172,6 +179,10 @@ let currentEditingEventId = "";
 let currentEventPresentationTimer = null;
 let currentEventPresentationPhotos = [];
 let currentEventPresentationIndex = 0;
+let currentEventUploadPreviewUrl = "";
+let currentPublicEvent = null;
+let currentEventPresentationSlug = "";
+let currentEventPresentationRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
 
@@ -344,7 +355,7 @@ function setColorInputs(hexInput, pickerInput, value) {
 function hydrateStudioSettingsForms() {
   const branding = getProfileBranding();
   const logoSource = resolveStudioLogoSource(branding.logoLink);
-  const eventLogoSource = logoSource || "/assets/carnivalstories-logo.svg?v=20260424b";
+  const eventLogoSource = logoSource || PRODUCT_LOGO_PATH;
   setColorInputs(brandingBackgroundHex, brandingBackgroundPicker, branding.backgroundColor);
   setColorInputs(brandingAccentHex, brandingAccentPicker, branding.accentColor);
   if (brandingLogoLink) {
@@ -384,6 +395,13 @@ function hydrateStudioSettingsForms() {
     createEventLogo.src = eventLogoSource;
     createEventLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "Carnival Stories";
     createEventLogoLink.href = branding.homepageLink || "/";
+  }
+  if (manageEventLogo && manageEventLogoLink) {
+    manageEventLogoLink.classList.toggle("is-empty", !eventLogoSource);
+    manageEventLogo.hidden = !eventLogoSource;
+    manageEventLogo.src = eventLogoSource;
+    manageEventLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "Carnival Stories";
+    manageEventLogoLink.href = branding.homepageLink || "/";
   }
 }
 
@@ -513,24 +531,33 @@ async function openPairingCode(pairingCode) {
     }
   }
 
-  const remoteResponse = await fetch(`/api/remote/resolve?code=${encodeURIComponent(code)}`);
-  if (remoteResponse.ok) {
-    const remotePayload = await remoteResponse.json();
-    const folderUrl = String(remotePayload?.url || "").trim();
-    if (folderUrl) {
-      if (!window.CarnivalGallery?.loadFolder) {
-        throw new Error("The hosted gallery loader is unavailable right now.");
-      }
+  const pairingResponse = await fetch(`/api/pairing/resolve?code=${encodeURIComponent(code)}`);
+  const pairingPayload = await pairingResponse.json().catch(() => ({}));
+  if (!pairingResponse.ok) {
+    throw new Error(pairingPayload?.error || "We couldn’t open that pairing code right now.");
+  }
 
-      window.CarnivalGallery?.showLoading?.("Opening your Drive folder.");
-      await window.CarnivalGallery.loadFolder(folderUrl, {});
+  if (pairingPayload?.mode === "event-presentation") {
+    const presentUrl = String(pairingPayload?.url || "").trim();
+    if (presentUrl) {
+      window.location.href = presentUrl;
+      return;
+    }
+    if (pairingPayload?.eventSlug) {
+      window.location.href = `/event/${encodeURIComponent(pairingPayload.eventSlug)}/present`;
       return;
     }
   }
 
-  if (!remoteResponse.ok && remoteResponse.status !== 404) {
-    const remotePayload = await remoteResponse.json().catch(() => ({}));
-    throw new Error(remotePayload?.error || "We couldn’t open that pairing code right now.");
+  const folderUrl = String(pairingPayload?.url || pairingPayload?.folderUrl || "").trim();
+  if (folderUrl) {
+    if (!window.CarnivalGallery?.loadFolder) {
+      throw new Error("The hosted gallery loader is unavailable right now.");
+    }
+
+    window.CarnivalGallery?.showLoading?.("Opening your Drive folder.");
+    await window.CarnivalGallery.loadFolder(folderUrl, {});
+    return;
   }
 
   throw new Error("Either the pairing code does not exist or has been deleted.");
@@ -1087,6 +1114,25 @@ function formatEventSchedule(event) {
   return `${startDate} • ${startTime} — ${endDate} • ${endTime}`;
 }
 
+function getEventCardPalette(event) {
+  const seed = String(event?.id || event?.slug || event?.name || "event");
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  const hue = hash % 360;
+  const saturation = 48 + (hash % 18);
+  const lightness = 36 + (hash % 24);
+  const background = `hsl(${hue}deg ${saturation}% ${lightness}%)`;
+  const useDarkText = lightness > 58;
+
+  return {
+    background,
+    text: useDarkText ? "#000000" : "#FFFFFF",
+  };
+}
+
 function getEventManageUrl(event) {
   return `${window.location.origin}/studio?event=${encodeURIComponent(event.id)}`;
 }
@@ -1097,6 +1143,98 @@ function getEventPresentUrl(event) {
 
 function getEventUploadUrl(event) {
   return `${window.location.origin}/event/${encodeURIComponent(event.slug || "")}`;
+}
+
+function buildEventShareMessage(event) {
+  const shareMessage = String(currentProfile?.branding?.shareMessage || "").trim();
+  const tagline = String(currentProfile?.branding?.tagline || currentProfile?.studioName || "CarnivalStories").trim();
+  const cameraUrl = getEventUploadUrl(event);
+  const pairingCode = String(event?.code || "").trim();
+  const lines = [];
+
+  if (shareMessage) {
+    lines.push(shareMessage, "");
+  }
+
+  lines.push(`Here's the link to the event upload from ${tagline} - ${cameraUrl}`);
+  lines.push("");
+  lines.push(`The pairing code for the event is : ${pairingCode}`);
+  lines.push(`You can use it on CarnivalStories app on phone, TV, or goto ${PRODUCT_HOME_URL} 😄`);
+  return lines.join("\n").trim();
+}
+
+async function shareEventCard(event) {
+  const qrDataUrl = event?.qrPngDataUrl || generateEventQrDataUrl(event);
+  const shareText = buildEventShareMessage(event);
+  const fileName = buildEventQrFilename(event);
+  const shareUrl = getEventUploadUrl(event);
+
+  try {
+    if (navigator.share && navigator.canShare) {
+      const qrBlob = await fetch(qrDataUrl).then((response) => response.blob());
+      const qrFile = new File([qrBlob], fileName, { type: "image/png" });
+      const sharePayload = {
+        title: event?.name || "CarnivalStories event",
+        text: shareText,
+        url: shareUrl,
+        files: [qrFile],
+      };
+
+      if (navigator.canShare({ files: [qrFile] })) {
+        await navigator.share(sharePayload);
+        return;
+      }
+
+      await navigator.share({
+        title: event?.name || "CarnivalStories event",
+        text: shareText,
+        url: shareUrl,
+      });
+      return;
+    }
+
+    await copyTextToClipboard(shareText);
+    const anchor = document.createElement("a");
+    anchor.href = qrDataUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    showStudioToast("Event share message copied and QR downloaded");
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    throw error;
+  }
+}
+
+function buildEventQrFilename(event) {
+  return `${(event?.name || "event").replace(/\s+/g, "-").toLowerCase()}-qr.png`;
+}
+
+function generateEventQrDataUrl(event) {
+  const qrTarget = getEventUploadUrl(event);
+  if (!qrTarget || typeof QRCode !== "function") {
+    throw new Error("QR code generator is unavailable.");
+  }
+
+  const wrap = document.createElement("div");
+  new QRCode(wrap, {
+    text: qrTarget,
+    width: 1200,
+    height: 1200,
+    colorDark: "#000000",
+    colorLight: "rgba(0,0,0,0)",
+    correctLevel: QRCode.CorrectLevel.H,
+  });
+
+  const image = wrap.querySelector("img") || wrap.querySelector("canvas");
+  const href = image?.src || image?.toDataURL?.("image/png");
+  if (!href) {
+    throw new Error("Could not generate QR.");
+  }
+  return href;
 }
 
 function renderSavedEventsTable() {
@@ -1114,8 +1252,9 @@ function renderSavedEventsTable() {
     const card = document.createElement("article");
     card.className = "saved-page-card saved-event-card";
     const phaseLabel = formatEventPhaseLabel(event.phase);
+    const palette = getEventCardPalette(event);
     card.innerHTML = `
-      <div class="saved-page-thumb saved-event-thumb">
+      <div class="saved-page-thumb saved-event-thumb" style="--event-card-bg:${escapeMarkup(palette.background)};--event-card-text:${escapeMarkup(palette.text)};">
         <p class="saved-event-thumb-title">${escapeMarkup(event.name || "Untitled event")}</p>
         <div class="saved-event-badge saved-event-badge-${escapeMarkup(String(event.phase || "upcoming"))}">${escapeMarkup(phaseLabel)}</div>
       </div>
@@ -1126,6 +1265,9 @@ function renderSavedEventsTable() {
           <p class="saved-event-schedule">${escapeMarkup(formatEventSchedule(event))}</p>
         </div>
         <div class="saved-page-actions saved-event-actions" aria-label="Event actions">
+          <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share event">
+            <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
+          </button>
           <button type="button" class="saved-page-icon-button" data-action="present" aria-label="Open presentation mode">
             <span class="saved-page-icon icon-mask icon-present" aria-hidden="true"></span>
           </button>
@@ -1150,13 +1292,24 @@ function renderSavedEventsTable() {
     card.querySelector('[data-action="present"]')?.addEventListener("click", () => {
       window.open(getEventPresentUrl(event), "_blank", "noopener,noreferrer");
     });
+    card.querySelector('[data-action="share"]')?.addEventListener("click", async () => {
+      try {
+        await shareEventCard(event);
+      } catch (error) {
+        showStudioToast(error.message || "Could not share event");
+      }
+    });
     card.querySelector('[data-action="manage"]')?.addEventListener("click", () => {
-      window.location.href = event.moderationUrl || getEventManageUrl(event);
+      window.open(event.moderationUrl || getEventManageUrl(event), "_blank", "noopener,noreferrer");
     });
     card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
       openCreateEventPanel({ eventToEdit: event });
     });
     card.querySelector('[data-action="camera"]')?.addEventListener("click", () => {
+      if (event.phase !== "live") {
+        showStudioToast("Upload view is available only while the event is live.");
+        return;
+      }
       window.open(getEventUploadUrl(event), "_blank", "noopener,noreferrer");
     });
     card.querySelector('[data-action="download-qr"]')?.addEventListener("click", async () => {
@@ -1191,23 +1344,19 @@ function renderEventPhotoGrid() {
   photos.forEach((photo) => {
     const card = document.createElement("div");
     card.className = "photo-card event-photo-review-card";
+    const approveAction = activeEventPhotoFilter === "queue" ? "approve" : "approve-live";
+    const rejectAction = activeEventPhotoFilter === "queue" ? "reject" : "remove-live";
     card.innerHTML = `
       <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
       <div class="event-photo-review-overlay">
-        ${
-          activeEventPhotoFilter === "queue"
-            ? `
-              <div class="event-photo-review-actions">
-              <button type="button" class="event-photo-review-button approve" data-action="approve" aria-label="Approve photo">
-                <span class="saved-page-icon icon-mask icon-tick" aria-hidden="true"></span>
-              </button>
-              <button type="button" class="event-photo-review-button reject" data-action="reject" aria-label="Reject photo">
-                <span class="saved-page-icon icon-mask icon-cross" aria-hidden="true"></span>
-              </button>
-              </div>
-            `
-            : ``
-        }
+        <div class="event-photo-review-actions">
+          <button type="button" class="event-photo-review-button approve" data-action="${approveAction}" aria-label="Approve photo">
+            <span class="saved-page-icon icon-mask icon-tick" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="event-photo-review-button reject" data-action="${rejectAction}" aria-label="Reject photo">
+            <span class="saved-page-icon icon-mask icon-cross" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
     `;
     card.querySelectorAll("[data-action]").forEach((button) => {
@@ -1740,7 +1889,23 @@ async function createEvent(payload) {
   if (!response.ok) {
     throw new Error(body.error || "Could not create event.");
   }
-  return body.event;
+  const createdEvent = body.event;
+  if (createdEvent?.id && !createdEvent.qrPngDataUrl) {
+    return updateEvent({
+      id: createdEvent.id,
+      name: createdEvent.name || "",
+      tagline: createdEvent.tagline || "",
+      startDate: createdEvent.startAt ? String(createdEvent.startAt).slice(0, 10) : "",
+      startTime: createdEvent.startAt ? new Date(createdEvent.startAt).toISOString().slice(11, 16) : "",
+      endDate: createdEvent.endAt ? String(createdEvent.endAt).slice(0, 10) : "",
+      endTime: createdEvent.endAt ? new Date(createdEvent.endAt).toISOString().slice(11, 16) : "",
+      template: createdEvent.template || "template-1",
+      logoLink: createdEvent.logoLink || "",
+      homepageLink: createdEvent.homepageLink || "",
+      qrPngDataUrl: generateEventQrDataUrl(createdEvent),
+    });
+  }
+  return createdEvent;
 }
 
 async function updateEvent(payload) {
@@ -1817,33 +1982,84 @@ async function deleteEvent(event) {
 }
 
 async function downloadEventQr(event) {
-  const qrTarget = getEventUploadUrl(event);
-  if (!qrTarget || typeof QRCode !== "function") {
-    throw new Error("QR code generator is unavailable.");
+  let hydratedEvent = event;
+  if (event?.id && !event.qrPngDataUrl) {
+    hydratedEvent = await updateEvent({
+      id: event.id,
+      name: event.name || "",
+      tagline: event.tagline || "",
+      startDate: event.startAt ? String(event.startAt).slice(0, 10) : "",
+      startTime: event.startAt ? new Date(event.startAt).toISOString().slice(11, 16) : "",
+      endDate: event.endAt ? String(event.endAt).slice(0, 10) : "",
+      endTime: event.endAt ? new Date(event.endAt).toISOString().slice(11, 16) : "",
+      template: event.template || "template-1",
+      logoLink: event.logoLink || "",
+      homepageLink: event.homepageLink || "",
+      qrPngDataUrl: generateEventQrDataUrl(event),
+    });
   }
-
-  const wrap = document.createElement("div");
-  const qr = new QRCode(wrap, {
-    text: qrTarget,
-    width: 1200,
-    height: 1200,
-    colorDark: "#000000",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.H,
-  });
-
-  const image = wrap.querySelector("img") || wrap.querySelector("canvas");
-  const href = image?.src || image?.toDataURL?.("image/png");
-  if (!href) {
-    throw new Error("Could not generate QR.");
-  }
+  const href = hydratedEvent?.qrPngDataUrl || generateEventQrDataUrl(hydratedEvent);
 
   const anchor = document.createElement("a");
   anchor.href = href;
-  anchor.download = `${(event.name || "event").replace(/\s+/g, "-").toLowerCase()}-qr.png`;
+  anchor.download = buildEventQrFilename(hydratedEvent);
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function resetEventUploadPreview() {
+  if (currentEventUploadPreviewUrl) {
+    URL.revokeObjectURL(currentEventUploadPreviewUrl);
+    currentEventUploadPreviewUrl = "";
+  }
+
+  eventUploadForm?.classList.remove("is-uploading", "has-preview");
+  if (eventUploadPreview) {
+    eventUploadPreview.classList.add("hidden");
+    eventUploadPreview.removeAttribute("src");
+    eventUploadPreview.alt = "";
+  }
+}
+
+function getEventPhotoLikeCount(photo) {
+  return Math.max(0, Number(photo?.likeCount) || 0);
+}
+
+function renderEventPhotoLikeBadge(photo) {
+  const count = getEventPhotoLikeCount(photo);
+  return `
+    <div class="photo-like-badge event-public-like-badge" data-event-photo-id="${escapeMarkup(photo.id || "")}" aria-hidden="true">
+      <span class="photo-like-badge-icon icon-mask ${count > 0 ? "icon-heart-selected" : "icon-heart-empty"}"></span>
+      ${count > 0 ? `<span class="photo-like-badge-count">${count}</span>` : ""}
+    </div>
+  `;
+}
+
+function syncEventPublicLikeBadge(photoId, count) {
+  if (!eventPublicGrid) {
+    return;
+  }
+
+  eventPublicGrid.querySelectorAll(`[data-event-photo-id="${CSS.escape(String(photoId || ""))}"]`).forEach((badge) => {
+    const icon = badge.querySelector(".photo-like-badge-icon");
+    if (icon) {
+      icon.classList.toggle("icon-heart-empty", count <= 0);
+      icon.classList.toggle("icon-heart-selected", count > 0);
+    }
+
+    let countEl = badge.querySelector(".photo-like-badge-count");
+    if (count > 0) {
+      if (!countEl) {
+        countEl = document.createElement("span");
+        countEl.className = "photo-like-badge-count";
+        badge.appendChild(countEl);
+      }
+      countEl.textContent = String(count);
+    } else if (countEl) {
+      countEl.remove();
+    }
+  });
 }
 
 async function loadModerationEventFromToken(token) {
@@ -1866,6 +2082,7 @@ async function loadPublicEvent(slug) {
   }
 
   const event = payload.event || {};
+  currentPublicEvent = event;
   screenDirectLink.classList.remove("active");
   screenGallery.classList.remove("active");
   screenStudio.classList.remove("active");
@@ -1873,12 +2090,31 @@ async function loadPublicEvent(slug) {
   screenEventPublic?.classList.add("active");
   document.body.classList.add("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
+  const eventLogoSource = resolveStudioLogoSource(event.logoLink) || PRODUCT_LOGO_PATH;
+  if (eventPublicLogo && eventPublicLogoLink) {
+    eventPublicLogoLink.classList.toggle("is-empty", !eventLogoSource);
+    eventPublicLogo.hidden = !eventLogoSource;
+    eventPublicLogo.src = eventLogoSource;
+    eventPublicLogo.alt = event.logoLink ? `${event.name || "Event"} logo` : "Carnival Stories";
+    eventPublicLogoLink.href = event.homepageLink || "/";
+  }
   if (eventPublicTitle) {
     eventPublicTitle.textContent = event.name || "Event";
   }
+  const uploadIsLive = event.phase === "live";
+  if (eventUploadInput) {
+    eventUploadInput.disabled = !uploadIsLive;
+  }
+  const uploadTrigger = eventUploadForm?.querySelector(".event-upload-trigger");
+  if (uploadTrigger) {
+    uploadTrigger.classList.toggle("is-disabled", !uploadIsLive);
+  }
+  if (!uploadIsLive) {
+    resetEventUploadPreview();
+  }
   renderPublicEventGrid(event.livePhotos || []);
   eventUploadForm.dataset.slug = event.slug || slug;
-  setStudioStatus(eventUploadStatus, "");
+  setStudioStatus(eventUploadStatus, uploadIsLive ? "" : "Photo uploads open only when the event is live.");
 }
 
 function renderPublicEventGrid(photos) {
@@ -1891,24 +2127,53 @@ function renderPublicEventGrid(photos) {
   }
   eventPublicGrid.innerHTML = "";
   photos.forEach((photo) => {
-    const item = document.createElement("div");
+    const index = photos.indexOf(photo);
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "photo-card event-public-photo-card";
     item.innerHTML = `
       <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
       <div class="event-public-photo-overlay" aria-hidden="true">
-        <div class="photo-like-badge event-public-like-badge">
-          <span class="photo-like-badge-icon icon-mask icon-heart-empty" aria-hidden="true"></span>
-        </div>
+        ${renderEventPhotoLikeBadge(photo)}
       </div>
     `;
+    item.addEventListener("click", () => {
+      window.CarnivalGallery?.openExternalSlideshow?.(photos, {
+        index,
+        photoLikes: Object.fromEntries(
+          photos.map((entry) => [entry.id, getEventPhotoLikeCount(entry)])
+        ),
+        likeEndpoint: "/api/events/photo-like",
+        unlikeEndpoint: "/api/events/photo-unlike",
+        likePayload: { slug: currentPublicEvent?.slug || "" },
+        tagline: currentPublicEvent?.name || "Event",
+        studioName: "",
+        pageUrl: window.location.href,
+        pairingCode: "",
+        shareEnabled: false,
+      });
+    });
     eventPublicGrid.appendChild(item);
   });
 }
 
 function stopEventPresentation() {
+  clearEventPresentationSlideTimer();
+  clearEventPresentationRefreshTimer();
+  currentEventPresentationSlug = "";
+}
+
+function clearEventPresentationSlideTimer() {
   if (currentEventPresentationTimer) {
     window.clearTimeout(currentEventPresentationTimer);
     currentEventPresentationTimer = null;
+  }
+}
+
+function clearEventPresentationRefreshTimer() {
+  if (currentEventPresentationRefreshTimer) {
+    window.clearTimeout(currentEventPresentationRefreshTimer);
+    currentEventPresentationRefreshTimer = null;
   }
 }
 
@@ -1927,7 +2192,7 @@ async function renderEventPresentationSlide() {
   if (!photo || !eventPresentImage) {
     return;
   }
-  stopEventPresentation();
+  clearEventPresentationSlideTimer();
   const preload = new Image();
   preload.onload = () => {
     eventPresentImage.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
@@ -1940,7 +2205,55 @@ async function renderEventPresentationSlide() {
   preload.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
 }
 
+async function refreshEventPresentationFeed() {
+  if (!currentEventPresentationSlug) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/events/public?slug=${encodeURIComponent(currentEventPresentationSlug)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "This presentation could not be refreshed.");
+    }
+
+    const nextPhotos = Array.isArray(payload.event?.livePhotos) ? payload.event.livePhotos : [];
+    const currentPhoto = currentEventPresentationPhotos[currentEventPresentationIndex];
+    const previousIds = currentEventPresentationPhotos.map((photo) => photo.id).join("|");
+    const nextIds = nextPhotos.map((photo) => photo.id).join("|");
+    currentEventPresentationPhotos = nextPhotos;
+    if (!nextPhotos.length) {
+      currentEventPresentationIndex = 0;
+      clearEventPresentationSlideTimer();
+      if (eventPresentImage) {
+        eventPresentImage.removeAttribute("src");
+        eventPresentImage.alt = "";
+      }
+    } else if (currentPhoto?.id) {
+      const nextIndex = nextPhotos.findIndex((photo) => photo.id === currentPhoto.id);
+      currentEventPresentationIndex = nextIndex >= 0 ? nextIndex : 0;
+      if (previousIds !== nextIds && screenEventPresent?.classList.contains("active")) {
+        await renderEventPresentationSlide();
+      }
+    } else {
+      currentEventPresentationIndex = 0;
+      if (previousIds !== nextIds && screenEventPresent?.classList.contains("active")) {
+        await renderEventPresentationSlide();
+      }
+    }
+  } catch (error) {
+    console.warn(error);
+  } finally {
+    if (currentEventPresentationSlug) {
+      currentEventPresentationRefreshTimer = window.setTimeout(() => {
+        void refreshEventPresentationFeed();
+      }, 5000);
+    }
+  }
+}
+
 async function loadEventPresentation(slug) {
+  stopEventPresentation();
   const response = await fetch(`/api/events/public?slug=${encodeURIComponent(slug)}`);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1948,6 +2261,7 @@ async function loadEventPresentation(slug) {
   }
 
   const event = payload.event || {};
+  currentEventPresentationSlug = event.slug || slug;
   currentEventPresentationPhotos = Array.isArray(event.livePhotos) ? event.livePhotos : [];
   currentEventPresentationIndex = 0;
   screenDirectLink.classList.remove("active");
@@ -1957,14 +2271,26 @@ async function loadEventPresentation(slug) {
   screenEventPresent?.classList.add("active");
   document.body.classList.remove("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
+  if (eventPresentExitButton) {
+    eventPresentExitButton.onclick = () => {
+      stopEventPresentation();
+      window.location.href = "/";
+    };
+  }
   if (!currentEventPresentationPhotos.length) {
     if (eventPresentImage) {
       eventPresentImage.removeAttribute("src");
       eventPresentImage.alt = "";
     }
+    currentEventPresentationRefreshTimer = window.setTimeout(() => {
+      void refreshEventPresentationFeed();
+    }, 5000);
     return;
   }
   await renderEventPresentationSlide();
+  currentEventPresentationRefreshTimer = window.setTimeout(() => {
+    void refreshEventPresentationFeed();
+  }, 5000);
 }
 
 function applyStudioRoute() {
@@ -3396,6 +3722,8 @@ createEventForm?.addEventListener("submit", async (event) => {
       endTime: eventEndTimeInput?.value || "",
       studioName: currentProfile?.studioName || "",
       studioSlug: currentProfile?.studioSlug || "",
+      logoLink: currentProfile?.branding?.logoLink || "",
+      homepageLink: currentProfile?.branding?.homepageLink || "",
       tagline: "",
     };
     const savedEvent = currentEditingEventId
@@ -3438,6 +3766,20 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+window.addEventListener("carnival-photo-like-updated", (event) => {
+  const photoId = String(event.detail?.photoId || "").trim();
+  const count = Math.max(0, Number(event.detail?.count) || 0);
+  if (!photoId || !currentPublicEvent) {
+    return;
+  }
+
+  const targetPhoto = (currentPublicEvent.livePhotos || []).find((photo) => photo.id === photoId);
+  if (targetPhoto) {
+    targetPhoto.likeCount = count;
+  }
+  syncEventPublicLikeBadge(photoId, count);
+});
+
 eventUploadForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -3450,10 +3792,19 @@ eventUploadForm?.addEventListener("submit", async (event) => {
       throw new Error("Please choose a photo first.");
     }
 
+    resetEventUploadPreview();
+    currentEventUploadPreviewUrl = URL.createObjectURL(file);
+    if (eventUploadPreview) {
+      eventUploadPreview.src = currentEventUploadPreviewUrl;
+      eventUploadPreview.alt = file.name || "Uploading photo preview";
+      eventUploadPreview.classList.remove("hidden");
+    }
+    eventUploadForm.classList.add("has-preview", "is-uploading");
+
     const formData = new FormData();
     formData.append("slug", slug);
     formData.append("photo", file);
-    setStudioStatus(eventUploadStatus, "Uploading your photo...");
+    setStudioStatus(eventUploadStatus, "Your uploaded photo has been pushed to queue, will become live soon!");
     const response = await fetch("/api/events/upload", {
       method: "POST",
       body: formData,
@@ -3462,11 +3813,33 @@ eventUploadForm?.addEventListener("submit", async (event) => {
     if (!response.ok) {
       throw new Error(payload.error || "Could not upload the photo.");
     }
-    setStudioStatus(eventUploadStatus, payload.message || "Photo uploaded.");
+    setStudioStatus(eventUploadStatus, "Your uploaded photo has been pushed to queue, will become live soon!");
     eventUploadForm.reset();
+    resetEventUploadPreview();
     await loadPublicEvent(slug);
   } catch (error) {
+    eventUploadForm?.classList.remove("is-uploading");
     setStudioStatus(eventUploadStatus, error.message || "Could not upload the photo.", true);
+  }
+});
+
+eventUploadInput?.addEventListener("change", () => {
+  const file = eventUploadInput.files?.[0];
+  if (!file) {
+    resetEventUploadPreview();
+    return;
+  }
+
+  resetEventUploadPreview();
+  currentEventUploadPreviewUrl = URL.createObjectURL(file);
+  if (eventUploadPreview) {
+    eventUploadPreview.src = currentEventUploadPreviewUrl;
+    eventUploadPreview.alt = file.name || "Selected photo preview";
+    eventUploadPreview.classList.remove("hidden");
+  }
+  eventUploadForm?.classList.add("has-preview");
+  if (!eventUploadInput.disabled) {
+    eventUploadForm?.requestSubmit();
   }
 });
 

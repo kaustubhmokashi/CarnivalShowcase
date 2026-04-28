@@ -103,6 +103,15 @@ let slideshowUiHideTimer = null;
 let currentPublicPageId = "";
 let currentPhotoLikes = {};
 let likedPhotoSessionIds = new Set();
+let currentLikeContext = {
+  enabled: false,
+  likeEndpoint: "/api/public-page/like",
+  unlikeEndpoint: "/api/public-page/unlike",
+  payload: {},
+};
+let currentSlideshowOptions = {
+  shareEnabled: true,
+};
 let slideshowConfig = {
   duration: 4,
   loop: false,
@@ -326,6 +335,15 @@ function setPublicPageContext(options = {}) {
   currentPublicPageId = String(options.publicPageId || "").trim();
   currentPhotoLikes = normalizePhotoLikesMap(options.photoLikes);
   likedPhotoSessionIds = new Set();
+  currentLikeContext = {
+    enabled: Boolean(currentPublicPageId),
+    likeEndpoint: "/api/public-page/like",
+    unlikeEndpoint: "/api/public-page/unlike",
+    payload: currentPublicPageId ? { publicPageId: currentPublicPageId } : {},
+  };
+  currentSlideshowOptions = {
+    shareEnabled: true,
+  };
   currentShareContext = {
     tagline: String(options.tagline || "").trim(),
     studioName: String(options.studioName || "").trim(),
@@ -343,7 +361,7 @@ function syncDocumentTitle() {
 }
 
 function hasPublicPageLikes() {
-  return Boolean(currentPublicPageId);
+  return Boolean(currentLikeContext.enabled);
 }
 
 function getPhotoLikeCount(photoId) {
@@ -421,7 +439,7 @@ async function updatePhotoLikeCount(endpoint, photo) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      publicPageId: currentPublicPageId,
+      ...currentLikeContext.payload,
       photoId: photo.id,
     }),
   });
@@ -433,6 +451,14 @@ async function updatePhotoLikeCount(endpoint, photo) {
   currentPhotoLikes[photo.id] = Math.max(0, Number(payload?.count) || 0);
   syncGridLikeBadges(photo.id);
   updateSlideshowLikeVisual(photo);
+  window.dispatchEvent(
+    new CustomEvent("carnival-photo-like-updated", {
+      detail: {
+        photoId: photo.id,
+        count: currentPhotoLikes[photo.id],
+      },
+    })
+  );
 }
 
 async function togglePhotoLike(photo = getCurrentSlidePhoto()) {
@@ -442,7 +468,7 @@ async function togglePhotoLike(photo = getCurrentSlidePhoto()) {
 
   if (likedPhotoSessionIds.has(photo.id)) {
     const previousCount = getPhotoLikeCount(photo.id);
-    await updatePhotoLikeCount("/api/public-page/unlike", photo);
+    await updatePhotoLikeCount(currentLikeContext.unlikeEndpoint, photo);
     likedPhotoSessionIds.delete(photo.id);
     currentPhotoLikes[photo.id] = Math.max(0, Number(currentPhotoLikes[photo.id]) || previousCount - 1);
     syncGridLikeBadges(photo.id);
@@ -450,7 +476,7 @@ async function togglePhotoLike(photo = getCurrentSlidePhoto()) {
     return;
   }
 
-  await updatePhotoLikeCount("/api/public-page/like", photo);
+  await updatePhotoLikeCount(currentLikeContext.likeEndpoint, photo);
   likedPhotoSessionIds.add(photo.id);
   updateSlideshowLikeVisual(photo);
 }
@@ -2024,7 +2050,7 @@ function updateSlideshowActionVisibility() {
     return;
   }
 
-  const showShare = window.matchMedia("(max-width: 1100px)").matches;
+  const showShare = currentSlideshowOptions.shareEnabled && window.matchMedia("(max-width: 1100px)").matches;
   shareSlideButton.classList.toggle("hidden", !showShare);
 }
 
@@ -2470,6 +2496,28 @@ window.CarnivalGallery = {
   showError: showGalleryError,
   showLoading: showGalleryLoading,
   showLoadingPreview: showGalleryLoadingPreview,
+  openExternalSlideshow(photos, options = {}) {
+    images = Array.isArray(photos) ? photos.slice() : [];
+    currentPhotoLikes = normalizePhotoLikesMap(options.photoLikes);
+    likedPhotoSessionIds = new Set();
+    currentLikeContext = {
+      enabled: Boolean(options.likeEndpoint && options.unlikeEndpoint),
+      likeEndpoint: String(options.likeEndpoint || ""),
+      unlikeEndpoint: String(options.unlikeEndpoint || ""),
+      payload: options.likePayload && typeof options.likePayload === "object" ? options.likePayload : {},
+    };
+    currentSlideshowOptions = {
+      shareEnabled: Boolean(options.shareEnabled),
+    };
+    currentShareContext = {
+      tagline: String(options.tagline || "").trim(),
+      studioName: String(options.studioName || "").trim(),
+      pageUrl: String(options.pageUrl || window.location.href).trim(),
+      pairingCode: String(options.pairingCode || "").trim(),
+    };
+    updateSlideshowActionVisibility();
+    openSlideshow(Number(options.index) || 0);
+  },
 };
 
 updateDurationControls();

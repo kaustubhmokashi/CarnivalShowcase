@@ -374,6 +374,9 @@ function sanitizeEventForClient(event) {
     uploadUrl: normalized.uploadUrl || "",
     displayUrl: normalized.displayUrl || "",
     moderationUrl: normalized.moderationUrl || "",
+    logoLink: normalized.logoLink || "",
+    homepageLink: normalized.homepageLink || "",
+    qrPngDataUrl: normalized.qrPngDataUrl || "",
     parentFolderUrl: normalized.parentFolderUrl || "",
     queueFolderUrl: normalized.queueFolderUrl || "",
     liveFolderUrl: normalized.liveFolderUrl || "",
@@ -395,6 +398,15 @@ function findEventById(eventId) {
 
 function findEventBySlug(slug) {
   return readAllEvents().find((event) => event.slug === slug) || null;
+}
+
+function findEventByCode(code) {
+  const normalizedCode = String(code || "").trim();
+  if (!normalizedCode) {
+    return null;
+  }
+
+  return readAllEvents().find((event) => String(event.code || "").trim() === normalizedCode) || null;
 }
 
 function findEventByModerationToken(token) {
@@ -516,7 +528,14 @@ function createOpaqueToken(size = 18) {
 }
 
 function createEventCode() {
-  return generateNumericCode(6);
+  const events = readAllEvents();
+  let code = "";
+
+  do {
+    code = generateNumericCode(9);
+  } while (events.some((event) => String(event?.code || "").trim() === code));
+
+  return code;
 }
 
 function getFirebaseServiceAccount() {
@@ -1903,6 +1922,30 @@ async function handlePublicPageLikes(req, res) {
   sendJson(res, 200, { publicPageId, photoLikes: merged, source: "firestore" });
 }
 
+async function handleEventPhotoLike(req, res) {
+  try {
+    const body = await readRequestBody(req);
+    const slug = String(body.slug || "").trim();
+    const photoId = String(body.photoId || "").trim();
+    const result = await adjustEventPhotoLike(slug, photoId, 1);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not save the photo like." });
+  }
+}
+
+async function handleEventPhotoUnlike(req, res) {
+  try {
+    const body = await readRequestBody(req);
+    const slug = String(body.slug || "").trim();
+    const photoId = String(body.photoId || "").trim();
+    const result = await adjustEventPhotoLike(slug, photoId, -1);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not update the photo like." });
+  }
+}
+
 async function getPublicPageRecordForRequest(req, requestUrl, requestHost) {
   const route = parsePublicPageRequest(requestUrl.pathname, requestHost);
   if (!route?.publicPageId) {
@@ -2621,8 +2664,20 @@ async function handleResolveRemoteCode(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const code = String(requestUrl.searchParams.get("code") || "").trim();
 
-  if (!/^\d{6}$|^\d{7}$/.test(code)) {
-    sendJson(res, 400, { error: "Code must be a 6 or 7 digit number." });
+  if (!/^\d{6}$|^\d{7}$|^\d{9}$/.test(code)) {
+    sendJson(res, 400, { error: "Code must be a 6, 7, or 9 digit number." });
+    return;
+  }
+
+  const event = findEventByCode(code);
+  if (event?.displayUrl) {
+    sendJson(res, 200, {
+      code,
+      url: String(event.displayUrl || "").trim(),
+      ready: true,
+      permanent: true,
+      source: "event",
+    });
     return;
   }
 
@@ -2657,8 +2712,25 @@ async function handleResolvePairingCode(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const code = String(requestUrl.searchParams.get("code") || "").trim();
 
-  if (!/^\d{6}$|^\d{7}$/.test(code)) {
-    sendJson(res, 400, { error: "Code must be a 6 or 7 digit number." });
+  if (!/^\d{6}$|^\d{7}$|^\d{9}$/.test(code)) {
+    sendJson(res, 400, { error: "Code must be a 6, 7, or 9 digit number." });
+    return;
+  }
+
+  const event = findEventByCode(code);
+  if (event?.displayUrl) {
+    sendJson(res, 200, {
+      code,
+      mode: "event-presentation",
+      url: String(event.displayUrl || "").trim(),
+      ready: true,
+      permanent: true,
+      source: "event",
+      folderName: String(event.name || "Event"),
+      eventSlug: String(event.slug || "").trim(),
+      eventName: String(event.name || "Event"),
+      eventPhotos: Array.isArray(event.livePhotos) ? event.livePhotos.map(sanitizeEventPhoto) : [],
+    });
     return;
   }
 
@@ -2996,6 +3068,7 @@ function buildEventPhotoRecord(event, driveFile, uploadedAt = new Date().toISOSt
     slideshowUrl: createImageUrl(driveFileId, "screen"),
     fullUrl: createImageUrl(driveFileId, "full"),
     webViewLink: String(driveFile?.webViewLink || "").trim(),
+    likeCount: 0,
     eventId: event.id,
   };
 }
@@ -3010,7 +3083,51 @@ function sanitizeEventPhoto(photo) {
     thumbnailUrl: photo.thumbnailUrl,
     slideshowUrl: photo.slideshowUrl,
     fullUrl: photo.fullUrl,
+    likeCount: Math.max(0, Number(photo.likeCount) || 0),
     webViewLink: photo.webViewLink || "",
+  };
+}
+
+function findEventPhoto(event, photoId) {
+  const normalizedPhotoId = String(photoId || "").trim();
+  if (!event || !normalizedPhotoId) {
+    return null;
+  }
+
+  return (
+    event.livePhotos?.find((photo) => photo.id === normalizedPhotoId) ||
+    event.queuedPhotos?.find((photo) => photo.id === normalizedPhotoId) ||
+    event.rejectedPhotos?.find((photo) => photo.id === normalizedPhotoId) ||
+    null
+  );
+}
+
+async function adjustEventPhotoLike(slug, photoId, delta) {
+  const normalizedSlug = String(slug || "").trim();
+  const normalizedPhotoId = String(photoId || "").trim();
+  if (!normalizedSlug || !normalizedPhotoId) {
+    throw new Error("Missing event photo like identifiers.");
+  }
+
+  const store = readEventsStore();
+  const event = store.events.find((entry) => entry.slug === normalizedSlug);
+  if (!event) {
+    throw new Error("Event not found.");
+  }
+
+  const photo = findEventPhoto(event, normalizedPhotoId);
+  if (!photo) {
+    throw new Error("Photo not found.");
+  }
+
+  const currentCount = Math.max(0, Number(photo.likeCount) || 0);
+  photo.likeCount = Math.max(0, currentCount + delta);
+  writeEventsStore(store);
+
+  return {
+    slug: normalizedSlug,
+    photoId: normalizedPhotoId,
+    count: photo.likeCount,
   };
 }
 
@@ -3025,6 +3142,9 @@ async function handleCreateEvent(req, res) {
     const name = String(body.name || "").trim();
     const studioName = String(body.studioName || "").trim();
     const studioSlug = String(body.studioSlug || "").trim();
+    const logoLink = String(body.logoLink || "").trim();
+    const homepageLink = String(body.homepageLink || "").trim();
+    const qrPngDataUrl = String(body.qrPngDataUrl || "").trim();
     const tagline = String(body.tagline || "").trim();
     const startAt = combineEventDateTime(body.startDate, body.startTime);
     const endAt = combineEventDateTime(body.endDate, body.endTime);
@@ -3051,6 +3171,9 @@ async function handleCreateEvent(req, res) {
       ownerEmail: account.email || "",
       studioName,
       studioSlug,
+      logoLink,
+      homepageLink,
+      qrPngDataUrl,
       name,
       tagline,
       startAt,
@@ -3175,6 +3298,9 @@ async function handleUpdateEvent(req, res) {
 
     event.name = String(body.name || event.name || "").trim() || event.name;
     event.tagline = String(body.tagline || "").trim();
+    event.logoLink = String(body.logoLink || event.logoLink || "").trim();
+    event.homepageLink = String(body.homepageLink || event.homepageLink || "").trim();
+    event.qrPngDataUrl = String(body.qrPngDataUrl || event.qrPngDataUrl || "").trim();
     event.startAt = combineEventDateTime(body.startDate, body.startTime) || event.startAt;
     event.endAt = combineEventDateTime(body.endDate, body.endTime) || event.endAt;
     event.template = String(body.template || event.template || "template-1").trim() || "template-1";
@@ -3239,6 +3365,11 @@ async function handleModerateEventPhoto(req, res) {
       const [photo] = event.queuedPhotos.splice(queueIndex, 1);
       await driveMoveFileToFolder(photo.driveFileId, event.queueFolderId, event.liveFolderId, driveAccessToken);
       event.livePhotos.unshift(photo);
+    } else if (action === "approve-live") {
+      if (liveIndex < 0) {
+        sendJson(res, 404, { error: "Live photo not found." });
+        return;
+      }
     } else if (action === "reject") {
       if (queueIndex < 0) {
         sendJson(res, 404, { error: "Queued photo not found." });
@@ -3298,6 +3429,11 @@ async function handleModerateEventPhotoByToken(req, res) {
       const [photo] = event.queuedPhotos.splice(queueIndex, 1);
       await driveMoveFileToFolder(photo.driveFileId, event.queueFolderId, event.liveFolderId, driveAccessToken);
       event.livePhotos.unshift(photo);
+    } else if (action === "approve-live") {
+      if (liveIndex < 0) {
+        sendJson(res, 404, { error: "Live photo not found." });
+        return;
+      }
     } else if (action === "reject") {
       if (queueIndex < 0) {
         sendJson(res, 404, { error: "Queued photo not found." });
@@ -3342,6 +3478,11 @@ async function handleEventUpload(req, res) {
 
     if (!event) {
       sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    if (normalizeEventVisibility(event).phase !== "live") {
+      sendJson(res, 400, { error: "Uploads are available only while the event is live." });
       return;
     }
 
@@ -3442,6 +3583,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/public-page/likes" && req.method === "GET") {
     await handlePublicPageLikes(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/photo-like" && req.method === "POST") {
+    await handleEventPhotoLike(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/photo-unlike" && req.method === "POST") {
+    await handleEventPhotoUnlike(req, res);
     return;
   }
 

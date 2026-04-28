@@ -116,7 +116,9 @@ import coil.decode.SvgDecoder
 import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -349,7 +351,7 @@ private fun HomeScreen(
           )
           OutlinedTextField(
             value = state.pairingCode,
-            onValueChange = { onCodeChanged(it.filter(Char::isDigit).take(7)) },
+            onValueChange = { onCodeChanged(it.filter(Char::isDigit).take(9)) },
             modifier = Modifier
               .fillMaxWidth()
               .focusRequester(codeFieldFocusRequester),
@@ -686,6 +688,7 @@ private fun SlideshowScreen(
   var inlineVideoError by remember(current.id, current.fullUrl, inlineVideoAllowed) { mutableStateOf<String?>(null) }
   val shouldPromptForVideoPlayer = current.isVideo &&
     !state.playVideosInSlideshow &&
+    !state.isEventPresentationMode &&
     state.videoPlayerPromptDismissedId != current.id
   val inlinePlayer = remember(current.id, current.fullUrl, inlineVideoAllowed) {
     if (inlineVideoAllowed) {
@@ -705,6 +708,9 @@ private fun SlideshowScreen(
   }
 
   fun registerInteraction(showChrome: Boolean = true) {
+    if (state.isEventPresentationMode) {
+      return
+    }
     if (showChrome) {
       onShowChrome()
     }
@@ -799,7 +805,7 @@ private fun SlideshowScreen(
   }
 
   LaunchedEffect(state.slideshowChromeVisible, interactionVersion) {
-    if (!state.slideshowChromeVisible) {
+    if (!state.slideshowChromeVisible || state.isEventPresentationMode) {
       return@LaunchedEffect
     }
 
@@ -827,7 +833,22 @@ private fun SlideshowScreen(
           }
         }
 
+        if (state.isEventPresentationMode) {
+          return@onPreviewKeyEvent when (event.key) {
+            Key.Escape, Key.Back -> {
+              onBack()
+              true
+            }
+            else -> false
+          }
+        }
+
         when (event.key) {
+          Key.Escape,
+          Key.Back -> {
+            onBack()
+            true
+          }
           Key.DirectionLeft -> {
             registerInteraction()
             onPrevious()
@@ -849,15 +870,13 @@ private fun SlideshowScreen(
             onTogglePlay()
             true
           }
-          Key.Escape,
-          Key.Back -> {
-            onBack()
-            true
-          }
           else -> false
         }
       }
       .clickable {
+        if (state.isEventPresentationMode) {
+          return@clickable
+        }
         registerInteraction()
         onTogglePlay()
       }
@@ -954,7 +973,7 @@ private fun SlideshowScreen(
       }
     }
 
-    if (state.slideshowChromeVisible) {
+    if (state.slideshowChromeVisible && !state.isEventPresentationMode) {
       Column(
         modifier = Modifier
           .fillMaxSize()
@@ -2047,6 +2066,9 @@ data class DriveDeckUiState(
   val gallerySettingsVisible: Boolean = false,
   val slideshowSettingsVisible: Boolean = false,
   val slideshowChromeVisible: Boolean = true,
+  val isEventPresentationMode: Boolean = false,
+  val eventPresentationTitle: String = "",
+  val eventPresentationSlug: String = "",
   val inlineVideoPlaybackApprovedId: String? = null,
   val videoPlayerPromptDismissedId: String? = null,
 ) {
@@ -2065,6 +2087,8 @@ class DriveDeckViewModel(
   private val initialPairingUrl: String = "",
   private val lastUsedCodeStore: LastUsedCodeStore,
 ) : ViewModel() {
+  private var eventPresentationRefreshJob: Job? = null
+
   var uiState by mutableStateOf(
     DriveDeckUiState(
       pairingUrl = initialPairingUrl,
@@ -2131,9 +2155,9 @@ class DriveDeckViewModel(
 
   fun submitPairingCode() {
     val code = uiState.pairingCode
-    if (code.length != 6 && code.length != 7) {
+    if (code.length != 6 && code.length != 7 && code.length != 9) {
       uiState = uiState.copy(
-        status = "Please enter the full 6 or 7 digit code from your phone.",
+        status = "Please enter the full 6, 7, or 9 digit code from your phone.",
         statusTone = StatusTone.Error
       )
       return
@@ -2142,7 +2166,7 @@ class DriveDeckViewModel(
     viewModelScope.launch {
       uiState = uiState.copy(
         isLoading = true,
-        status = "Checking your code and opening the folder…",
+        status = "Checking your code and opening it…",
         statusTone = StatusTone.Loading
       )
       runCatching {
@@ -2195,7 +2219,42 @@ class DriveDeckViewModel(
       }
 
       is PairingResolution.Folder -> loadFolder(resolution.url)
+      is PairingResolution.EventPresentation -> loadEventPresentation(resolution)
     }
+  }
+
+  private fun loadEventPresentation(resolution: PairingResolution.EventPresentation) {
+    val photos = resolution.photos
+    if (photos.isEmpty()) {
+      uiState = uiState.copy(
+        isLoading = false,
+        status = "This event doesn’t have any live photos yet.",
+        statusTone = StatusTone.Error
+      )
+      return
+    }
+
+    stopEventPresentationRefresh()
+    uiState = uiState.copy(
+      isLoading = false,
+      status = "",
+      statusTone = StatusTone.Neutral,
+      folders = emptyList(),
+      selectedFolder = null,
+      images = photos,
+      screen = TvScreen.Slideshow,
+      currentSlideIndex = 0,
+      autoplayEnabled = true,
+      slideshowChromeVisible = false,
+      slideshowSettingsVisible = false,
+      gallerySettingsVisible = false,
+      inlineVideoPlaybackApprovedId = null,
+      videoPlayerPromptDismissedId = null,
+      isEventPresentationMode = true,
+      eventPresentationTitle = resolution.name,
+      eventPresentationSlug = resolution.slug
+    )
+    startEventPresentationRefresh()
   }
 
   private fun DriveDeckUiState.withClearedStatus(): DriveDeckUiState {
@@ -2219,6 +2278,7 @@ class DriveDeckViewModel(
   }
 
   private suspend fun loadFolder(folderUrl: String) {
+    stopEventPresentationRefresh()
     uiState = uiState.copy(
       isLoading = true,
       status = "Loading your folder and getting photos ready…",
@@ -2248,7 +2308,10 @@ class DriveDeckViewModel(
         selectedFolder = selectedFolder,
         images = selectedFolder?.images.orEmpty(),
         screen = nextScreen,
-        gallerySettingsVisible = false
+        gallerySettingsVisible = false,
+        isEventPresentationMode = false,
+        eventPresentationTitle = "",
+        eventPresentationSlug = ""
       )
     }.onFailure {
       uiState = uiState.copy(
@@ -2260,13 +2323,17 @@ class DriveDeckViewModel(
   }
 
   fun openFolder(folder: FolderSummary) {
+    stopEventPresentationRefresh()
     uiState = uiState.copy(
       selectedFolder = folder,
       images = folder.images,
       screen = TvScreen.Gallery,
       gallerySettingsVisible = false,
       status = "",
-      statusTone = StatusTone.Neutral
+      statusTone = StatusTone.Neutral,
+      isEventPresentationMode = false,
+      eventPresentationTitle = "",
+      eventPresentationSlug = ""
     )
   }
 
@@ -2405,7 +2472,23 @@ class DriveDeckViewModel(
       } else {
         uiState.copy(screen = TvScreen.Home, gallerySettingsVisible = false)
       }
-      TvScreen.Slideshow -> uiState.copy(
+      TvScreen.Slideshow -> if (uiState.isEventPresentationMode) {
+        stopEventPresentationRefresh()
+        uiState.copy(
+          screen = TvScreen.Home,
+          autoplayEnabled = false,
+          slideshowChromeVisible = true,
+          slideshowSettingsVisible = false,
+          inlineVideoPlaybackApprovedId = null,
+          videoPlayerPromptDismissedId = null,
+          isEventPresentationMode = false,
+          eventPresentationTitle = "",
+          eventPresentationSlug = "",
+          images = emptyList(),
+          status = "",
+          statusTone = StatusTone.Neutral
+        )
+      } else uiState.copy(
         screen = TvScreen.Gallery,
         autoplayEnabled = false,
         slideshowChromeVisible = true,
@@ -2420,6 +2503,48 @@ class DriveDeckViewModel(
         slideshowSettingsVisible = false
       )
     }
+  }
+
+  private fun startEventPresentationRefresh() {
+    stopEventPresentationRefresh()
+    val slug = uiState.eventPresentationSlug.trim()
+    if (slug.isBlank()) {
+      return
+    }
+
+    eventPresentationRefreshJob = viewModelScope.launch {
+      while (isActive) {
+        delay(5_000)
+        val activeSlug = uiState.eventPresentationSlug.trim()
+        if (!uiState.isEventPresentationMode || activeSlug.isBlank()) {
+          break
+        }
+
+        runCatching {
+          repository.fetchEventPresentation(activeSlug)
+        }.onSuccess { refreshed ->
+          val currentPhotoId = uiState.currentSlide?.id
+          val nextPhotos = refreshed.photos
+          val nextIndex = if (currentPhotoId.isNullOrBlank()) {
+            0
+          } else {
+            nextPhotos.indexOfFirst { it.id == currentPhotoId }.takeIf { it >= 0 } ?: 0
+          }
+
+          uiState = uiState.copy(
+            images = nextPhotos,
+            currentSlideIndex = nextIndex.coerceAtMost(nextPhotos.lastIndex.coerceAtLeast(0)),
+            eventPresentationTitle = refreshed.name,
+            eventPresentationSlug = refreshed.slug
+          )
+        }
+      }
+    }
+  }
+
+  private fun stopEventPresentationRefresh() {
+    eventPresentationRefreshJob?.cancel()
+    eventPresentationRefreshJob = null
   }
 
   private fun flattenFolders(node: FolderNode, parentPath: String = ""): List<FolderSummary> {
@@ -2524,6 +2649,11 @@ sealed interface PairingResolution {
     val snapshot: AlbumSnapshotPayload,
     val folderUrl: String = "",
   ) : PairingResolution
+  data class EventPresentation(
+    val name: String,
+    val slug: String,
+    val photos: List<PhotoAsset>,
+  ) : PairingResolution
 }
 
 class DriveDeckRepository(
@@ -2569,6 +2699,14 @@ class DriveDeckRepository(
 
       val parsed = json.decodeFromString<PairingResolveResponse>(body)
       when {
+        parsed.mode == "event-presentation" -> {
+          PairingResolution.EventPresentation(
+            name = parsed.eventName.orEmpty().ifBlank { "Event" },
+            slug = parsed.eventSlug.orEmpty(),
+            photos = parsed.eventPhotos.orEmpty().map { photo -> toPhotoAsset(photo) }
+          )
+        }
+
         parsed.mode == "snapshot" && parsed.snapshot != null -> {
           PairingResolution.Snapshot(
             snapshot = parsed.snapshot,
@@ -2598,6 +2736,28 @@ class DriveDeckRepository(
     }
   }
 
+  suspend fun fetchEventPresentation(slug: String): PairingResolution.EventPresentation = withContext(Dispatchers.IO) {
+    val request = Request.Builder()
+      .url("$baseUrl/api/events/public?slug=${urlEncode(slug)}")
+      .get()
+      .build()
+
+    client.newCall(request).execute().use { response ->
+      val body = response.body?.string().orEmpty()
+      if (!response.isSuccessful) {
+        throw IllegalStateException(extractError(body))
+      }
+
+      val parsed = json.decodeFromString<EventPublicResponse>(body)
+      val event = parsed.event
+      PairingResolution.EventPresentation(
+        name = event.name.ifBlank { "Event" },
+        slug = event.slug.ifBlank { slug },
+        photos = event.livePhotos.map(::toPhotoAsset)
+      )
+    }
+  }
+
   fun toPhotoAsset(image: ImageNode): PhotoAsset = PhotoAsset(
     id = image.id,
     name = image.name,
@@ -2606,6 +2766,16 @@ class DriveDeckRepository(
     thumbnailUrl = makeAbsolute(image.thumbnailUrl),
     slideshowUrl = makeAbsolute(image.slideshowUrl.ifBlank { image.url }),
     fullUrl = makeAbsolute(image.url),
+  )
+
+  fun toPhotoAsset(photo: EventPhotoPayload): PhotoAsset = PhotoAsset(
+    id = photo.id,
+    name = photo.name,
+    path = "Live event photos",
+    mimeType = photo.mimeType,
+    thumbnailUrl = makeAbsolute(photo.thumbnailUrl.ifBlank { photo.fullUrl }),
+    slideshowUrl = makeAbsolute(photo.slideshowUrl.ifBlank { photo.fullUrl }),
+    fullUrl = makeAbsolute(photo.fullUrl),
   )
 
   internal fun makeAbsolute(path: String): String {
@@ -2684,6 +2854,31 @@ data class PairingResolveResponse(
   val folderName: String = "",
   val folderUrl: String? = null,
   val snapshot: AlbumSnapshotPayload? = null,
+  val eventSlug: String? = null,
+  val eventName: String? = null,
+  val eventPhotos: List<EventPhotoPayload>? = null,
+)
+
+@Serializable
+data class EventPublicResponse(
+  val event: EventPublicPayload = EventPublicPayload(),
+)
+
+@Serializable
+data class EventPublicPayload(
+  val slug: String = "",
+  val name: String = "",
+  val livePhotos: List<EventPhotoPayload> = emptyList(),
+)
+
+@Serializable
+data class EventPhotoPayload(
+  val id: String = "",
+  val name: String = "",
+  val mimeType: String = "",
+  @SerialName("thumbnailUrl") val thumbnailUrl: String = "",
+  @SerialName("slideshowUrl") val slideshowUrl: String = "",
+  @SerialName("fullUrl") val fullUrl: String = "",
 )
 
 @Serializable

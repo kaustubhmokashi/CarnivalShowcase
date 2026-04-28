@@ -431,6 +431,9 @@
           </section>
 
           <section id="manage-event-panel" class="studio-wizard hidden" aria-live="polite">
+            <a id="manage-event-logo-link" href="/" class="studio-event-logo-link is-empty" aria-label="Studio homepage">
+              <img id="manage-event-logo" class="studio-event-logo" alt="" hidden />
+            </a>
             <div class="studio-wizard-head">
               <p id="manage-event-kicker" class="studio-kicker">Manage event</p>
               <button id="close-manage-event" type="button" class="studio-text-button">Back</button>
@@ -528,16 +531,22 @@
 
       <section id="screen-event-public" class="screen event-public-screen">
         <div class="event-public-shell">
+          <a id="event-public-logo-link" href="/" class="studio-event-logo-link event-public-logo-link is-empty" aria-label="Studio homepage">
+            <img id="event-public-logo" class="studio-event-logo" alt="" hidden />
+          </a>
           <div class="event-public-cover">
             <p id="event-public-title" class="event-public-cover-title">Event</p>
           </div>
           <form id="event-upload-form" class="event-upload-bar" enctype="multipart/form-data">
             <label class="event-upload-trigger" for="event-upload-input">
-              <span class="icon-mask icon-camera" aria-hidden="true"></span>
-              <span>Upload your photo</span>
+              <img id="event-upload-preview" class="event-upload-preview hidden" alt="" />
+              <span class="event-upload-loader hidden" aria-hidden="true"></span>
+              <span class="event-upload-inner">
+                <span class="icon-mask icon-camera" aria-hidden="true"></span>
+                <span>Upload</span>
+              </span>
             </label>
             <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
-            <button type="submit" class="studio-primary-button event-upload-submit">Upload</button>
           </form>
           <p id="event-upload-status" class="studio-status" aria-live="polite"></p>
           <div id="event-public-grid" class="gallery-grid event-public-grid">
@@ -548,6 +557,7 @@
 
       <section id="screen-event-present" class="screen event-present-screen">
         <div class="event-present-shell">
+          <button id="event-present-exit" type="button" class="event-present-exit">Back to home</button>
           <img id="event-present-image" class="event-present-image" alt="" />
         </div>
       </section>
