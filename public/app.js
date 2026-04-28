@@ -2372,7 +2372,8 @@ if (
   !window.CarnivalStudioPublicRoute &&
   !window.CarnivalEventPublicRoute &&
   !window.CarnivalEventModerationRoute &&
-  window.location.pathname !== "/studio"
+  window.location.pathname !== "/studio" &&
+  window.location.pathname !== "/login"
 ) {
   setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
 }
@@ -2383,7 +2384,8 @@ window.addEventListener("popstate", () => {
     window.CarnivalStudioPublicRoute ||
     window.CarnivalEventPublicRoute ||
     window.CarnivalEventModerationRoute ||
-    window.location.pathname === "/studio"
+    window.location.pathname === "/studio" ||
+    window.location.pathname === "/login"
   ) {
     return;
   }

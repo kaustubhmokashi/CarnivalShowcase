@@ -594,6 +594,10 @@ function getStudioRoute() {
     return { name: "event-moderate", token: decodeURIComponent(pathSegments[1]) };
   }
 
+  if (window.location.pathname === "/login") {
+    return { name: "login" };
+  }
+
   if (pathSegments[0] !== "studio") {
     return { name: "home" };
   }
@@ -627,7 +631,7 @@ function getStudioRoute() {
   return { name: "dashboard" };
 }
 
-function setStudioScreen(active) {
+function setStudioScreen(active, targetPath = null) {
   document.body.classList.toggle("studio-scroll-lock", active);
   screenStudio.classList.toggle("active", active);
   screenDirectLink.classList.toggle("active", !active);
@@ -635,8 +639,12 @@ function setStudioScreen(active) {
   screenEventPresent?.classList.remove("active");
   if (active) {
     screenGallery.classList.remove("active");
-    if (!window.location.pathname.startsWith("/studio") && !window.location.pathname.startsWith("/event-moderate/")) {
-      window.history.pushState({ studio: true }, "", "/studio");
+    const currentPath = window.location.pathname;
+    const studioPath = targetPath || "/login";
+    if (!currentPath.startsWith("/studio") && currentPath !== "/login" && !currentPath.startsWith("/event-moderate/")) {
+      window.history.pushState({ studio: true }, "", studioPath);
+    } else if (targetPath && currentPath !== targetPath && !currentPath.startsWith("/event-moderate/")) {
+      window.history.pushState({ studio: true }, "", targetPath);
     }
   } else {
     window.history.pushState({ step: 1 }, "", "/");
@@ -1989,6 +1997,9 @@ async function refreshStudioState(user) {
     currentProfile = null;
     googleLoginButton.disabled = false;
     setStudioStatus(studioAuthStatus, "");
+    if (window.location.pathname.startsWith("/studio")) {
+      window.history.replaceState({ login: true }, "", "/login");
+    }
     showStudioView("auth");
     return;
   }
@@ -2001,18 +2012,27 @@ async function refreshStudioState(user) {
   setStudioStatus(studioNameStatus, "");
 
   if (isAdminEmail(user.email)) {
+    if (window.location.pathname === "/login") {
+      window.history.replaceState({ studio: true }, "", "/studio");
+    }
     showStudioView("admin");
     await loadAdminAccounts();
     return;
   }
 
   if (!currentProfile?.studioName) {
+    if (window.location.pathname === "/login") {
+      window.history.replaceState({ studio: true }, "", "/studio");
+    }
     showStudioView("name");
     return;
   }
 
   hydrateStudioSettingsForms();
   updateDomainSummary();
+  if (window.location.pathname === "/login") {
+    window.history.replaceState({ studio: true }, "", "/studio");
+  }
   showStudioView("dashboard");
   updateLinkCreationGate();
   await loadSavedPages();
@@ -3016,7 +3036,8 @@ async function loadPublicStudioPage(publicPageRoute) {
 }
 
 openStudioLoginButton?.addEventListener("click", () => {
-  setStudioScreen(true);
+  setStudioScreen(true, "/login");
+  showStudioView("auth");
   if (auth && !authHasResolved) {
     showStudioBootState();
   }
@@ -3348,7 +3369,9 @@ createEventForm?.addEventListener("submit", async (event) => {
 window.addEventListener("popstate", () => {
   closeStudioSidebarDrawer();
   if (
-    (window.location.pathname.startsWith("/studio") || window.location.pathname.startsWith("/event-moderate/")) &&
+    (window.location.pathname.startsWith("/studio") ||
+      window.location.pathname === "/login" ||
+      window.location.pathname.startsWith("/event-moderate/")) &&
     currentProfile?.studioName
   ) {
     setStudioScreen(true);
@@ -3508,7 +3531,7 @@ wizardCreatePage?.addEventListener("click", async () => {
   }
 });
 
-if (window.location.pathname.startsWith("/studio")) {
+if (window.location.pathname.startsWith("/studio") || window.location.pathname === "/login") {
   setStudioScreen(true);
 }
 
