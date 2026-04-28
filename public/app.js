@@ -4,6 +4,8 @@ const directStatusEl = document.getElementById("direct-status");
 const directLoadingIndicatorEl = document.getElementById("direct-loading-indicator");
 const directLoadingPercentEl = document.getElementById("direct-loading-percent");
 const directLoadingMessageEl = document.getElementById("direct-loading-message");
+const bootLoaderEl = document.getElementById("boot-loader");
+const bootLoaderAnimationEl = document.getElementById("boot-loader-animation");
 
 const screenDirectLink = document.getElementById("screen-direct-link");
 const screenGallery = document.getElementById("screen-gallery");
@@ -60,6 +62,8 @@ const prevSlideButton = document.getElementById("prev-slide");
 const nextSlideButton = document.getElementById("next-slide");
 const logoAssetPath = "/assets/carnivalstories-logo.svg?v=20260423";
 const PRODUCT_HOME_URL = "https://carnivalshowcase.kaustubhmokashi.com/";
+const BOOT_LOADER_DATA_PATH = "/assets/boot-loader.json?v=20260428a";
+const BOOT_LOADER_MIN_VISIBLE_MS = 1200;
 
 let currentFolders = [];
 let selectedFolderId = null;
@@ -104,6 +108,13 @@ let slideshowConfig = {
   loop: false,
   autoplay: false,
 };
+let bootLoaderAnimation = null;
+let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
+let bootLoaderAnimationInitialized = false;
+let bootLoaderHideRequested = false;
+let bootLoaderInitializationScheduled = false;
+let bootLoaderHideTimer = null;
+const bootLoaderShownAt = window.CarnivalBootLoaderRoute ? Date.now() : 0;
 let currentShareContext = {
   tagline: "",
   studioName: "",
@@ -128,6 +139,98 @@ function focusElement(element) {
       }
     }
   });
+}
+
+function scheduleBootLoaderInitialization() {
+  if (bootLoaderAnimationInitialized || bootLoaderInitializationScheduled || !window.CarnivalBootLoaderRoute) {
+    return;
+  }
+
+  bootLoaderInitializationScheduled = true;
+  window.setTimeout(() => {
+    bootLoaderInitializationScheduled = false;
+    void initializeBootLoader();
+  }, 0);
+}
+
+async function initializeBootLoader() {
+  if (
+    !window.CarnivalBootLoaderRoute ||
+    !bootLoaderEl ||
+    !bootLoaderAnimationEl
+  ) {
+    return;
+  }
+
+  document.body.classList.add("boot-loader-lock");
+
+  if (bootLoaderAnimationInitialized) {
+    return;
+  }
+
+  if (typeof window.lottie?.loadAnimation !== "function") {
+    scheduleBootLoaderInitialization();
+    return;
+  }
+
+  bootLoaderAnimationInitialized = true;
+
+  try {
+    const response = await fetch(BOOT_LOADER_DATA_PATH, { cache: "force-cache" });
+    if (!response.ok) {
+      throw new Error(`Boot loader animation could not be loaded (${response.status}).`);
+    }
+    const animationData = await response.json();
+    bootLoaderAnimation = window.lottie.loadAnimation({
+      container: bootLoaderAnimationEl,
+      renderer: "svg",
+      loop: true,
+      autoplay: true,
+      animationData,
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid meet",
+      },
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function performBootLoaderHide() {
+  if (!bootLoaderEl || bootLoaderHidden) {
+    return;
+  }
+
+  bootLoaderHidden = true;
+  document.documentElement.classList.remove("boot-loader-visible");
+  bootLoaderEl.classList.add("is-hiding");
+  window.setTimeout(() => {
+    bootLoaderEl.style.display = "none";
+    bootLoaderAnimation?.destroy?.();
+    bootLoaderAnimation = null;
+    document.body.classList.remove("boot-loader-lock");
+  }, 320);
+}
+
+function requestBootLoaderHide() {
+  if (!bootLoaderEl || bootLoaderHidden) {
+    return;
+  }
+
+  bootLoaderHideRequested = true;
+  const remainingVisibleMs = Math.max(0, BOOT_LOADER_MIN_VISIBLE_MS - (Date.now() - bootLoaderShownAt));
+  if (remainingVisibleMs > 0) {
+    window.clearTimeout(bootLoaderHideTimer);
+    bootLoaderHideTimer = window.setTimeout(() => {
+      bootLoaderHideTimer = null;
+      if (bootLoaderHideRequested) {
+        performBootLoaderHide();
+      }
+    }, remainingVisibleMs);
+    return;
+  }
+
+  performBootLoaderHide();
 }
 
 function isEditableTarget(target) {
@@ -862,12 +965,14 @@ function setGalleryErrorState(message) {
 function showGalleryError(message) {
   setActiveScreen(3, { skipHistory: true });
   setGalleryErrorState(message);
+  window.requestAnimationFrame(requestBootLoaderHide);
 }
 
 function showGalleryLoading(message = "Loading your albums.") {
   setActiveScreen(3, { skipHistory: true });
   resetGalleryLoadingShell();
   setLoadingState(true, message, { progress: 0 });
+  window.requestAnimationFrame(requestBootLoaderHide);
 }
 
 function showGalleryLoadingPreview(options = {}) {
@@ -878,6 +983,7 @@ function showGalleryLoadingPreview(options = {}) {
   setActiveScreen(3, { skipHistory: true });
   resetGalleryLoadingShell();
   setLoadingState(true, options.message || "Loading your albums.", { progress: options.progress ?? 0 });
+  window.requestAnimationFrame(requestBootLoaderHide);
 }
 
 function normalizeSnapshotMediaItem(item, folderPath = "") {
@@ -2368,6 +2474,7 @@ window.CarnivalGallery = {
 
 updateDurationControls();
 syncPendingSharedSelectionFromLocation();
+void initializeBootLoader();
 if (
   !window.CarnivalStudioPublicRoute &&
   !window.CarnivalEventPublicRoute &&

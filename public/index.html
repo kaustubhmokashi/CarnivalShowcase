@@ -20,10 +20,14 @@
         window.CarnivalStudioPublicRoute =
           !reservedRoutes.has(firstSegment) &&
           (pathSegments.length === 1 || pathSegments.length >= 2);
+        window.CarnivalBootLoaderRoute = Boolean(window.CarnivalStudioPublicRoute);
       })();
       window.CarnivalDefaultFavicon = "/favicon.svg?v=20260424b";
       if (window.CarnivalStudioPublicRoute) {
         document.documentElement.classList.add("public-page-shell");
+      }
+      if (window.CarnivalBootLoaderRoute) {
+        document.documentElement.classList.add("boot-loader-visible");
       }
     </script>
     <link id="app-favicon" rel="icon" type="image/svg+xml" />
@@ -45,9 +49,14 @@
     <link rel="preload" as="image" href="/assets/icons/Full-screen.svg?v=20260426a" type="image/svg+xml" />
     <link rel="preload" as="image" href="/assets/icons/Heart-empty.svg?v=20260426a" type="image/svg+xml" />
     <link rel="preload" as="image" href="/assets/icons/Heart-selected.svg?v=20260426a" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260428a" />
+    <link rel="preload" as="fetch" href="/assets/boot-loader.json?v=20260428a" crossorigin="anonymous" />
+    <link rel="stylesheet" href="/styles.css?v=20260428c" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
   </head>
   <body>
+    <div id="boot-loader" class="boot-loader" aria-hidden="true">
+      <div id="boot-loader-animation" class="boot-loader-animation"></div>
+    </div>
     <div class="app-shell">
       <section id="screen-direct-link" class="screen active screen-link">
         <div class="screen-hud hud-top">
@@ -595,7 +604,7 @@
 
     <script src="/qr.js?v=20260424b"></script>
     <script src="/firebase-config.js?v=20260424b"></script>
-    <script src="/app.js?v=20260426b"></script>
+    <script src="/app.js?v=20260428c"></script>
     <script type="module" src="/studio.js?v=20260426a"></script>
   </body>
 </html>
