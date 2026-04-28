@@ -3,9 +3,15 @@
 :root {
   color-scheme: light;
   --brand-logo-width: clamp(140px, 18vw, 190px);
-  --brand-logo-top: 18px;
-  --brand-logo-left: 24px;
-  --studio-page-offset: 100px;
+  --brand-logo-top: 16px;
+  --brand-logo-left: 32px;
+  --studio-page-offset: 96px;
+  --grid-unit: 16px;
+  --space-1: 16px;
+  --space-2: 32px;
+  --space-3: 48px;
+  --space-4: 64px;
+  --space-5: 96px;
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-low: #ffffff;
@@ -76,6 +82,10 @@ label:focus-within {
   display: none;
   min-height: 100vh;
   background: var(--bg);
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+  background-size: var(--grid-unit) var(--grid-unit);
 }
 
 .screen.active {
@@ -90,7 +100,7 @@ label:focus-within {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-2);
   pointer-events: none;
 }
 
@@ -101,7 +111,7 @@ label:focus-within {
 
 .hud-bottom {
   bottom: 0;
-  padding: 16px 24px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .brand-lockup,
@@ -346,24 +356,12 @@ label:focus-within {
   overflow: hidden;
 }
 
-.screen-link::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.02) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
-  background-size: 16px 16px;
-  pointer-events: none;
-}
-
 .link-stage {
   min-height: 100vh;
   display: grid;
   place-content: center;
-  gap: 22px;
-  padding: 120px 24px;
+  gap: var(--space-2);
+  padding: 128px var(--space-2);
   position: relative;
   z-index: 1;
 }
@@ -382,14 +380,14 @@ label:focus-within {
 
 .home-footer {
   position: absolute;
-  left: 24px;
-  right: 24px;
-  bottom: 24px;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
   z-index: 1;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-2);
   pointer-events: none;
 }
 
@@ -405,7 +403,7 @@ label:focus-within {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-1);
   justify-content: flex-end;
   pointer-events: auto;
 }
@@ -485,7 +483,7 @@ label:focus-within {
   align-self: stretch;
   aspect-ratio: 1 / 1;
   width: auto;
-  padding: 12px;
+  padding: var(--space-1);
   background: #000000;
   color: #ffffff;
 }
@@ -517,7 +515,7 @@ label:focus-within {
 
 .link-form input {
   width: 100%;
-  padding: 26px 30px 24px;
+  padding: var(--space-2);
   border: 0;
   border-radius: 0;
   background: #ffffff;
@@ -565,7 +563,7 @@ label:focus-within {
   z-index: 3;
   display: grid;
   justify-items: start;
-  gap: 8px;
+  gap: var(--space-1);
   width: min(560px, 100vw);
   margin: 0;
   padding: 0;
@@ -637,9 +635,9 @@ label:focus-within {
 
 .gallery-screen.loading .loading-indicator {
   position: fixed;
-  left: 24px;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  width: min(560px, calc(100vw - 48px));
+  left: var(--space-2);
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  width: min(560px, calc(100vw - 64px));
 }
 
 .gallery-error-state {
@@ -647,8 +645,8 @@ label:focus-within {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 16px;
-  padding: 24px;
+  gap: var(--space-1);
+  padding: var(--space-2);
   text-align: center;
 }
 
@@ -745,10 +743,10 @@ label:focus-within {
 
 .workspace-stage {
   min-height: 100vh;
-  padding: 112px 48px 92px;
+  padding: 128px var(--space-3) var(--space-5);
   display: grid;
   align-content: start;
-  gap: 48px;
+  gap: var(--space-3);
 }
 
 .workspace-copy {
@@ -758,9 +756,9 @@ label:focus-within {
 .folder-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: var(--space-2);
   margin-top: 0;
-  padding-left: 40px;
+  padding-left: var(--space-3);
 }
 
 .folder-tabs-shell {
@@ -832,7 +830,7 @@ label:focus-within {
 .folder-choice {
   width: 100%;
   min-height: 170px;
-  padding: 20px 22px;
+  padding: var(--space-2);
   border: 1px solid transparent;
   border-left: 1px solid var(--template-accent-line);
   background: var(--template-bg);
@@ -2449,7 +2447,7 @@ input[type="checkbox"]:checked {
   position: relative;
   width: 100%;
   margin: 0;
-  padding: 0 0 90px 0;
+  padding: 0 0 var(--space-5) 0;
 }
 
 .studio-panel,
@@ -2463,7 +2461,7 @@ input[type="checkbox"]:checked {
 .studio-panel {
   width: min(720px, 100%);
   display: grid;
-  gap: 22px;
+  gap: var(--space-2);
 }
 
 .studio-auth-panel,
@@ -2471,7 +2469,7 @@ input[type="checkbox"]:checked {
   min-height: 100vh;
   align-content: center;
   margin: 0 auto;
-  padding: calc(72px + var(--studio-page-offset)) 24px 72px;
+  padding: calc(var(--space-4) + var(--studio-page-offset)) var(--space-2) var(--space-4);
 }
 
 .studio-auth-header {
@@ -2518,7 +2516,7 @@ input[type="checkbox"]:checked {
 .studio-form,
 .wizard-step {
   display: grid;
-  gap: 18px;
+  gap: var(--space-1);
 }
 
 .studio-form input,
@@ -2530,7 +2528,7 @@ input[type="checkbox"]:checked {
   border-radius: 0;
   background: #ffffff;
   color: #000000;
-  padding: 20px 22px;
+  padding: var(--space-1);
   font-size: 1rem;
   letter-spacing: 0.12em;
 }
@@ -2546,12 +2544,12 @@ input[type="checkbox"]:checked {
 .date-range-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: var(--space-1);
 }
 
 .date-range-fields label {
   display: grid;
-  gap: 10px;
+  gap: var(--space-1);
 }
 
 .date-range-fields span {
@@ -2573,7 +2571,7 @@ input[type="checkbox"]:checked {
 .studio-primary-button {
   width: fit-content;
   min-width: 220px;
-  padding: 18px 24px;
+  padding: var(--space-1) var(--space-2);
   background: #000000;
   color: #ffffff;
 }
@@ -2581,7 +2579,7 @@ input[type="checkbox"]:checked {
 .studio-secondary-button {
   width: fit-content;
   min-width: 220px;
-  padding: 18px 24px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid #000000;
   background: #ffffff;
   color: #000000;
@@ -2623,15 +2621,15 @@ input[type="checkbox"]:checked {
   min-height: 100vh;
   display: grid;
   align-content: start;
-  gap: 50px;
+  gap: var(--space-3);
   margin: 0 auto;
-  padding: calc(96px + var(--studio-page-offset)) 0 96px;
+  padding: calc(var(--space-5) + var(--studio-page-offset)) 0 var(--space-5);
 }
 
 .admin-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 40px;
+  gap: var(--space-2);
 }
 
 .admin-tab {
@@ -2780,12 +2778,12 @@ input[type="checkbox"]:checked {
   left: 0;
   display: grid;
   grid-template-rows: auto auto auto 1fr;
-  row-gap: 24px;
+  row-gap: var(--space-2);
   width: 280px;
   min-height: 100vh;
   height: 100vh;
   overflow: hidden;
-  padding: var(--brand-logo-top) 24px 32px var(--brand-logo-left);
+  padding: var(--brand-logo-top) var(--space-2) var(--space-2) var(--brand-logo-left);
   border-right: 1px solid rgba(0, 0, 0, 0.12);
 }
 
@@ -2814,7 +2812,7 @@ input[type="checkbox"]:checked {
   align-items: flex-start;
   width: min(var(--brand-logo-width), 100%);
   min-height: 64px;
-  margin: 0 0 24px;
+  margin: 0 0 var(--space-2);
   line-height: 0;
 }
 
@@ -2842,8 +2840,8 @@ input[type="checkbox"]:checked {
 
 .studio-sidebar-actions {
   display: grid;
-  gap: 24px;
-  margin-top: 24px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .studio-sidebar-primary-action,
@@ -2871,8 +2869,8 @@ input[type="checkbox"]:checked {
   display: grid;
   align-content: start;
   justify-items: start;
-  gap: 40px;
-  margin-top: 40px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .studio-sidebar-tab {
@@ -2895,7 +2893,7 @@ input[type="checkbox"]:checked {
 .studio-sidebar-favicon {
   position: absolute;
   left: var(--brand-logo-left);
-  bottom: 32px;
+  bottom: var(--space-2);
   display: block;
   width: 44px;
   height: 44px;
@@ -2916,7 +2914,7 @@ input[type="checkbox"]:checked {
 
 .studio-dashboard-section.active {
   display: grid;
-  row-gap: 50px;
+  row-gap: var(--space-3);
 }
 
 .studio-wizard {
@@ -2924,7 +2922,7 @@ input[type="checkbox"]:checked {
   min-height: 100vh;
   align-content: center;
   margin: 0 auto;
-  padding: calc(72px + var(--studio-page-offset)) 0 72px;
+  padding: calc(var(--space-4) + var(--studio-page-offset)) 0 var(--space-4);
 }
 
 .studio-dashboard-head,
@@ -2932,13 +2930,13 @@ input[type="checkbox"]:checked {
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  gap: 24px;
+  gap: var(--space-2);
 }
 
 .studio-dashboard-head {
   justify-content: flex-start;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-2);
 }
 
 .studio-wizard-head .studio-kicker {
@@ -2948,7 +2946,7 @@ input[type="checkbox"]:checked {
 .saved-pages-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
+  gap: var(--space-2);
   width: min(1180px, calc(100vw - 360px));
 }
 
@@ -2978,7 +2976,7 @@ input[type="checkbox"]:checked {
   display: grid;
   align-content: start;
   gap: 16px;
-  padding: 20px 20px 16px;
+  padding: var(--space-2);
 }
 
 .saved-page-content h2 {
@@ -3000,8 +2998,8 @@ input[type="checkbox"]:checked {
 .saved-page-actions {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-top: 4px;
+  gap: var(--space-1);
+  margin-top: 0;
 }
 
 .saved-page-icon-button {
@@ -3034,7 +3032,7 @@ input[type="checkbox"]:checked {
   background: #000000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--space-2);
 }
 
 .saved-event-thumb-title {
@@ -3084,7 +3082,7 @@ input[type="checkbox"]:checked {
 .event-public-grid {
   width: min(1180px, calc(100vw - 360px));
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 24px;
+  gap: var(--space-2);
 }
 
 .manage-event-shell {
@@ -3093,7 +3091,7 @@ input[type="checkbox"]:checked {
 
 .manage-event-main {
   display: grid;
-  gap: 28px;
+  gap: var(--space-2);
 }
 
 .manage-event-tabs-row {
@@ -3103,15 +3101,15 @@ input[type="checkbox"]:checked {
 .event-drive-connect-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: var(--space-1);
   align-items: center;
-  padding: 18px 20px;
+  padding: var(--space-1);
   border: 1px solid rgba(0, 0, 0, 0.14);
 }
 
 .event-drive-connect-copy {
   display: grid;
-  gap: 8px;
+  gap: var(--space-1);
 }
 
 .event-drive-connect-copy > span {
@@ -3141,9 +3139,9 @@ input[type="checkbox"]:checked {
 .event-public-shell {
   width: min(1180px, calc(100vw - 48px));
   margin: 0 auto;
-  padding: 40px 24px 80px;
+  padding: var(--space-3) var(--space-2) var(--space-5);
   display: grid;
-  gap: 24px;
+  gap: var(--space-2);
 }
 
 .event-public-cover {
@@ -3151,7 +3149,7 @@ input[type="checkbox"]:checked {
   display: grid;
   place-items: center;
   background: #000000;
-  padding: 24px;
+  padding: var(--space-2);
 }
 
 .event-public-cover-title {
