@@ -86,7 +86,7 @@ html.boot-loader-visible .boot-loader {
 }
 
 .boot-loader-animation {
-  width: min(320px, 42vw);
+  width: min(160px, 21vw);
   aspect-ratio: 1 / 1;
 }
 
