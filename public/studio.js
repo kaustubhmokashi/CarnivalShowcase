@@ -3928,8 +3928,6 @@ createEventForm?.addEventListener("submit", async (event) => {
     await loadEvents();
     closeCreateEventPanel();
     showStudioDashboardSection("events");
-    openManageEventPanel(savedEvent);
-    await refreshManagedEvent(savedEvent.id);
   } catch (error) {
     setStudioStatus(createEventStatus, error.message || "Could not save event.", true);
   }
