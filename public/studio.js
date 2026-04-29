@@ -2507,10 +2507,34 @@ async function refreshStudioState(user) {
   }
 
   googleLoginButton.disabled = false;
-  showStudioView("name");
+  const cachedProfile = getCachedStudioProfile(user.uid);
+  if (cachedProfile?.studioName && cachedProfile?.studioSlug) {
+    currentProfile = {
+      ...(currentProfile || {}),
+      ...cachedProfile,
+      email: user.email || currentProfile?.email || "",
+      displayName: user.displayName || currentProfile?.displayName || "",
+      photoURL: user.photoURL || currentProfile?.photoURL || "",
+    };
+    hydrateStudioSettingsForms();
+    updateDomainSummary();
+    if (window.location.pathname === "/login") {
+      window.history.replaceState({ studio: true }, "", "/studio");
+    }
+    showStudioView("dashboard");
+    updateLinkCreationGate();
+    void loadSavedPages().catch(() => {});
+    void loadEvents().catch(() => {});
+    void loadDriveConnectionStatus().catch(() => {});
+  } else {
+    showStudioView("auth");
+  }
+
+  setStudioStatus(studioAuthStatus, "Checking your studio...");
   setStudioStatus(studioNameStatus, "Preparing your studio...");
   await ensureUserShell(user);
   currentProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
+  setStudioStatus(studioAuthStatus, "");
   setStudioStatus(studioNameStatus, "");
 
   if (isAdminEmail(user.email)) {
@@ -3471,7 +3495,29 @@ function initializeFirebase() {
       setStudioStatus(studioAuthStatus, error.message, true);
       setStudioStatus(studioNameStatus, error.message, true);
       if (user) {
-        showStudioView("name");
+        const cachedProfile = getCachedStudioProfile(user.uid);
+        if (cachedProfile?.studioName && cachedProfile?.studioSlug) {
+          currentUser = user;
+          currentProfile = {
+            ...(currentProfile || {}),
+            ...cachedProfile,
+            email: user.email || currentProfile?.email || "",
+            displayName: user.displayName || currentProfile?.displayName || "",
+            photoURL: user.photoURL || currentProfile?.photoURL || "",
+          };
+          hydrateStudioSettingsForms();
+          updateDomainSummary();
+          if (window.location.pathname === "/login") {
+            window.history.replaceState({ studio: true }, "", "/studio");
+          }
+          showStudioView("dashboard");
+          updateLinkCreationGate();
+          void loadSavedPages().catch(() => {});
+          void loadEvents().catch(() => {});
+          void loadDriveConnectionStatus().catch(() => {});
+          return;
+        }
+        showStudioView("auth");
       }
     });
   });
