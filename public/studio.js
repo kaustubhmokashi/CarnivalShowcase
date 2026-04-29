@@ -105,6 +105,8 @@ const createEventLogoLink = document.getElementById("create-event-logo-link");
 const createEventLogo = document.getElementById("create-event-logo");
 const manageEventLogoLink = document.getElementById("manage-event-logo-link");
 const manageEventLogo = document.getElementById("manage-event-logo");
+const manageEventCover = document.getElementById("manage-event-cover");
+const manageEventCoverTitle = document.getElementById("manage-event-cover-title");
 const closeCreateEventButton = document.getElementById("close-create-event");
 const eventNameInput = document.getElementById("event-name-input");
 const eventDriveStep = document.getElementById("event-drive-step");
@@ -146,7 +148,6 @@ const wizardTemplateStatus = document.getElementById("wizard-template-status");
 const screenEventPublic = document.getElementById("screen-event-public");
 const eventPublicLogoLink = document.getElementById("event-public-logo-link");
 const eventPublicLogo = document.getElementById("event-public-logo");
-const eventPublicTitle = document.getElementById("event-public-title");
 const eventUploadForm = document.getElementById("event-upload-form");
 const eventUploadInput = document.getElementById("event-upload-input");
 const eventUploadStatus = document.getElementById("event-upload-status");
@@ -882,6 +883,14 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   manageEventPanel?.classList.remove("hidden");
   if (manageEventKicker) {
     manageEventKicker.textContent = event?.name || "Manage event";
+  }
+  const palette = getEventCardPalette(event);
+  if (manageEventCover) {
+    manageEventCover.style.background = palette.background;
+  }
+  if (manageEventCoverTitle) {
+    manageEventCoverTitle.textContent = event?.name || "Event";
+    manageEventCoverTitle.style.color = palette.text;
   }
   showEventPhotoFilter("live");
   if (!skipHistory) {
@@ -2257,9 +2266,6 @@ async function loadPublicEvent(slug) {
     eventPublicLogo.src = eventLogoSource;
     eventPublicLogo.alt = event.logoLink ? `${event.name || "Event"} logo` : "Carnival Stories";
     eventPublicLogoLink.href = event.homepageLink || "/";
-  }
-  if (eventPublicTitle) {
-    eventPublicTitle.textContent = event.name || "Event";
   }
   const uploadIsLive = event.phase === "live";
   if (eventUploadInput) {

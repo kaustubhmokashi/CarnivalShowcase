@@ -439,6 +439,9 @@
               <button id="close-manage-event" type="button" class="studio-text-button">Back</button>
             </div>
             <div class="manage-event-shell">
+              <div id="manage-event-cover" class="manage-event-cover">
+                <p id="manage-event-cover-title" class="manage-event-cover-title">Event</p>
+              </div>
               <div class="manage-event-main">
                 <div class="manage-event-tabs-row">
                   <div class="admin-tabs manage-event-tabs" aria-label="Event photo status">
@@ -534,20 +537,19 @@
           <a id="event-public-logo-link" href="/" class="studio-event-logo-link event-public-logo-link is-empty" aria-label="Studio homepage">
             <img id="event-public-logo" class="studio-event-logo" alt="" hidden />
           </a>
-          <div class="event-public-cover">
-            <p id="event-public-title" class="event-public-cover-title">Event</p>
+          <div class="event-public-cover event-public-cover-upload">
+            <form id="event-upload-form" class="event-upload-bar" enctype="multipart/form-data">
+              <label class="event-upload-trigger" for="event-upload-input">
+                <img id="event-upload-preview" class="event-upload-preview hidden" alt="" />
+                <span class="event-upload-loader hidden" aria-hidden="true"></span>
+                <span class="event-upload-inner">
+                  <span class="icon-mask icon-camera" aria-hidden="true"></span>
+                  <span>Upload</span>
+                </span>
+              </label>
+              <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
+            </form>
           </div>
-          <form id="event-upload-form" class="event-upload-bar" enctype="multipart/form-data">
-            <label class="event-upload-trigger" for="event-upload-input">
-              <img id="event-upload-preview" class="event-upload-preview hidden" alt="" />
-              <span class="event-upload-loader hidden" aria-hidden="true"></span>
-              <span class="event-upload-inner">
-                <span class="icon-mask icon-camera" aria-hidden="true"></span>
-                <span>Upload</span>
-              </span>
-            </label>
-            <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
-          </form>
           <p id="event-upload-status" class="studio-status" aria-live="polite"></p>
           <div id="event-public-grid" class="gallery-grid event-public-grid">
             <p class="studio-empty">No live photos yet.</p>

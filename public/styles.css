@@ -3162,6 +3162,26 @@ input[type="checkbox"]:checked {
 
 .manage-event-shell {
   width: min(1180px, calc(100vw - 360px));
+  display: grid;
+  gap: var(--space-2);
+}
+
+.manage-event-cover {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: var(--space-2);
+  background: #000000;
+}
+
+.manage-event-cover-title {
+  margin: 0;
+  max-width: min(720px, 100%);
+  font-size: clamp(2rem, 3vw, 3.25rem);
+  line-height: 1.08;
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .manage-event-main {
@@ -3243,6 +3263,10 @@ input[type="checkbox"]:checked {
   padding: var(--space-2);
 }
 
+.event-public-cover-upload {
+  align-items: stretch;
+}
+
 .event-public-cover-title {
   margin: 0;
   color: #ffffff;
@@ -3253,17 +3277,17 @@ input[type="checkbox"]:checked {
 }
 
 .event-upload-bar {
-  min-height: 50px;
-  display: block;
+  min-height: 220px;
+  display: grid;
 }
 
 .event-upload-trigger {
-  min-height: 50px;
+  min-height: 220px;
   width: 100%;
   display: grid;
   place-items: center;
   padding: 6px 16px;
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 0;
   background: rgba(0, 0, 0, 0.48);
   color: #ffffff;
   cursor: pointer;
@@ -3870,6 +3894,13 @@ input[type="checkbox"]:checked {
   .event-public-grid,
   .manage-event-shell {
     width: 100%;
+  }
+
+  .manage-event-cover,
+  .event-public-cover,
+  .event-upload-bar,
+  .event-upload-trigger {
+    min-height: 180px;
   }
 
   .manage-event-tabs-row {
