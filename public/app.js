@@ -142,6 +142,9 @@ let currentShareContext = {
 };
 let pendingSharedFolderId = "";
 let pendingSharedPhotoId = "";
+let pendingAlbumPresentationFromUrl = false;
+let albumPresentationActive = false;
+let albumPresentationSourceImages = null;
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
 function focusElement(element) {
@@ -319,6 +322,7 @@ function syncPendingSharedSelectionFromLocation() {
   const params = new URLSearchParams(window.location.search);
   pendingSharedFolderId = String(params.get("folder") || "").trim();
   pendingSharedPhotoId = String(params.get("photo") || "").trim();
+  pendingAlbumPresentationFromUrl = isAlbumPresentationRoute();
 }
 
 function getCurrentSlidePhoto() {
@@ -1221,13 +1225,36 @@ function renderCoverChrome() {
       </div>
     `
     : "";
+  const coverActions = `
+    <div class="cover-actions" aria-label="Album actions">
+      <button id="cover-presentation-button" type="button" class="cover-action-button" aria-label="Open album presentation">
+        <span class="icon-mask icon-present" aria-hidden="true"></span>
+      </button>
+      <button id="cover-share-button" type="button" class="cover-action-button" aria-label="Share album">
+        <span class="icon-mask icon-share" aria-hidden="true"></span>
+      </button>
+    </div>
+  `;
 
   coverPhotoEl.innerHTML = `
     ${logoMarkup}
     <div class="empty-sequence">Your photos will show up here shortly.</div>
     ${coverCopy}
+    ${coverActions}
   `;
   toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
+  const coverPresentationButton = document.getElementById("cover-presentation-button");
+  const coverShareButton = document.getElementById("cover-share-button");
+  if (coverPresentationButton && coverPresentationButton.dataset.bound !== "true") {
+    coverPresentationButton.addEventListener("click", openAlbumPresentationFromCover);
+    coverPresentationButton.dataset.bound = "true";
+  }
+  if (coverShareButton && coverShareButton.dataset.bound !== "true") {
+    coverShareButton.addEventListener("click", () => {
+      void shareAlbumFromCover();
+    });
+    coverShareButton.dataset.bound = "true";
+  }
   window.requestAnimationFrame(() => {
     updateCoverStoryLayout();
   });
@@ -1236,6 +1263,63 @@ function renderCoverChrome() {
       updateCoverStoryLayout();
     });
   }
+}
+
+function getAlbumPresentationUrl() {
+  const url = new URL(getCurrentPageShareUrl(), window.location.origin);
+  url.searchParams.delete("folder");
+  url.searchParams.delete("photo");
+  url.searchParams.set("view", "presentation");
+  return url.toString();
+}
+
+function isAlbumPresentationRoute() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "presentation";
+}
+
+function getAlbumPresentationPool() {
+  return allMediaItems.filter((item) => !isVideoMedia(item));
+}
+
+function getShuffledPhotos(list) {
+  const copy = [...list];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+  }
+  return copy;
+}
+
+function openAlbumPresentationFromCover() {
+  window.open(getAlbumPresentationUrl(), "_blank", "noreferrer");
+}
+
+async function shareAlbumFromCover() {
+  const pageUrl = getCurrentPageShareUrl();
+  const shareText = buildAlbumShareMessage({
+    shareMessage: activeBranding.shareMessage || "",
+    tagline: currentShareContext.tagline || "CarnivalStories",
+    pageUrl,
+    pairingCode: currentShareContext.pairingCode || "",
+  });
+  const shareData = {
+    title: currentShareContext.tagline || "CarnivalStories",
+    text: shareText,
+  };
+
+  if (navigator.share) {
+    await navigator.share(shareData);
+    return;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(shareText);
+    setStatus("Album share message copied to clipboard.");
+    return;
+  }
+
+  window.open(pageUrl, "_blank", "noreferrer");
 }
 
 function updateCoverStoryLayout() {
@@ -1769,6 +1853,24 @@ function updateGalleryForSelectedFolder() {
       window.setTimeout(() => openSlideshow(sharedPhotoIndex), 0);
     }
   }
+
+  if (pendingAlbumPresentationFromUrl) {
+    pendingAlbumPresentationFromUrl = false;
+    const pool = getAlbumPresentationPool();
+    if (!pool.length) {
+      setStatus("There aren’t any photos ready for presentation yet.", true);
+      return;
+    }
+    albumPresentationSourceImages = images;
+    images = getShuffledPhotos(pool);
+    albumPresentationActive = true;
+    const coverBackground = coverPhoto?.url || coverPhoto?.thumbnailUrl || "";
+    if (coverBackground) {
+      slideshowEl?.style.setProperty("--album-presentation-bg", `url("${coverBackground}")`);
+    }
+    slideshowEl?.classList.add("slideshow-album-presentation");
+    window.setTimeout(() => openSlideshow(0), 0);
+  }
 }
 
 function updateDurationControls() {
@@ -2049,17 +2151,44 @@ function showSlide(index) {
   }
 
   slideVideoEl?.classList.add("hidden");
-  hideSlidePhotoCards();
-  if (slideCardEl) {
-    slideCardEl.classList.remove("hidden", "is-leaving");
-    slideCardEl.classList.add("is-active");
-    slideCardEl.setAttribute("aria-hidden", "false");
+  const entries = getSlideCardEntries();
+  const usePresentationMotion = albumPresentationActive;
+  let activeEntry = entries[0] || null;
+
+  if (usePresentationMotion && entries.length) {
+    const nextEntryIndex = activeSlideCardIndex < 0 ? 0 : (activeSlideCardIndex + 1) % entries.length;
+    const previousEntry = activeSlideCardIndex >= 0 ? entries[activeSlideCardIndex] : null;
+    activeEntry = entries[nextEntryIndex];
+    const motion = getNextSlideshowMotionPreset();
+    const tilt = getRandomSlideTilt();
+    applySlideCardMotion(activeEntry.card, motion, tilt);
+    activeEntry.card.classList.remove("hidden", "is-leaving");
+    activeEntry.card.classList.add("is-active");
+    activeEntry.card.setAttribute("aria-hidden", "false");
+    if (previousEntry?.card && previousEntry !== activeEntry) {
+      previousEntry.card.classList.remove("is-active");
+      previousEntry.card.classList.add("is-leaving");
+      window.setTimeout(() => resetSlideCard(previousEntry), 860);
+    }
+    activeSlideCardIndex = nextEntryIndex;
+  } else {
+    hideSlidePhotoCards();
+    if (slideCardEl) {
+      slideCardEl.classList.remove("hidden", "is-leaving");
+      slideCardEl.classList.add("is-active");
+      slideCardEl.setAttribute("aria-hidden", "false");
+    }
+    activeSlideCardIndex = 0;
+    activeEntry = entries[0] || null;
   }
+
   slideImageFullEl?.classList.add("hidden");
-  slideImageEl.classList.remove("hidden");
-  slideImageEl.fetchPriority = "high";
-  slideImageEl.src = previewSource;
-  slideImageEl.alt = photo.name;
+  if (activeEntry?.image) {
+    activeEntry.image.classList.remove("hidden");
+    activeEntry.image.fetchPriority = "high";
+    activeEntry.image.src = previewSource;
+    activeEntry.image.alt = photo.name;
+  }
 
   const fullImage = new Image();
   fullImage.decoding = "async";
@@ -2068,7 +2197,9 @@ function showSlide(index) {
       return;
     }
 
-    slideImageEl.src = fullSource;
+    if (activeEntry?.image) {
+      activeEntry.image.src = fullSource;
+    }
 
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
@@ -2081,7 +2212,9 @@ function showSlide(index) {
       return;
     }
 
-    slideImageEl.src = previewSource;
+    if (activeEntry?.image) {
+      activeEntry.image.src = previewSource;
+    }
 
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
@@ -2215,6 +2348,13 @@ function closeSlideshow() {
     slideshowLoaderEl.classList.add("hidden");
   }
   hideSlidePhotoCards();
+  if (albumPresentationActive && Array.isArray(albumPresentationSourceImages)) {
+    images = albumPresentationSourceImages;
+  }
+  albumPresentationActive = false;
+  albumPresentationSourceImages = null;
+  slideshowEl?.classList.remove("slideshow-album-presentation");
+  slideshowEl?.style.removeProperty("--album-presentation-bg");
   slideImageEl?.removeAttribute("src");
   slideImageFullEl?.removeAttribute("src");
   window.clearTimeout(openSlideshow.toastTimer);
