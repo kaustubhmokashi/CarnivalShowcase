@@ -1324,12 +1324,26 @@ function buildEventQrFilename(event) {
   return `${(event?.name || "event").replace(/\s+/g, "-").toLowerCase()}-qr.png`;
 }
 
-function generateEventQrDataUrl(event) {
+async function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read QR code."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function generateEventQrDataUrl(event) {
   const qrTarget = String(event?.uploadUrl || "").trim() || getEventUploadUrl(event);
-  if (!qrTarget || typeof window.generateQrDataUrl !== "function") {
+  if (!qrTarget) {
     throw new Error("QR code generator is unavailable.");
   }
-  return window.generateQrDataUrl(qrTarget);
+  const response = await fetch(`/api/qr?text=${encodeURIComponent(qrTarget)}`);
+  if (!response.ok) {
+    throw new Error("QR code generator is unavailable.");
+  }
+  const qrBlob = await response.blob();
+  return blobToDataUrl(qrBlob);
 }
 
 async function rasterizeQrDataUrlToPng(dataUrl) {
@@ -1368,7 +1382,9 @@ async function ensureEventQrPngDataUrl(event) {
     return existingDataUrl;
   }
 
-  const pngDataUrl = await rasterizeQrDataUrlToPng(existingDataUrl || generateEventQrDataUrl(event));
+  const pngDataUrl = existingDataUrl
+    ? await rasterizeQrDataUrlToPng(existingDataUrl)
+    : await generateEventQrDataUrl(event);
   if (event && typeof event === "object") {
     event.qrPngDataUrl = pngDataUrl;
   }

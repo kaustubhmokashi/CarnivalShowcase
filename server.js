@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { URL } = require("url");
+const QRCode = require("qrcode");
 
 loadEnvFile(path.join(__dirname, ".env"));
 
@@ -3281,6 +3282,36 @@ async function handleGetPublicEvent(req, res) {
   });
 }
 
+async function handleGenerateQr(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const text = String(requestUrl.searchParams.get("text") || "").trim();
+  if (!text) {
+    sendJson(res, 400, { error: "QR text is required." });
+    return;
+  }
+
+  try {
+    const pngBuffer = await QRCode.toBuffer(text, {
+      errorCorrectionLevel: "M",
+      type: "png",
+      width: 512,
+      margin: 2,
+      color: {
+        dark: "#000000",
+        light: "#0000",
+      },
+    });
+    res.writeHead(200, {
+      "Content-Type": "image/png",
+      "Content-Length": String(pngBuffer.length),
+      "Cache-Control": "no-store",
+    });
+    res.end(pngBuffer);
+  } catch (error) {
+    sendJson(res, 500, { error: "Could not generate QR code." });
+  }
+}
+
 async function handleUpdateEvent(req, res) {
   const account = await requireAuthenticatedRequest(req, res);
   if (!account) {
@@ -3674,6 +3705,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/events/moderation" && req.method === "POST") {
     await handleModerateEventPhotoByToken(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/qr" && req.method === "GET") {
+    await handleGenerateQr(req, res);
     return;
   }
 
