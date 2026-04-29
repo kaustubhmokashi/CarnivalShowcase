@@ -1589,8 +1589,8 @@ input[type="checkbox"]:checked {
 .slide-image {
   display: block;
   width: auto;
-  height: auto;
-  max-width: min(78vw, 1320px);
+  height: 100vh;
+  max-width: none;
   max-height: 100vh;
   object-fit: contain;
   margin: 0;
