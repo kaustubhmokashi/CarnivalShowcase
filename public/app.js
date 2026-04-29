@@ -37,6 +37,8 @@ const durationIncreaseButton = document.getElementById("duration-increase");
 const loopInput = document.getElementById("loop-input");
 
 const slideshowEl = document.getElementById("slideshow");
+const slideCardEl = document.getElementById("slide-card-a");
+const slideCardFullEl = document.getElementById("slide-card-b");
 const slideImageEl = document.getElementById("slide-image");
 const slideImageFullEl = document.getElementById("slide-image-full");
 const slideVideoEl = document.getElementById("slide-video");
@@ -118,6 +120,14 @@ let slideshowConfig = {
   autoplay: false,
 };
 let bootLoaderAnimation = null;
+let activeSlideCardIndex = -1;
+let activeSlideMotionPresetIndex = -1;
+const slideshowMotionPresets = [
+  { fromX: "-110vw", fromY: "-110vh", toX: "110vw", toY: "110vh" },
+  { fromX: "110vw", fromY: "-110vh", toX: "-110vw", toY: "110vh" },
+  { fromX: "-110vw", fromY: "110vh", toX: "110vw", toY: "-110vh" },
+  { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
+];
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
 let bootLoaderHideRequested = false;
@@ -1947,6 +1957,49 @@ function scheduleSlideshowAdvance() {
   }, slideshowConfig.duration * 1000);
 }
 
+function getSlideCardEntries() {
+  return [
+    { card: slideCardEl, image: slideImageEl },
+    { card: slideCardFullEl, image: slideImageFullEl },
+  ].filter((entry) => entry.card && entry.image);
+}
+
+function getRandomSlideTilt() {
+  return `${(Math.random() * 20 - 10).toFixed(2)}deg`;
+}
+
+function getNextSlideshowMotionPreset() {
+  const availablePresets = slideshowMotionPresets.filter((_, index) => index !== activeSlideMotionPresetIndex);
+  const preset = availablePresets[Math.floor(Math.random() * availablePresets.length)] || slideshowMotionPresets[0];
+  activeSlideMotionPresetIndex = slideshowMotionPresets.indexOf(preset);
+  return preset;
+}
+
+function applySlideCardMotion(card, motion, tilt) {
+  card.style.setProperty("--slide-from-x", motion.fromX);
+  card.style.setProperty("--slide-from-y", motion.fromY);
+  card.style.setProperty("--slide-to-x", motion.toX);
+  card.style.setProperty("--slide-to-y", motion.toY);
+  card.style.setProperty("--slide-tilt", tilt);
+}
+
+function resetSlideCard(cardEntry) {
+  if (!cardEntry?.card || !cardEntry?.image) {
+    return;
+  }
+  cardEntry.card.classList.add("hidden");
+  cardEntry.card.classList.remove("is-active", "is-leaving");
+  cardEntry.card.setAttribute("aria-hidden", "true");
+  cardEntry.image.classList.add("hidden");
+  cardEntry.image.removeAttribute("src");
+  cardEntry.image.alt = "";
+}
+
+function hideSlidePhotoCards() {
+  getSlideCardEntries().forEach((entry) => resetSlideCard(entry));
+  activeSlideCardIndex = -1;
+}
+
 function showSlide(index) {
   if (!images.length) {
     return;
@@ -1962,34 +2015,22 @@ function showSlide(index) {
   const photo = images[currentSlideIndex];
   updateSlideshowLikeVisual(photo);
   const requestToken = ++slideshowImageLoadToken;
-  const previewSource = photo.thumbnailUrl || photo.url;
+  const previewSource = photo.thumbnailUrl || photo.slideshowUrl || photo.url;
+  const fullSource = photo.slideshowUrl || photo.url || previewSource;
   const isVideo = isVideoMedia(photo);
+  const slideCards = getSlideCardEntries();
+  const hasCards = slideCards.length === 2;
 
   cancelBackgroundFolderPreload();
   clearSlideshowAdvanceTimer();
   resetSlideshowVideoState();
-
-  slideImageEl.onerror = () => {
-    setStatus(`Could not load "${photo.name}" in slideshow view.`, true);
-  };
-
-  slideImageEl.classList.remove("hidden");
-  slideImageEl.fetchPriority = "high";
-  slideImageEl.src = previewSource;
-  slideImageEl.alt = photo.name;
-  if (slideImageFullEl) {
-    slideImageFullEl.classList.remove("hidden");
-    slideImageFullEl.classList.remove("loaded");
-    slideImageFullEl.removeAttribute("src");
-    slideImageFullEl.fetchPriority = "high";
-    slideImageFullEl.alt = photo.name;
-  }
 
   if (slideshowLoaderEl && !isVideo) {
     slideshowLoaderEl.classList.remove("hidden");
   }
 
   if (isVideo) {
+    hideSlidePhotoCards();
     slideImageEl.classList.add("hidden");
     slideImageFullEl?.classList.add("hidden");
     if (slideVideoEl && slideVideoOverlayEl) {
@@ -2019,9 +2060,44 @@ function showSlide(index) {
       return;
     }
 
-    if (slideImageFullEl) {
-      slideImageFullEl.src = photo.url;
-      slideImageFullEl.classList.add("loaded");
+    if (!hasCards) {
+      slideImageEl.classList.remove("hidden");
+      slideImageEl.fetchPriority = "high";
+      slideImageEl.src = fullSource;
+      slideImageEl.alt = photo.name;
+    } else {
+      const incomingIndex = activeSlideCardIndex === 0 ? 1 : 0;
+      const outgoingIndex = activeSlideCardIndex >= 0 ? activeSlideCardIndex : -1;
+      const incomingEntry = slideCards[incomingIndex];
+      const outgoingEntry = outgoingIndex >= 0 ? slideCards[outgoingIndex] : null;
+      const motion = getNextSlideshowMotionPreset();
+      const tilt = getRandomSlideTilt();
+
+      applySlideCardMotion(incomingEntry.card, motion, tilt);
+      incomingEntry.image.fetchPriority = "high";
+      incomingEntry.image.src = fullSource;
+      incomingEntry.image.alt = photo.name;
+      incomingEntry.image.classList.remove("hidden");
+      incomingEntry.card.classList.remove("hidden", "is-leaving");
+      incomingEntry.card.setAttribute("aria-hidden", "false");
+
+      if (outgoingEntry) {
+        outgoingEntry.card.classList.remove("hidden");
+        outgoingEntry.card.classList.add("is-leaving");
+        outgoingEntry.card.classList.remove("is-active");
+        outgoingEntry.card.setAttribute("aria-hidden", "true");
+        window.setTimeout(() => {
+          if (activeSlideCardIndex !== incomingIndex) {
+            resetSlideCard(outgoingEntry);
+          }
+        }, 860);
+      }
+
+      window.requestAnimationFrame(() => {
+        incomingEntry.card.classList.add("is-active");
+      });
+
+      activeSlideCardIndex = incomingIndex;
     }
 
     if (slideshowLoaderEl) {
@@ -2035,13 +2111,53 @@ function showSlide(index) {
       return;
     }
 
+    if (!hasCards) {
+      slideImageEl.classList.remove("hidden");
+      slideImageEl.fetchPriority = "high";
+      slideImageEl.src = previewSource;
+      slideImageEl.alt = photo.name;
+    } else {
+      const incomingIndex = activeSlideCardIndex === 0 ? 1 : 0;
+      const outgoingIndex = activeSlideCardIndex >= 0 ? activeSlideCardIndex : -1;
+      const incomingEntry = slideCards[incomingIndex];
+      const outgoingEntry = outgoingIndex >= 0 ? slideCards[outgoingIndex] : null;
+      const motion = getNextSlideshowMotionPreset();
+      const tilt = getRandomSlideTilt();
+
+      applySlideCardMotion(incomingEntry.card, motion, tilt);
+      incomingEntry.image.fetchPriority = "high";
+      incomingEntry.image.src = previewSource;
+      incomingEntry.image.alt = photo.name;
+      incomingEntry.image.classList.remove("hidden");
+      incomingEntry.card.classList.remove("hidden", "is-leaving");
+      incomingEntry.card.setAttribute("aria-hidden", "false");
+
+      if (outgoingEntry) {
+        outgoingEntry.card.classList.remove("hidden");
+        outgoingEntry.card.classList.add("is-leaving");
+        outgoingEntry.card.classList.remove("is-active");
+        outgoingEntry.card.setAttribute("aria-hidden", "true");
+        window.setTimeout(() => {
+          if (activeSlideCardIndex !== incomingIndex) {
+            resetSlideCard(outgoingEntry);
+          }
+        }, 860);
+      }
+
+      window.requestAnimationFrame(() => {
+        incomingEntry.card.classList.add("is-active");
+      });
+
+      activeSlideCardIndex = incomingIndex;
+    }
+
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
     }
 
     scheduleSlideshowAdvance();
   };
-  fullImage.src = photo.url;
+  fullImage.src = fullSource;
   syncSlideshowPreloadWindow(currentSlideIndex);
 }
 
@@ -2166,10 +2282,9 @@ function closeSlideshow() {
   if (slideshowLoaderEl) {
     slideshowLoaderEl.classList.add("hidden");
   }
-  if (slideImageFullEl) {
-    slideImageFullEl.classList.remove("loaded");
-    slideImageFullEl.removeAttribute("src");
-  }
+  hideSlidePhotoCards();
+  slideImageEl?.removeAttribute("src");
+  slideImageFullEl?.removeAttribute("src");
   window.clearTimeout(openSlideshow.toastTimer);
   openSlideshow.toastTimer = null;
   slideshowPreloadCache.clear();

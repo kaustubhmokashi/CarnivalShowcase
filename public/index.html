@@ -597,8 +597,12 @@
         <button id="prev-slide" type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous photo">
           <span class="slideshow-nav-icon icon-mask icon-arrow-left" aria-hidden="true"></span>
         </button>
-        <img id="slide-image" class="slide-image" alt="" />
-        <img id="slide-image-full" class="slide-image slide-image-full" alt="" />
+        <div id="slide-card-a" class="slide-photo-card hidden" aria-hidden="true">
+          <img id="slide-image" class="slide-image" alt="" />
+        </div>
+        <div id="slide-card-b" class="slide-photo-card hidden" aria-hidden="true">
+          <img id="slide-image-full" class="slide-image slide-image-full" alt="" />
+        </div>
         <video id="slide-video" class="slide-video hidden" playsinline preload="metadata" aria-label="Video slide"></video>
         <button id="slide-video-overlay" type="button" class="slide-video-overlay hidden" aria-label="Play video">
           <span class="slide-video-play-icon icon-mask icon-play" aria-hidden="true"></span>
