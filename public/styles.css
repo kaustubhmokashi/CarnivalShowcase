@@ -3149,28 +3149,34 @@ input[type="checkbox"]:checked {
 }
 
 .event-public-grid {
-  width: min(1180px, calc(100vw - 360px));
+  width: 100%;
   column-width: 220px;
   column-gap: var(--space-2);
 }
 
 .event-photo-grid {
-  width: min(1180px, calc(100vw - 360px));
+  width: 100%;
   column-width: 220px;
   column-gap: var(--space-2);
 }
 
 .manage-event-shell {
-  width: min(1180px, calc(100vw - 360px));
+  width: 100%;
+  min-height: 100vh;
   display: grid;
-  gap: var(--space-2);
+  align-content: start;
+  gap: 36px;
+  padding: 0 0 var(--space-5);
 }
 
 .manage-event-cover {
-  min-height: 220px;
+  position: relative;
+  width: 100%;
+  min-height: 1000px;
   display: grid;
   place-items: center;
-  padding: var(--space-2);
+  overflow: hidden;
+  padding: 40px 24px;
   background: #000000;
 }
 
@@ -3186,13 +3192,17 @@ input[type="checkbox"]:checked {
 
 .manage-event-main {
   display: grid;
-  gap: var(--space-2);
+  gap: 36px;
 }
 
 .manage-event-tabs-row {
   display: block;
-  padding-top: 64px;
-  padding-left: 32px;
+  width: 100%;
+  padding: 6px 0 0;
+}
+
+.manage-event-tabs {
+  padding-left: var(--space-3);
 }
 
 .event-drive-connect-row {
@@ -3236,31 +3246,29 @@ input[type="checkbox"]:checked {
 
 .event-public-screen.active {
   display: block;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
 .event-public-shell {
-  width: min(1180px, calc(100vw - 48px));
+  position: relative;
+  width: 100%;
   min-height: 100vh;
-  max-height: 100vh;
-  margin: 0 auto;
-  overflow-y: auto;
-  padding: var(--space-3) var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0 0 var(--space-5);
   display: grid;
-  gap: var(--space-2);
-}
-
-.event-public-logo-link {
-  position: fixed;
+  align-content: start;
+  gap: 36px;
 }
 
 .event-public-cover {
-  min-height: 220px;
+  position: relative;
+  width: 100%;
+  min-height: 1000px;
   display: grid;
   place-items: center;
+  overflow: hidden;
   background: #000000;
-  padding: var(--space-2);
+  padding: 40px 24px;
 }
 
 .event-public-cover-upload {
@@ -3277,12 +3285,12 @@ input[type="checkbox"]:checked {
 }
 
 .event-upload-bar {
-  min-height: 220px;
+  min-height: 1000px;
   display: grid;
 }
 
 .event-upload-trigger {
-  min-height: 220px;
+  min-height: 1000px;
   width: 100%;
   display: grid;
   place-items: center;
@@ -3293,6 +3301,30 @@ input[type="checkbox"]:checked {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+}
+
+.manage-event-panel .studio-event-logo-link,
+.event-public-shell .studio-event-logo-link {
+  position: absolute;
+  top: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
+  left: var(--brand-logo-left);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  min-height: var(--cover-header-height);
+  transform: translateY(-50%);
+}
+
+.manage-event-panel .studio-wizard-head {
+  position: absolute;
+  top: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
+  right: var(--brand-logo-left);
+  z-index: 6;
+  transform: translateY(-50%);
+}
+
+.manage-event-panel .studio-wizard-head .studio-kicker {
+  display: none;
 }
 
 .event-upload-trigger.is-disabled {
@@ -3900,11 +3932,15 @@ input[type="checkbox"]:checked {
   .event-public-cover,
   .event-upload-bar,
   .event-upload-trigger {
-    min-height: 180px;
+    min-height: 100vh;
+    min-height: 100svh;
   }
 
   .manage-event-tabs-row {
-    padding-top: 64px;
+    padding-top: 14px;
+  }
+
+  .manage-event-tabs {
     padding-left: 0;
   }
 
