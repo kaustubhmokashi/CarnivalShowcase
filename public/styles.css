@@ -1160,19 +1160,20 @@ label:focus-within {
 }
 
 .cover-action-button {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: inline-grid;
   place-items: center;
   border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.9);
   color: #000000;
   cursor: pointer;
 }
 
 .cover-action-button .icon-mask {
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   background-color: currentColor;
 }
 

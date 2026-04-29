@@ -2167,6 +2167,8 @@ function showSlide(index) {
     activeEntry.card.classList.add("is-active");
     activeEntry.card.setAttribute("aria-hidden", "false");
     if (previousEntry?.card && previousEntry !== activeEntry) {
+      previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
+      previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
       previousEntry.card.classList.remove("is-active");
       previousEntry.card.classList.add("is-leaving");
       window.setTimeout(() => resetSlideCard(previousEntry), 860);
