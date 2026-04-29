@@ -1271,7 +1271,7 @@ function buildEventShareMessage(event) {
 }
 
 async function shareEventCard(event) {
-  const qrDataUrl = event?.qrPngDataUrl || generateEventQrDataUrl(event);
+  const qrDataUrl = await ensureEventQrPngDataUrl(event);
   const shareText = buildEventShareMessage(event);
   const fileName = buildEventQrFilename(event);
   const shareUrl = getEventUploadUrl(event);
@@ -1326,6 +1326,49 @@ function generateEventQrDataUrl(event) {
     throw new Error("QR code generator is unavailable.");
   }
   return window.generateQrDataUrl(qrTarget);
+}
+
+async function rasterizeQrDataUrlToPng(dataUrl) {
+  if (!dataUrl) {
+    throw new Error("QR code generator is unavailable.");
+  }
+  if (dataUrl.startsWith("data:image/png")) {
+    return dataUrl;
+  }
+
+  const image = new Image();
+  image.decoding = "async";
+  const loadPromise = new Promise((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Could not render QR code."));
+  });
+  image.src = dataUrl;
+  await loadPromise;
+
+  const size = Math.max(image.naturalWidth || image.width || 0, image.naturalHeight || image.height || 0, 512);
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("QR code generator is unavailable.");
+  }
+  context.clearRect(0, 0, size, size);
+  context.drawImage(image, 0, 0, size, size);
+  return canvas.toDataURL("image/png");
+}
+
+async function ensureEventQrPngDataUrl(event) {
+  const existingDataUrl = String(event?.qrPngDataUrl || "").trim();
+  if (existingDataUrl.startsWith("data:image/png")) {
+    return existingDataUrl;
+  }
+
+  const pngDataUrl = await rasterizeQrDataUrlToPng(existingDataUrl || generateEventQrDataUrl(event));
+  if (event && typeof event === "object") {
+    event.qrPngDataUrl = pngDataUrl;
+  }
+  return pngDataUrl;
 }
 
 function renderSavedEventsTable() {
@@ -1982,6 +2025,7 @@ async function createEvent(payload) {
   }
   const createdEvent = body.event;
   if (createdEvent?.id && !createdEvent.qrPngDataUrl) {
+    const qrPngDataUrl = await ensureEventQrPngDataUrl(createdEvent);
     return updateEvent({
       id: createdEvent.id,
       name: createdEvent.name || "",
@@ -1993,7 +2037,7 @@ async function createEvent(payload) {
       template: createdEvent.template || "template-1",
       logoLink: createdEvent.logoLink || "",
       homepageLink: createdEvent.homepageLink || "",
-      qrPngDataUrl: generateEventQrDataUrl(createdEvent),
+      qrPngDataUrl,
     });
   }
   return createdEvent;
@@ -2075,6 +2119,7 @@ async function deleteEvent(event) {
 async function downloadEventQr(event) {
   let hydratedEvent = event;
   if (event?.id && !event.qrPngDataUrl) {
+    const qrPngDataUrl = await ensureEventQrPngDataUrl(event);
     hydratedEvent = await updateEvent({
       id: event.id,
       name: event.name || "",
@@ -2086,10 +2131,10 @@ async function downloadEventQr(event) {
       template: event.template || "template-1",
       logoLink: event.logoLink || "",
       homepageLink: event.homepageLink || "",
-      qrPngDataUrl: generateEventQrDataUrl(event),
+      qrPngDataUrl,
     });
   }
-  const href = hydratedEvent?.qrPngDataUrl || generateEventQrDataUrl(hydratedEvent);
+  const href = await ensureEventQrPngDataUrl(hydratedEvent);
 
   const anchor = document.createElement("a");
   anchor.href = href;
