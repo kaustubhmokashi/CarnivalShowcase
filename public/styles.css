@@ -3169,6 +3169,16 @@ input[type="checkbox"]:checked {
   padding: 0 0 var(--space-5);
 }
 
+.manage-event-panel.studio-wizard {
+  width: 100%;
+  min-height: 100vh;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  padding: 0 0 var(--space-5);
+  align-content: start;
+}
+
 .manage-event-cover {
   position: relative;
   width: 100%;
@@ -3325,6 +3335,10 @@ input[type="checkbox"]:checked {
 
 .manage-event-panel .studio-wizard-head .studio-kicker {
   display: none;
+}
+
+.manage-event-panel .studio-status {
+  padding-left: var(--space-3);
 }
 
 .event-upload-trigger.is-disabled {
