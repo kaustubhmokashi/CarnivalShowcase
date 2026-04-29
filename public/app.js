@@ -2050,6 +2050,11 @@ function showSlide(index) {
 
   slideVideoEl?.classList.add("hidden");
   hideSlidePhotoCards();
+  if (slideCardEl) {
+    slideCardEl.classList.remove("hidden", "is-leaving");
+    slideCardEl.classList.add("is-active");
+    slideCardEl.setAttribute("aria-hidden", "false");
+  }
   slideImageFullEl?.classList.add("hidden");
   slideImageEl.classList.remove("hidden");
   slideImageEl.fetchPriority = "high";
