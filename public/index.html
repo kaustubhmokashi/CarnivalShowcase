@@ -552,7 +552,6 @@
               <input id="event-upload-input" name="photo" type="file" accept="image/*" multiple hidden />
             </form>
           </div>
-          <p id="event-upload-status" class="studio-status" aria-live="polite"></p>
           <div id="event-public-grid" class="gallery-grid event-public-grid">
             <p class="studio-empty">No live photos yet.</p>
           </div>
@@ -561,7 +560,12 @@
 
       <section id="screen-event-present" class="screen event-present-screen">
         <div class="event-present-shell">
-          <img id="event-present-image" class="event-present-image" alt="" />
+          <div id="event-present-card-a" class="event-present-card">
+            <img id="event-present-image-a" class="event-present-image" alt="" />
+          </div>
+          <div id="event-present-card-b" class="event-present-card">
+            <img id="event-present-image-b" class="event-present-image" alt="" />
+          </div>
         </div>
       </section>
     </div>

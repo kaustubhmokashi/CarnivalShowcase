@@ -155,7 +155,10 @@ const eventPublicGrid = document.getElementById("event-public-grid");
 const eventUploadPreview = document.getElementById("event-upload-preview");
 const eventUploadQueue = document.getElementById("event-upload-queue");
 const screenEventPresent = document.getElementById("screen-event-present");
-const eventPresentImage = document.getElementById("event-present-image");
+const eventPresentCardA = document.getElementById("event-present-card-a");
+const eventPresentCardB = document.getElementById("event-present-card-b");
+const eventPresentImageA = document.getElementById("event-present-image-a");
+const eventPresentImageB = document.getElementById("event-present-image-b");
 const eventPresentExitButton = document.getElementById("event-present-exit");
 const STUDIO_PROFILE_CACHE_KEY = "carnival_studio_profile_cache";
 
@@ -190,6 +193,7 @@ let currentEventUploadQueue = [];
 let currentPublicEvent = null;
 let currentEventPresentationSlug = "";
 let currentEventPresentationRefreshTimer = null;
+let currentEventPresentationCardIndex = 0;
 let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
@@ -888,6 +892,7 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   studioDashboardPanel?.classList.add("hidden");
   createEventPanel?.classList.add("hidden");
   manageEventPanel?.classList.remove("hidden");
+  document.body.classList.remove("studio-scroll-lock");
   if (manageEventKicker) {
     manageEventKicker.textContent = event?.name || "Manage event";
   }
@@ -2262,10 +2267,14 @@ function createEventUploadQueueItem(file) {
   card.innerHTML = `
     <img class="event-upload-queue-image" alt="${escapeMarkup(file.name || "Uploading photo")}" />
     <div class="event-upload-queue-loader" aria-hidden="true"></div>
+    <div class="event-upload-queue-success hidden" aria-hidden="true">
+      <span class="icon-mask icon-tick"></span>
+    </div>
   `;
 
   const imageEl = card.querySelector(".event-upload-queue-image");
   const loaderEl = card.querySelector(".event-upload-queue-loader");
+  const successEl = card.querySelector(".event-upload-queue-success");
   const previewUrl = URL.createObjectURL(file);
   imageEl.src = previewUrl;
   eventUploadQueue.appendChild(card);
@@ -2294,6 +2303,7 @@ function createEventUploadQueueItem(file) {
       if (loaderEl) {
         loaderEl.innerHTML = "";
       }
+      successEl?.classList.remove("hidden");
     },
     markFailed() {
       card.classList.remove("is-uploading");
@@ -2507,7 +2517,7 @@ async function loadPublicEvent(slug) {
   screenStudio.classList.remove("active");
   screenEventPresent?.classList.remove("active");
   screenEventPublic?.classList.add("active");
-  document.body.classList.add("studio-scroll-lock");
+  document.body.classList.remove("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
   const eventLogoSource = resolveStudioLogoSource(event.logoLink) || PRODUCT_LOGO_PATH;
   if (eventPublicLogo && eventPublicLogoLink) {
@@ -2596,6 +2606,20 @@ function stopEventPresentation() {
   clearEventPresentationSlideTimer();
   clearEventPresentationRefreshTimer();
   currentEventPresentationSlug = "";
+  currentEventPresentationCardIndex = 0;
+  [eventPresentCardA, eventPresentCardB].forEach((card) => {
+    if (!card) {
+      return;
+    }
+    card.classList.remove("is-active", "is-leaving");
+  });
+  [eventPresentImageA, eventPresentImageB].forEach((image) => {
+    if (!image) {
+      return;
+    }
+    image.removeAttribute("src");
+    image.alt = "";
+  });
 }
 
 function clearEventPresentationSlideTimer() {
@@ -2624,15 +2648,53 @@ function queueNextEventPresentationSlide() {
 
 async function renderEventPresentationSlide() {
   const photo = currentEventPresentationPhotos[currentEventPresentationIndex];
-  if (!photo || !eventPresentImage) {
+  if (!photo || !eventPresentCardA || !eventPresentCardB || !eventPresentImageA || !eventPresentImageB) {
     return;
   }
   clearEventPresentationSlideTimer();
   const presentationUrl = getEventPhotoPresentationUrl(photo);
   const preload = new Image();
   preload.onload = () => {
-    eventPresentImage.src = presentationUrl;
-    eventPresentImage.alt = photo.name || "Event photo";
+    const cards = [eventPresentCardA, eventPresentCardB];
+    const images = [eventPresentImageA, eventPresentImageB];
+    const nextIndex = currentEventPresentationCardIndex === 0 ? 1 : 0;
+    const activeCard = cards[currentEventPresentationCardIndex];
+    const nextCard = cards[nextIndex];
+    const nextImage = images[nextIndex];
+    const offsetX = Math.max(260, Math.round(window.innerWidth * 0.5));
+    const offsetY = Math.max(220, Math.round(window.innerHeight * 0.42));
+    const corners = [
+      { fromX: -offsetX, fromY: -offsetY, toX: offsetX, toY: offsetY },
+      { fromX: offsetX, fromY: -offsetY, toX: -offsetX, toY: offsetY },
+      { fromX: -offsetX, fromY: offsetY, toX: offsetX, toY: -offsetY },
+      { fromX: offsetX, fromY: offsetY, toX: -offsetX, toY: -offsetY },
+    ];
+    const motion = corners[Math.floor(Math.random() * corners.length)];
+    const tilt = ((Math.random() * 20) - 10).toFixed(2);
+
+    nextImage.src = presentationUrl;
+    nextImage.alt = photo.name || "Event photo";
+    nextCard.style.setProperty("--event-from-x", `${motion.fromX}px`);
+    nextCard.style.setProperty("--event-from-y", `${motion.fromY}px`);
+    nextCard.style.setProperty("--event-to-x", `${motion.toX}px`);
+    nextCard.style.setProperty("--event-to-y", `${motion.toY}px`);
+    nextCard.style.setProperty("--event-tilt", `${tilt}deg`);
+    nextCard.classList.remove("is-leaving");
+    nextCard.classList.add("is-active");
+
+    if (activeCard.classList.contains("is-active")) {
+      activeCard.style.setProperty("--event-from-x", "0px");
+      activeCard.style.setProperty("--event-from-y", "0px");
+      activeCard.style.setProperty("--event-to-x", `${motion.toX}px`);
+      activeCard.style.setProperty("--event-to-y", `${motion.toY}px`);
+      activeCard.style.setProperty("--event-tilt", `${tilt}deg`);
+      activeCard.classList.add("is-leaving");
+      activeCard.classList.remove("is-active");
+      window.setTimeout(() => {
+        activeCard.classList.remove("is-leaving");
+      }, 860);
+    }
+    currentEventPresentationCardIndex = nextIndex;
     queueNextEventPresentationSlide();
   };
   preload.onerror = () => {
@@ -2661,10 +2723,13 @@ async function refreshEventPresentationFeed() {
     if (!nextPhotos.length) {
       currentEventPresentationIndex = 0;
       clearEventPresentationSlideTimer();
-      if (eventPresentImage) {
-        eventPresentImage.removeAttribute("src");
-        eventPresentImage.alt = "";
-      }
+      [eventPresentCardA, eventPresentCardB].forEach((card) => card?.classList.remove("is-active", "is-leaving"));
+      [eventPresentImageA, eventPresentImageB].forEach((image) => {
+        image?.removeAttribute("src");
+        if (image) {
+          image.alt = "";
+        }
+      });
     } else if (currentPhoto?.id) {
       const nextIndex = nextPhotos.findIndex((photo) => photo.id === currentPhoto.id);
       currentEventPresentationIndex = nextIndex >= 0 ? nextIndex : 0;
@@ -2714,10 +2779,13 @@ async function loadEventPresentation(slug) {
     };
   }
   if (!currentEventPresentationPhotos.length) {
-    if (eventPresentImage) {
-      eventPresentImage.removeAttribute("src");
-      eventPresentImage.alt = "";
-    }
+    [eventPresentCardA, eventPresentCardB].forEach((card) => card?.classList.remove("is-active", "is-leaving"));
+    [eventPresentImageA, eventPresentImageB].forEach((image) => {
+      image?.removeAttribute("src");
+      if (image) {
+        image.alt = "";
+      }
+    });
     currentEventPresentationRefreshTimer = window.setTimeout(() => {
       void refreshEventPresentationFeed();
     }, 5000);
@@ -3737,10 +3805,13 @@ function initializeFirebase() {
       if (route.mode === "present") {
         screenEventPublic?.classList.remove("active");
         screenEventPresent?.classList.add("active");
-        if (eventPresentImage) {
-          eventPresentImage.removeAttribute("src");
-          eventPresentImage.alt = "";
-        }
+        [eventPresentCardA, eventPresentCardB].forEach((card) => card?.classList.remove("is-active", "is-leaving"));
+        [eventPresentImageA, eventPresentImageB].forEach((image) => {
+          image?.removeAttribute("src");
+          if (image) {
+            image.alt = "";
+          }
+        });
         setStudioStatus(eventUploadStatus, "");
         window.CarnivalGallery?.showError?.(error.message || "This presentation could not be opened.");
       } else {
