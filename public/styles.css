@@ -3158,6 +3158,7 @@ input[type="checkbox"]:checked {
   width: 100%;
   column-width: 220px;
   column-gap: var(--space-2);
+  max-width: none;
 }
 
 .manage-event-shell {
@@ -3170,10 +3171,11 @@ input[type="checkbox"]:checked {
 }
 
 .manage-event-panel.studio-wizard {
-  width: 100%;
+  width: 100vw;
   min-height: 100vh;
   max-height: none;
-  margin: 0;
+  max-width: none;
+  margin: 0 calc(50% - 50vw);
   overflow: visible;
   padding: 0 0 var(--space-5);
   align-content: start;
@@ -3203,6 +3205,7 @@ input[type="checkbox"]:checked {
 .manage-event-main {
   display: grid;
   gap: 36px;
+  width: 100%;
 }
 
 .manage-event-tabs-row {

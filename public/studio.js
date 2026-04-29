@@ -172,7 +172,7 @@ let activeAdminFilter = "active";
 let wizardState = createEmptyWizardState();
 let authHasResolved = false;
 let currentWizardStep = 1;
-let activeEventPhotoFilter = "live";
+let activeEventPhotoFilter = "queue";
 let currentManagedEvent = null;
 let moderationAccessToken = "";
 let driveConnectionStatus = {
@@ -892,7 +892,8 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
     manageEventCoverTitle.textContent = event?.name || "Event";
     manageEventCoverTitle.style.color = palette.text;
   }
-  showEventPhotoFilter("live");
+  updateEventPhotoFilterTabLabels();
+  showEventPhotoFilter("queue");
   if (!skipHistory) {
     history.pushState({}, "", token ? `/event-moderate/${encodeURIComponent(token)}` : `/studio?event=${encodeURIComponent(event.id)}`);
   }
@@ -1531,8 +1532,23 @@ function renderEventPhotoGrid() {
   });
 }
 
+function updateEventPhotoFilterTabLabels() {
+  const queueCount = Array.isArray(currentManagedEvent?.queuedPhotos) ? currentManagedEvent.queuedPhotos.length : 0;
+  eventPhotoFilterTabs.forEach((tab) => {
+    const filter = tab.dataset.eventPhotoFilter || "live";
+    if (filter === "queue") {
+      tab.textContent = `Queue(${queueCount})`;
+      return;
+    }
+    if (filter === "live") {
+      tab.textContent = "Live";
+    }
+  });
+}
+
 function showEventPhotoFilter(filter) {
   activeEventPhotoFilter = filter === "queue" ? "queue" : "live";
+  updateEventPhotoFilterTabLabels();
   eventPhotoFilterTabs.forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.eventPhotoFilter === activeEventPhotoFilter);
   });
