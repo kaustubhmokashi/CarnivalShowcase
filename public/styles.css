@@ -1535,7 +1535,7 @@ input[type="checkbox"]:checked {
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: #000000;
+  background: var(--bg);
 }
 
 .slideshow-frame {
