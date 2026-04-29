@@ -2,10 +2,10 @@
   const PAD0 = 0xec;
   const PAD1 = 0x11;
   const BYTE_MODE = 0b0100;
-  const VERSION = 3;
-  const SIZE = 29;
-  const DATA_CODEWORDS = 55;
-  const EC_CODEWORDS = 15;
+  const VERSION = 6;
+  const SIZE = 41;
+  const DATA_CODEWORDS = 136;
+  const EC_CODEWORDS = 36;
   const TOTAL_CODEWORDS = DATA_CODEWORDS + EC_CODEWORDS;
 
   const EXP_TABLE = new Array(512);
@@ -71,7 +71,7 @@
 
   function createCodewords(text) {
     const bytes = stringToUtf8Bytes(text);
-    if (bytes.length > 53) {
+    if (bytes.length > 134) {
       throw new Error("QR payload is too long for local generator.");
     }
 
@@ -298,7 +298,7 @@
 
     return [
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBox} ${viewBox}" shape-rendering="crispEdges">`,
-      '<rect width="100%" height="100%" fill="#ffffff"/>',
+      '<rect width="100%" height="100%" fill="transparent"/>',
       '<g fill="#000000">',
       cells.join(""),
       "</g>",
@@ -312,7 +312,7 @@
     placeFinder(matrix, 0, SIZE - 7);
     placeFinder(matrix, SIZE - 7, 0);
     placeTiming(matrix);
-    placeAlignment(matrix, 22, 22);
+    placeAlignment(matrix, 34, 34);
     reserveFormatInfo(matrix);
     placeDarkModule(matrix);
     const codewords = createCodewords(text);
