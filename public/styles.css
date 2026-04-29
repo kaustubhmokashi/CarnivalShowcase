@@ -3760,7 +3760,7 @@ input[type="checkbox"]:checked {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: #000000;
+  background: rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
 }
@@ -3833,6 +3833,7 @@ input[type="checkbox"]:checked {
   max-height: min(78vh, 860px);
   object-fit: contain;
   background: #ffffff;
+  border-radius: 12px;
 }
 
 .studio-toast {
@@ -4281,6 +4282,30 @@ input[type="checkbox"]:checked {
     margin: 0 calc(50% - 50vw);
     padding-left: 0;
     padding-right: 0;
+  }
+
+  #manage-event-panel.studio-wizard {
+    width: 100vw;
+    max-width: none;
+    margin: 0 calc(50% - 50vw);
+    padding-left: 0;
+    padding-right: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  #manage-event-panel .manage-event-main {
+    width: 100%;
+    max-width: none;
+    padding-left: 16px;
+    padding-right: 16px;
+    box-sizing: border-box;
+  }
+
+  #manage-event-photo-grid.event-photo-grid,
+  #event-public-grid.event-public-grid {
+    width: 100%;
+    max-width: none;
   }
 }
 

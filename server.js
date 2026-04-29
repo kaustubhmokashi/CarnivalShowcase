@@ -403,8 +403,26 @@ function sanitizeEventForClient(event) {
     parentFolderUrl: normalized.parentFolderUrl || "",
     queueFolderUrl: normalized.queueFolderUrl || "",
     liveFolderUrl: normalized.liveFolderUrl || "",
+    backgroundUrl: normalized.backgroundUrl || "",
     template: normalized.template || "template-1",
   };
+}
+
+function getFileExtensionFromMimeType(mimeType = "") {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized === "image/jpeg" || normalized === "image/jpg") {
+    return "jpg";
+  }
+  if (normalized === "image/png") {
+    return "png";
+  }
+  if (normalized === "image/webp") {
+    return "webp";
+  }
+  if (normalized === "image/gif") {
+    return "gif";
+  }
+  return "jpg";
 }
 
 function readAllEvents() {
@@ -3262,6 +3280,8 @@ async function handleCreateEvent(req, res) {
       queueFolderUrl: String(queueFolder.webViewLink || "").trim(),
       liveFolderId: liveFolder.id,
       liveFolderUrl: String(liveFolder.webViewLink || "").trim(),
+      backgroundDriveFileId: "",
+      backgroundUrl: "",
       template: "template-1",
       queuedPhotos: [],
       livePhotos: [],
@@ -3634,6 +3654,59 @@ async function handleEventUpload(req, res) {
   }
 }
 
+async function handleEventBackgroundUpload(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const contentType = req.headers["content-type"] || "";
+    const rawBody = await readRawRequestBuffer(req);
+    const { fields, files } = parseMultipartForm(rawBody, contentType);
+    const eventId = String(fields.eventId || "").trim();
+    if (!eventId) {
+      sendJson(res, 400, { error: "Event id is required." });
+      return;
+    }
+
+    const store = readEventsStore();
+    const event = store.events.find((entry) => entry.id === eventId && entry.ownerUid === account.localId);
+    if (!event) {
+      sendJson(res, 404, { error: "Event not found." });
+      return;
+    }
+
+    const file = files.find((entry) => entry.fieldName === "background") || files[0];
+    if (!file?.buffer?.length) {
+      sendJson(res, 400, { error: "Please upload a background image." });
+      return;
+    }
+    if (!String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)) {
+      sendJson(res, 400, { error: "Only image files are allowed for background." });
+      return;
+    }
+
+    const extension = getFileExtensionFromMimeType(file.mimeType);
+    const driveAccessToken = await getDriveWriteAccessTokenForUser(account.localId);
+    const driveFile = await driveUploadFileToFolder({
+      folderId: event.parentFolderId,
+      fileName: `Background.${extension}`,
+      mimeType: file.mimeType,
+      buffer: file.buffer,
+      accessToken: driveAccessToken,
+    });
+    const driveFileId = String(driveFile?.id || "").trim();
+    event.backgroundDriveFileId = driveFileId;
+    event.backgroundUrl = createImageUrl(driveFileId, "full");
+    writeEventsStore(store);
+
+    sendJson(res, 200, { event: sanitizeEventForClient(normalizeEventVisibility(event)) });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not upload event background." });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const requestHost = normalizeHostname((req.headers.host || "").split(":")[0]);
@@ -3770,6 +3843,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/events/upload" && req.method === "POST") {
     await handleEventUpload(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/events/background" && req.method === "POST") {
+    await handleEventBackgroundUpload(req, res);
     return;
   }
 

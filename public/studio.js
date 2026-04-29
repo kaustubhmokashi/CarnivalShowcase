@@ -117,6 +117,7 @@ const eventStartDateInput = document.getElementById("event-start-date");
 const eventStartTimeInput = document.getElementById("event-start-time");
 const eventEndDateInput = document.getElementById("event-end-date");
 const eventEndTimeInput = document.getElementById("event-end-time");
+const eventBackgroundInput = document.getElementById("event-background-input");
 const createEventStatus = document.getElementById("create-event-status");
 const manageEventPanel = document.getElementById("manage-event-panel");
 const closeManageEventButton = document.getElementById("close-manage-event");
@@ -2144,6 +2145,22 @@ async function updateEvent(payload) {
   return body.event;
 }
 
+async function uploadEventBackground(eventId, file) {
+  const form = new FormData();
+  form.append("eventId", eventId);
+  form.append("background", file);
+  const response = await fetch("/api/events/background", {
+    method: "POST",
+    headers: await getAdminAuthHeaders(),
+    body: form,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.error || "Could not upload event background.");
+  }
+  return body.event;
+}
+
 async function moderateEventPhoto(photoId, action) {
   if (!currentManagedEvent?.id || !photoId || !action) {
     return;
@@ -2607,6 +2624,12 @@ function stopEventPresentation() {
   clearEventPresentationRefreshTimer();
   currentEventPresentationSlug = "";
   currentEventPresentationCardIndex = 0;
+  if (screenEventPresent) {
+    screenEventPresent.style.backgroundImage = "";
+    screenEventPresent.style.backgroundSize = "";
+    screenEventPresent.style.backgroundPosition = "";
+    screenEventPresent.style.backgroundRepeat = "";
+  }
   [eventPresentCardA, eventPresentCardB].forEach((card) => {
     if (!card) {
       return;
@@ -2771,6 +2794,13 @@ async function loadEventPresentation(slug) {
   screenEventPublic?.classList.remove("active");
   screenEventPresent?.classList.add("active");
   document.body.classList.remove("studio-scroll-lock");
+  if (screenEventPresent) {
+    const backgroundUrl = String(event.backgroundUrl || "").trim();
+    screenEventPresent.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : "";
+    screenEventPresent.style.backgroundSize = backgroundUrl ? "cover" : "";
+    screenEventPresent.style.backgroundPosition = backgroundUrl ? "center center" : "";
+    screenEventPresent.style.backgroundRepeat = backgroundUrl ? "no-repeat" : "";
+  }
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
   if (eventPresentExitButton) {
     eventPresentExitButton.onclick = () => {
@@ -4301,8 +4331,19 @@ createEventForm?.addEventListener("submit", async (event) => {
     const savedEvent = currentEditingEventId
       ? await updateEvent(eventPayload)
       : await createEvent(eventPayload);
+    const selectedBackground = eventBackgroundInput?.files?.[0] || null;
+    if (!currentEditingEventId && !selectedBackground) {
+      throw new Error("Please upload a presentation background image.");
+    }
+    if (selectedBackground && savedEvent?.id) {
+      setStudioStatus(createEventStatus, "Uploading background...");
+      await uploadEventBackground(savedEvent.id, selectedBackground);
+    }
     setStudioStatus(createEventStatus, currentEditingEventId ? "Event saved." : "Event created.");
     createEventForm.reset();
+    if (eventBackgroundInput) {
+      eventBackgroundInput.value = "";
+    }
     await loadEvents();
     closeCreateEventPanel();
     showStudioDashboardSection("events");
