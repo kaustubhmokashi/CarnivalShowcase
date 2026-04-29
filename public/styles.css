@@ -3227,7 +3227,8 @@ input[type="checkbox"]:checked {
 .manage-event-cover {
   position: relative;
   width: 100%;
-  min-height: 1000px;
+  min-height: 50vh;
+  min-height: 50svh;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -3249,16 +3250,18 @@ input[type="checkbox"]:checked {
   display: grid;
   gap: 36px;
   width: 100%;
+  padding-left: 32px;
+  padding-right: 32px;
 }
 
 .manage-event-tabs-row {
   display: block;
   width: 100%;
-  padding: 6px 0 0;
+  padding: 32px 0 0;
 }
 
 .manage-event-tabs {
-  padding-left: var(--space-3);
+  padding-left: 0;
 }
 
 .event-drive-connect-row {
@@ -4119,12 +4122,16 @@ input[type="checkbox"]:checked {
     width: 100%;
   }
 
-  .manage-event-cover,
   .event-public-cover,
   .event-upload-bar,
   .event-upload-trigger {
     min-height: 100vh;
     min-height: 100svh;
+  }
+
+  .manage-event-cover {
+    min-height: 50vh;
+    min-height: 50svh;
   }
 
   .manage-event-tabs-row {
