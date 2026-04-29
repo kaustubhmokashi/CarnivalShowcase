@@ -265,6 +265,9 @@ function findEventOwnerUidByDriveFileId(fileId) {
 
   const events = readEventsStore().events || [];
   for (const event of events) {
+    if (String(event?.backgroundDriveFileId || "").trim() === normalizedFileId) {
+      return String(event?.ownerUid || "").trim();
+    }
     const photoLists = [event?.queuedPhotos || [], event?.livePhotos || [], event?.rejectedPhotos || []];
     for (const list of photoLists) {
       if (list.some((photo) => String(photo?.driveFileId || "").trim() === normalizedFileId)) {

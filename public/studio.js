@@ -899,11 +899,16 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   }
   const palette = getEventCardPalette(event);
   if (manageEventCover) {
-    manageEventCover.style.background = palette.background;
+    const backgroundUrl = String(event?.backgroundUrl || "").trim();
+    manageEventCover.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : "";
+    manageEventCover.style.backgroundSize = backgroundUrl ? "cover" : "";
+    manageEventCover.style.backgroundPosition = backgroundUrl ? "center center" : "";
+    manageEventCover.style.backgroundRepeat = backgroundUrl ? "no-repeat" : "";
+    manageEventCover.style.backgroundColor = backgroundUrl ? "transparent" : palette.background;
   }
   if (manageEventCoverTitle) {
     manageEventCoverTitle.textContent = event?.name || "Event";
-    manageEventCoverTitle.style.color = palette.text;
+    manageEventCoverTitle.style.color = String(event?.backgroundUrl || "").trim() ? "#ffffff" : palette.text;
   }
   updateEventPhotoFilterTabLabels();
   showEventPhotoFilter("queue");
@@ -1458,6 +1463,7 @@ function renderSavedEventsTable() {
     card.className = "saved-page-card saved-event-card";
     const phaseLabel = formatEventPhaseLabel(event.phase);
     const palette = getEventCardPalette(event);
+    const eventBackgroundUrl = String(event?.backgroundUrl || "").trim();
     card.innerHTML = `
       <div class="saved-page-thumb saved-event-thumb" style="--event-card-bg:${escapeMarkup(palette.background)};--event-card-text:${escapeMarkup(palette.text)};">
         <p class="saved-event-thumb-title">${escapeMarkup(event.name || "Untitled event")}</p>
@@ -1527,6 +1533,10 @@ function renderSavedEventsTable() {
     card.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
       await deleteEvent(event);
     });
+    const eventThumb = card.querySelector(".saved-event-thumb");
+    if (eventThumb) {
+      eventThumb.style.setProperty("--event-card-image", eventBackgroundUrl ? `url("${eventBackgroundUrl}")` : "none");
+    }
     savedEventsTable.appendChild(card);
   });
 }
@@ -2092,6 +2102,20 @@ async function refreshManagedEvent(eventId = currentManagedEvent?.id) {
   }
   if (manageEventKicker) {
     manageEventKicker.textContent = currentManagedEvent?.name || "Manage event";
+  }
+  const refreshedPalette = getEventCardPalette(currentManagedEvent || {});
+  if (manageEventCover) {
+    const refreshedBackgroundUrl = String(currentManagedEvent?.backgroundUrl || "").trim();
+    manageEventCover.style.backgroundImage = refreshedBackgroundUrl ? `url("${refreshedBackgroundUrl}")` : "";
+    manageEventCover.style.backgroundSize = refreshedBackgroundUrl ? "cover" : "";
+    manageEventCover.style.backgroundPosition = refreshedBackgroundUrl ? "center center" : "";
+    manageEventCover.style.backgroundRepeat = refreshedBackgroundUrl ? "no-repeat" : "";
+    manageEventCover.style.backgroundColor = refreshedBackgroundUrl ? "transparent" : refreshedPalette.background;
+  }
+  if (manageEventCoverTitle) {
+    manageEventCoverTitle.style.color = String(currentManagedEvent?.backgroundUrl || "").trim()
+      ? "#ffffff"
+      : refreshedPalette.text;
   }
   renderEventPhotoGrid();
 }
