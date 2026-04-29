@@ -1438,7 +1438,7 @@ function renderEventPhotoGrid() {
     const approveAction = activeEventPhotoFilter === "queue" ? "approve" : "approve-live";
     const rejectAction = activeEventPhotoFilter === "queue" ? "reject" : "remove-live";
     card.innerHTML = `
-      <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <img src="${escapeMarkup(getEventPhotoPreviewUrl(photo))}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
       <div class="event-photo-review-overlay">
         <div class="event-photo-review-actions">
           <button type="button" class="event-photo-review-button approve" data-action="${approveAction}" aria-label="Approve photo">
@@ -2117,6 +2117,10 @@ function getEventPhotoLikeCount(photo) {
   return Math.max(0, Number(photo?.likeCount) || 0);
 }
 
+function getEventPhotoPreviewUrl(photo) {
+  return String(photo?.slideshowUrl || photo?.fullUrl || photo?.thumbnailUrl || "").trim();
+}
+
 function renderEventPhotoLikeBadge(photo) {
   const count = getEventPhotoLikeCount(photo);
   return `
@@ -2223,7 +2227,7 @@ function renderPublicEventGrid(photos) {
     item.type = "button";
     item.className = "photo-card event-public-photo-card";
     item.innerHTML = `
-      <img src="${escapeMarkup(photo.thumbnailUrl || photo.fullUrl || "")}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      <img src="${escapeMarkup(getEventPhotoPreviewUrl(photo))}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
       <div class="event-public-photo-overlay" aria-hidden="true">
         ${renderEventPhotoLikeBadge(photo)}
       </div>
