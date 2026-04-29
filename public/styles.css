@@ -1160,8 +1160,8 @@ label:focus-within {
 }
 
 .cover-action-button {
-  width: 44px;
-  height: 44px;
+  width: 24px;
+  height: 24px;
   display: inline-grid;
   place-items: center;
   border: 1px solid rgba(0, 0, 0, 0.22);
@@ -1171,8 +1171,8 @@ label:focus-within {
 }
 
 .cover-action-button .icon-mask {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   background-color: currentColor;
 }
 
@@ -1573,12 +1573,22 @@ input[type="checkbox"]:checked {
   background-repeat: no-repeat;
 }
 
+.slideshow.slideshow-album-presentation::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(var(--template-bg-rgb), 0.8);
+}
+
 .slideshow-frame {
   position: relative;
   min-height: 100vh;
   display: block;
   padding: 0;
   overflow: hidden;
+  z-index: 1;
 }
 
 .slide-photo-card {
@@ -2325,6 +2335,13 @@ input[type="checkbox"]:checked {
     left: 18px;
     bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     width: min(560px, calc(100vw - 36px));
+  }
+
+  .cover-actions {
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column;
+    gap: 10px;
   }
 }
 
