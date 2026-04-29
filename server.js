@@ -3144,6 +3144,46 @@ function buildOriginFromRequest(req) {
   return `${proto}://${host}`;
 }
 
+function extractOriginFromHomepageLink(homepageLink) {
+  const raw = String(homepageLink || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!parsed.hostname) return "";
+    return `https://${parsed.hostname}`;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function resolveStudioCustomDomainOrigin(studioSlug) {
+  const slug = String(studioSlug || "").trim().toLowerCase();
+  if (!slug || !db) return "";
+  try {
+    const snapshot = await db
+      .collection(FIREBASE_COLLECTIONS.customDomains)
+      .where("studioSlug", "==", slug)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return "";
+    const domain = normalizeHostname(snapshot.docs[0]?.id || "");
+    if (!domain) return "";
+    return `https://${domain}`;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function resolveEventOrigin(req, { homepageLink = "", studioSlug = "" } = {}) {
+  const fromHomepage = extractOriginFromHomepageLink(homepageLink);
+  if (fromHomepage) return fromHomepage;
+
+  const fromCustomDomain = await resolveStudioCustomDomainOrigin(studioSlug);
+  if (fromCustomDomain) return fromCustomDomain;
+
+  return buildOriginFromRequest(req);
+}
+
 function combineEventDateTime(dateValue, timeValue) {
   const date = String(dateValue || "").trim();
   const time = String(timeValue || "").trim();
@@ -3291,7 +3331,7 @@ async function handleCreateEvent(req, res) {
       rejectedPhotos: [],
     });
 
-    const origin = buildOriginFromRequest(req);
+    const origin = await resolveEventOrigin(req, { homepageLink, studioSlug });
     event.uploadUrl = `${origin}/e/${event.slug}`;
     event.displayUrl = `${origin}/event/${event.slug}/present`;
     event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
@@ -3434,6 +3474,13 @@ async function handleUpdateEvent(req, res) {
     event.startAt = combineEventDateTime(body.startDate, body.startTime) || event.startAt;
     event.endAt = combineEventDateTime(body.endDate, body.endTime) || event.endAt;
     event.template = String(body.template || event.template || "template-1").trim() || "template-1";
+    const origin = await resolveEventOrigin(req, {
+      homepageLink: event.homepageLink,
+      studioSlug: event.studioSlug,
+    });
+    event.uploadUrl = `${origin}/e/${event.slug}`;
+    event.displayUrl = `${origin}/event/${event.slug}/present`;
+    event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
     writeEventsStore(store);
 
     sendJson(res, 200, { event: sanitizeEventForClient(normalizeEventVisibility(event)) });

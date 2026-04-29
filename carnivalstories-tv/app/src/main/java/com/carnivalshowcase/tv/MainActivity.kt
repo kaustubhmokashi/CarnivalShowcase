@@ -8,10 +8,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +35,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -65,6 +74,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -73,12 +83,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -135,6 +147,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.net.URLEncoder
+import kotlin.math.absoluteValue
 
 private val AppBackground = Color(0xFFFFFFFF)
 private val AppBackgroundMuted = Color(0xFFF7F7F7)
@@ -881,91 +894,100 @@ private fun SlideshowScreen(
         onTogglePlay()
       }
   ) {
-    Crossfade(
-      targetState = current,
-      animationSpec = tween(durationMillis = 220),
-      label = "slideshow-media-fade"
-    ) { slide ->
-      androidx.compose.runtime.key(slide.id, slide.slideshowUrl) {
-        if (slide.isVideo && inlineVideoAllowed && inlinePlayer != null) {
-          Box(modifier = Modifier.fillMaxSize()) {
-            AndroidView(
-              factory = { context ->
-                PlayerView(context).apply {
-                  useController = false
-                  resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                  player = inlinePlayer
-                }
-              },
-              update = { playerView ->
-                playerView.player = inlinePlayer
-              },
-              modifier = Modifier.fillMaxSize()
-            )
-            inlineVideoError?.let { message ->
-              Box(
-                modifier = Modifier
-                  .align(Alignment.BottomEnd)
-                  .padding(22.dp)
-                  .width(420.dp)
-              ) {
-                StatusBanner(
-                  status = message,
-                  tone = StatusTone.Error,
-                  isLoading = false
-                )
-              }
-            }
-          }
-        } else {
-          Box(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-              model = slide.thumbnailUrl,
-              contentDescription = null,
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.fillMaxSize()
-            )
-            SubcomposeAsyncImage(
-              model = slide.slideshowUrl,
-              contentDescription = slide.name,
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.fillMaxSize()
-            ) {
-              val imageState = painter.state
-              LaunchedEffect(slide.id, imageState) {
-                slideReady = imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error
-              }
-
-              if (imageState is AsyncImagePainter.State.Success) {
-                SubcomposeAsyncImageContent()
-              } else {
-                Box(modifier = Modifier.fillMaxSize()) {
-                  CircularProgressIndicator(
-                    modifier = Modifier
-                      .align(Alignment.BottomEnd)
-                      .padding(18.dp)
-                      .size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp
+    if (state.isEventPresentationMode) {
+      EventPresentationSurface(
+        state = state,
+        slide = current,
+        slideReady = slideReady,
+        onSlideReady = { ready -> slideReady = ready }
+      )
+    } else {
+      Crossfade(
+        targetState = current,
+        animationSpec = tween(durationMillis = 220),
+        label = "slideshow-media-fade"
+      ) { slide ->
+        androidx.compose.runtime.key(slide.id, slide.slideshowUrl) {
+          if (slide.isVideo && inlineVideoAllowed && inlinePlayer != null) {
+            Box(modifier = Modifier.fillMaxSize()) {
+              AndroidView(
+                factory = { context ->
+                  PlayerView(context).apply {
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    player = inlinePlayer
+                  }
+                },
+                update = { playerView ->
+                  playerView.player = inlinePlayer
+                },
+                modifier = Modifier.fillMaxSize()
+              )
+              inlineVideoError?.let { message ->
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(22.dp)
+                    .width(420.dp)
+                ) {
+                  StatusBanner(
+                    status = message,
+                    tone = StatusTone.Error,
+                    isLoading = false
                   )
                 }
               }
             }
-            if (slide.isVideo) {
-              Box(
-                modifier = Modifier
-                  .align(Alignment.Center)
-                  .size(64.dp)
-                  .clip(RoundedCornerShape(32.dp))
-                  .background(Color(0xB0000000)),
-                contentAlignment = Alignment.Center
+          } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+              AsyncImage(
+                model = slide.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+              )
+              SubcomposeAsyncImage(
+                model = slide.slideshowUrl,
+                contentDescription = slide.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
               ) {
-                Icon(
-                  Icons.Default.PlayArrow,
-                  contentDescription = "Video",
-                  tint = Color.White,
-                  modifier = Modifier.size(34.dp)
-                )
+                val imageState = painter.state
+                LaunchedEffect(slide.id, imageState) {
+                  slideReady = imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error
+                }
+
+                if (imageState is AsyncImagePainter.State.Success) {
+                  SubcomposeAsyncImageContent()
+                } else {
+                  Box(modifier = Modifier.fillMaxSize()) {
+                    CircularProgressIndicator(
+                      modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(18.dp)
+                        .size(20.dp),
+                      color = Color.White,
+                      strokeWidth = 2.dp
+                    )
+                  }
+                }
+              }
+              if (slide.isVideo) {
+                Box(
+                  modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(Color(0xB0000000)),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier.size(34.dp)
+                  )
+                }
               }
             }
           }
@@ -1146,6 +1168,224 @@ private fun PromptChoiceButton(
       content()
     }
   }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun EventPresentationSurface(
+  state: DriveDeckUiState,
+  slide: PhotoAsset,
+  slideReady: Boolean,
+  onSlideReady: (Boolean) -> Unit,
+) {
+  val backgroundUrl = state.eventPresentationBackgroundUrl.trim()
+  var displayedSlide by remember { mutableStateOf(slide) }
+  var stagedSlide by remember { mutableStateOf(slide) }
+  var stagedReady by remember { mutableStateOf(true) }
+  var transitionStep by remember { mutableIntStateOf(0) }
+  var displayedAspectRatio by remember(displayedSlide.id) { mutableStateOf(16f / 9f) }
+
+  LaunchedEffect(slide.id, slide.slideshowUrl) {
+    stagedSlide = slide
+    if (slide.id == displayedSlide.id) {
+      stagedReady = true
+      return@LaunchedEffect
+    }
+    stagedReady = false
+  }
+
+  LaunchedEffect(stagedReady, stagedSlide.id) {
+    if (stagedReady && stagedSlide.id != displayedSlide.id) {
+      displayedSlide = stagedSlide
+      transitionStep += 1
+    }
+  }
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    // Immediate fallback background to avoid delayed appearance on slow networks.
+    AsyncImage(
+      model = displayedSlide.thumbnailUrl,
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = Modifier.fillMaxSize()
+    )
+    if (backgroundUrl.isNotBlank()) {
+      AsyncImage(
+        model = backgroundUrl,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize()
+      )
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color(0x66000000))
+      )
+    }
+
+    val transition = remember(transitionStep) { eventCardTransitionDirection(transitionStep) }
+    val rotation = remember(displayedSlide.id) { eventCardRotation(displayedSlide.id) }
+
+    // Preload the next slide off-screen; once ready we switch cards and animate.
+    Box(
+      modifier = Modifier
+        .size(1.dp)
+        .padding(0.dp)
+    ) {
+      SubcomposeAsyncImage(
+        model = stagedSlide.fullUrl,
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize()
+      ) {
+        val preloadState = painter.state
+        LaunchedEffect(stagedSlide.id, preloadState) {
+          if (preloadState is AsyncImagePainter.State.Success || preloadState is AsyncImagePainter.State.Error) {
+            stagedReady = true
+          }
+        }
+      }
+    }
+
+    AnimatedContent(
+      targetState = displayedSlide,
+      label = "event-card-slide",
+      transitionSpec = {
+        val enter = slideInHorizontally(
+          animationSpec = tween(740),
+          initialOffsetX = { fullWidth -> transition.inX(fullWidth) }
+        ) + slideInVertically(
+          animationSpec = tween(740),
+          initialOffsetY = { fullHeight -> transition.inY(fullHeight) }
+        ) + fadeIn(
+          animationSpec = tween(280)
+        )
+        val exit = slideOutHorizontally(
+          animationSpec = tween(740),
+          targetOffsetX = { fullWidth -> transition.outX(fullWidth) }
+        ) + slideOutVertically(
+          animationSpec = tween(740),
+          targetOffsetY = { fullHeight -> transition.outY(fullHeight) }
+        ) + fadeOut(
+          animationSpec = tween(280)
+        )
+        enter togetherWith exit using SizeTransform(clip = false)
+      }
+    ) { targetSlide ->
+      BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+      ) {
+        val maxCardWidth = maxWidth * 0.8f
+        val maxCardHeight = maxHeight * 0.8f
+
+        var cardWidth = maxCardWidth
+        var cardHeight = cardWidth / displayedAspectRatio
+        if (cardHeight > maxCardHeight) {
+          cardHeight = maxCardHeight
+          cardWidth = cardHeight * displayedAspectRatio
+        }
+
+        Box(
+          modifier = Modifier
+            .width(cardWidth)
+            .height(cardHeight)
+            .graphicsLayer { rotationZ = rotation }
+            .shadow(elevation = 26.dp, shape = RoundedCornerShape(12.dp), clip = false)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White)
+            .padding(12.dp)
+        ) {
+          SubcomposeAsyncImage(
+            model = targetSlide.fullUrl,
+            contentDescription = targetSlide.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+              .fillMaxSize()
+              .clip(RoundedCornerShape(12.dp))
+          ) {
+            val imageState = painter.state
+            LaunchedEffect(targetSlide.id, imageState) {
+              onSlideReady(imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error)
+              if (imageState is AsyncImagePainter.State.Success) {
+                val intrinsic = painter.intrinsicSize
+                val w = intrinsic.width
+                val h = intrinsic.height
+                if (w > 0f && h > 0f) {
+                  displayedAspectRatio = (w / h).coerceIn(0.3f, 3.5f)
+                }
+              }
+            }
+            if (imageState is AsyncImagePainter.State.Success) {
+              SubcomposeAsyncImageContent()
+            } else {
+              Box(modifier = Modifier.fillMaxSize()) {
+                CircularProgressIndicator(
+                  modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(18.dp)
+                    .size(20.dp),
+                  color = Color.White,
+                  strokeWidth = 2.dp
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (!slideReady || !stagedReady) {
+      CircularProgressIndicator(
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(18.dp)
+          .size(20.dp),
+        color = Color.White,
+        strokeWidth = 2.dp
+      )
+    }
+  }
+}
+
+private data class EventTransitionDirection(
+  val inX: (Int) -> Int,
+  val inY: (Int) -> Int,
+  val outX: (Int) -> Int,
+  val outY: (Int) -> Int,
+)
+
+private fun eventCardTransitionDirection(step: Int): EventTransitionDirection {
+  return when (step.absoluteValue % 4) {
+    0 -> EventTransitionDirection(
+      inX = { -it },
+      inY = { -it / 2 },
+      outX = { it },
+      outY = { it / 2 }
+    )
+    1 -> EventTransitionDirection(
+      inX = { it },
+      inY = { -it / 2 },
+      outX = { -it },
+      outY = { it / 2 }
+    )
+    2 -> EventTransitionDirection(
+      inX = { -it },
+      inY = { it / 2 },
+      outX = { it },
+      outY = { -it / 2 }
+    )
+    else -> EventTransitionDirection(
+      inX = { it },
+      inY = { it / 2 },
+      outX = { -it },
+      outY = { -it / 2 }
+    )
+  }
+}
+
+private fun eventCardRotation(seed: String): Float {
+  return (((seed.hashCode().absoluteValue % 21) - 10).toFloat()).coerceIn(-10f, 10f)
 }
 
 @Composable
@@ -2069,6 +2309,7 @@ data class DriveDeckUiState(
   val isEventPresentationMode: Boolean = false,
   val eventPresentationTitle: String = "",
   val eventPresentationSlug: String = "",
+  val eventPresentationBackgroundUrl: String = "",
   val inlineVideoPlaybackApprovedId: String? = null,
   val videoPlayerPromptDismissedId: String? = null,
 ) {
@@ -2219,7 +2460,16 @@ class DriveDeckViewModel(
       }
 
       is PairingResolution.Folder -> loadFolder(resolution.url)
-      is PairingResolution.EventPresentation -> loadEventPresentation(resolution)
+      is PairingResolution.EventPresentation -> {
+        // Some resolve responses can miss background URL; hydrate once from public event API
+        // so the presentation background appears immediately.
+        val hydrated = if (resolution.backgroundUrl.isBlank() && resolution.slug.isNotBlank()) {
+          runCatching { repository.fetchEventPresentation(resolution.slug) }.getOrDefault(resolution)
+        } else {
+          resolution
+        }
+        loadEventPresentation(hydrated)
+      }
     }
   }
 
@@ -2252,7 +2502,8 @@ class DriveDeckViewModel(
       videoPlayerPromptDismissedId = null,
       isEventPresentationMode = true,
       eventPresentationTitle = resolution.name,
-      eventPresentationSlug = resolution.slug
+      eventPresentationSlug = resolution.slug,
+      eventPresentationBackgroundUrl = resolution.backgroundUrl
     )
     startEventPresentationRefresh()
   }
@@ -2311,7 +2562,8 @@ class DriveDeckViewModel(
         gallerySettingsVisible = false,
         isEventPresentationMode = false,
         eventPresentationTitle = "",
-        eventPresentationSlug = ""
+        eventPresentationSlug = "",
+        eventPresentationBackgroundUrl = ""
       )
     }.onFailure {
       uiState = uiState.copy(
@@ -2333,7 +2585,8 @@ class DriveDeckViewModel(
       statusTone = StatusTone.Neutral,
       isEventPresentationMode = false,
       eventPresentationTitle = "",
-      eventPresentationSlug = ""
+      eventPresentationSlug = "",
+      eventPresentationBackgroundUrl = ""
     )
   }
 
@@ -2484,6 +2737,7 @@ class DriveDeckViewModel(
           isEventPresentationMode = false,
           eventPresentationTitle = "",
           eventPresentationSlug = "",
+          eventPresentationBackgroundUrl = "",
           images = emptyList(),
           status = "",
           statusTone = StatusTone.Neutral
@@ -2535,7 +2789,8 @@ class DriveDeckViewModel(
             images = nextPhotos,
             currentSlideIndex = nextIndex.coerceAtMost(nextPhotos.lastIndex.coerceAtLeast(0)),
             eventPresentationTitle = refreshed.name,
-            eventPresentationSlug = refreshed.slug
+            eventPresentationSlug = refreshed.slug,
+            eventPresentationBackgroundUrl = refreshed.backgroundUrl
           )
         }
       }
@@ -2653,6 +2908,7 @@ sealed interface PairingResolution {
     val name: String,
     val slug: String,
     val photos: List<PhotoAsset>,
+    val backgroundUrl: String = "",
   ) : PairingResolution
 }
 
@@ -2703,7 +2959,10 @@ class DriveDeckRepository(
           PairingResolution.EventPresentation(
             name = parsed.eventName.orEmpty().ifBlank { "Event" },
             slug = parsed.eventSlug.orEmpty(),
-            photos = parsed.eventPhotos.orEmpty().map { photo -> toPhotoAsset(photo) }
+            photos = parsed.eventPhotos.orEmpty().map { photo -> toPhotoAsset(photo) },
+            backgroundUrl = parsed.eventBackgroundUrl.orEmpty().trim().let { bg ->
+              if (bg.isBlank()) "" else makeAbsolute(bg)
+            }
           )
         }
 
@@ -2753,7 +3012,10 @@ class DriveDeckRepository(
       PairingResolution.EventPresentation(
         name = event.name.ifBlank { "Event" },
         slug = event.slug.ifBlank { slug },
-        photos = event.livePhotos.map(::toPhotoAsset)
+        photos = event.livePhotos.map(::toPhotoAsset),
+        backgroundUrl = event.backgroundUrl.trim().let { bg ->
+          if (bg.isBlank()) "" else makeAbsolute(bg)
+        }
       )
     }
   }
@@ -2857,6 +3119,7 @@ data class PairingResolveResponse(
   val eventSlug: String? = null,
   val eventName: String? = null,
   val eventPhotos: List<EventPhotoPayload>? = null,
+  val eventBackgroundUrl: String? = null,
 )
 
 @Serializable
@@ -2868,6 +3131,7 @@ data class EventPublicResponse(
 data class EventPublicPayload(
   val slug: String = "",
   val name: String = "",
+  val backgroundUrl: String = "",
   val livePhotos: List<EventPhotoPayload> = emptyList(),
 )
 
