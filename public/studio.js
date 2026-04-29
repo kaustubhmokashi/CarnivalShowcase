@@ -175,6 +175,7 @@ let currentWizardStep = 1;
 let activeEventPhotoFilter = "queue";
 let currentManagedEvent = null;
 let moderationAccessToken = "";
+let likedEventPhotoSessionIds = new Set();
 let driveConnectionStatus = {
   connected: false,
   email: "",
@@ -2217,11 +2218,12 @@ function getEventPhotoPresentationUrl(photo) {
 
 function renderEventPhotoLikeBadge(photo) {
   const count = getEventPhotoLikeCount(photo);
+  const likedInSession = likedEventPhotoSessionIds.has(String(photo?.id || "").trim());
   return `
-    <div class="photo-like-badge event-public-like-badge" data-event-photo-id="${escapeMarkup(photo.id || "")}" aria-hidden="true">
-      <span class="photo-like-badge-icon icon-mask ${count > 0 ? "icon-heart-selected" : "icon-heart-empty"}"></span>
+    <button type="button" class="photo-like-badge event-public-like-badge" data-event-photo-id="${escapeMarkup(photo.id || "")}" aria-label="${likedInSession ? "Unlike photo" : "Like photo"}">
+      <span class="photo-like-badge-icon icon-mask ${likedInSession ? "icon-heart-selected" : count > 0 ? "icon-heart-selected" : "icon-heart-empty"}"></span>
       ${count > 0 ? `<span class="photo-like-badge-count">${count}</span>` : ""}
-    </div>
+    </button>
   `;
 }
 
@@ -2232,10 +2234,12 @@ function syncEventPublicLikeBadge(photoId, count) {
 
   eventPublicGrid.querySelectorAll(`[data-event-photo-id="${CSS.escape(String(photoId || ""))}"]`).forEach((badge) => {
     const icon = badge.querySelector(".photo-like-badge-icon");
+    const likedInSession = likedEventPhotoSessionIds.has(String(photoId || "").trim());
     if (icon) {
-      icon.classList.toggle("icon-heart-empty", count <= 0);
-      icon.classList.toggle("icon-heart-selected", count > 0);
+      icon.classList.toggle("icon-heart-empty", !likedInSession && count <= 0);
+      icon.classList.toggle("icon-heart-selected", likedInSession || count > 0);
     }
+    badge.setAttribute("aria-label", likedInSession ? "Unlike photo" : "Like photo");
 
     let countEl = badge.querySelector(".photo-like-badge-count");
     if (count > 0) {
@@ -2249,6 +2253,62 @@ function syncEventPublicLikeBadge(photoId, count) {
       countEl.remove();
     }
   });
+}
+
+async function updateEventPhotoLikeCount(endpoint, photo) {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      slug: currentPublicEvent?.slug || "",
+      photoId: photo.id,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not save the photo like.");
+  }
+
+  const nextCount = Math.max(0, Number(payload?.count) || 0);
+  const targetPhoto = (currentPublicEvent?.livePhotos || []).find((entry) => entry.id === photo.id);
+  if (targetPhoto) {
+    targetPhoto.likeCount = nextCount;
+  }
+  syncEventPublicLikeBadge(photo.id, nextCount);
+}
+
+async function toggleEventPhotoLike(photo) {
+  const photoId = String(photo?.id || "").trim();
+  if (!photoId) {
+    return;
+  }
+
+  if (likedEventPhotoSessionIds.has(photoId)) {
+    await updateEventPhotoLikeCount("/api/events/photo-unlike", photo);
+    likedEventPhotoSessionIds.delete(photoId);
+    syncEventPublicLikeBadge(photoId, getEventPhotoLikeCount(photo));
+    return;
+  }
+
+  await updateEventPhotoLikeCount("/api/events/photo-like", photo);
+  likedEventPhotoSessionIds.add(photoId);
+  syncEventPublicLikeBadge(photoId, getEventPhotoLikeCount(photo));
+}
+
+function downloadEventPhoto(photo) {
+  const source = String(photo?.fullUrl || photo?.slideshowUrl || photo?.thumbnailUrl || "").trim();
+  if (!source) {
+    throw new Error("This photo could not be downloaded.");
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = source;
+  anchor.download = String(photo?.name || "event-photo").trim() || "event-photo";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 async function loadModerationEventFromToken(token) {
@@ -2312,18 +2372,21 @@ function renderPublicEventGrid(photos) {
     return;
   }
   eventPublicGrid.innerHTML = "";
-  photos.forEach((photo) => {
-    const index = photos.indexOf(photo);
-    const item = document.createElement("button");
-    item.type = "button";
+  photos.forEach((photo, index) => {
+    const item = document.createElement("article");
     item.className = "photo-card event-public-photo-card";
     item.innerHTML = `
-      <img src="${escapeMarkup(getEventPhotoPreviewUrl(photo))}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
-      <div class="event-public-photo-overlay" aria-hidden="true">
+      <button type="button" class="event-public-photo-open" aria-label="Open photo slideshow">
+        <img src="${escapeMarkup(getEventPhotoPreviewUrl(photo))}" alt="${escapeMarkup(photo.name || "Event photo")}" loading="lazy" />
+      </button>
+      <div class="event-public-photo-overlay">
         ${renderEventPhotoLikeBadge(photo)}
+        <button type="button" class="event-public-download-button" data-download-photo aria-label="Download photo">
+          <span class="saved-page-icon icon-mask icon-download" aria-hidden="true"></span>
+        </button>
       </div>
     `;
-    item.addEventListener("click", () => {
+    item.querySelector(".event-public-photo-open")?.addEventListener("click", () => {
       window.CarnivalGallery?.openExternalSlideshow?.(photos, {
         index,
         photoLikes: Object.fromEntries(
@@ -2338,6 +2401,22 @@ function renderPublicEventGrid(photos) {
         pairingCode: "",
         shareEnabled: false,
       });
+    });
+    item.querySelector(".event-public-like-badge")?.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      try {
+        await toggleEventPhotoLike(photo);
+      } catch (error) {
+        showStudioToast(error.message || "Could not update like");
+      }
+    });
+    item.querySelector("[data-download-photo]")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      try {
+        downloadEventPhoto(photo);
+      } catch (error) {
+        showStudioToast(error.message || "Could not download photo");
+      }
     });
     eventPublicGrid.appendChild(item);
   });

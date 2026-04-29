@@ -425,6 +425,31 @@ function findEventBySlug(slug) {
   return readAllEvents().find((event) => event.slug === slug) || null;
 }
 
+function findEventByPublicToken(token) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) {
+    return null;
+  }
+
+  const directMatch = findEventBySlug(normalizedToken);
+  if (directMatch) {
+    return directMatch;
+  }
+
+  return (
+    readAllEvents().find((event) => {
+      const uploadPath = String(event?.uploadUrl || "").trim();
+      const displayPath = String(event?.displayUrl || "").trim();
+      const uploadSegments = uploadPath ? new URL(uploadPath).pathname.split("/").filter(Boolean) : [];
+      const displaySegments = displayPath ? new URL(displayPath).pathname.split("/").filter(Boolean) : [];
+      return (
+        uploadSegments.includes(normalizedToken) ||
+        displaySegments.includes(normalizedToken)
+      );
+    }) || null
+  );
+}
+
 function findEventByCode(code) {
   const normalizedCode = String(code || "").trim();
   if (!normalizedCode) {
@@ -3307,7 +3332,7 @@ async function handleGetManagedEvent(req, res) {
 async function handleGetPublicEvent(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const slug = String(requestUrl.searchParams.get("slug") || "").trim();
-  const event = findEventBySlug(slug);
+  const event = findEventByPublicToken(slug);
 
   if (!event) {
     sendJson(res, 404, { error: "Event not found." });
