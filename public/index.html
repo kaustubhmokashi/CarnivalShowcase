@@ -547,8 +547,9 @@
                   <span>Upload</span>
                   <span class="event-upload-helper">Choose a photo to join the live album</span>
                 </span>
+                <div id="event-upload-queue" class="event-upload-queue hidden" aria-live="polite"></div>
               </label>
-              <input id="event-upload-input" name="photo" type="file" accept="image/*" hidden />
+              <input id="event-upload-input" name="photo" type="file" accept="image/*" multiple hidden />
             </form>
           </div>
           <p id="event-upload-status" class="studio-status" aria-live="polite"></p>

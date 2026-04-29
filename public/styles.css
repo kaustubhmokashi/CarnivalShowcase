@@ -3333,6 +3333,8 @@ input[type="checkbox"]:checked {
 
 .event-public-cover-upload {
   align-items: stretch;
+  min-height: 50vh;
+  min-height: 50svh;
 }
 
 .event-public-cover-title {
@@ -3346,14 +3348,14 @@ input[type="checkbox"]:checked {
 
 .event-upload-bar {
   width: 100%;
-  min-height: 100vh;
-  min-height: 100svh;
+  min-height: 50vh;
+  min-height: 50svh;
   display: grid;
 }
 
 .event-upload-trigger {
-  min-height: 100vh;
-  min-height: 100svh;
+  min-height: 50vh;
+  min-height: 50svh;
   width: 100%;
   display: grid;
   place-items: center;
@@ -3445,6 +3447,57 @@ input[type="checkbox"]:checked {
   text-align: center;
 }
 
+.event-upload-queue {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 2px 2px;
+  z-index: 4;
+  scrollbar-width: thin;
+}
+
+.event-upload-queue-item {
+  position: relative;
+  flex: 0 0 160px;
+  height: 104px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.event-upload-queue-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.event-upload-queue-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.event-upload-queue-item.is-uploaded .event-upload-queue-loader {
+  display: none;
+}
+
+.event-upload-queue-item.is-failed {
+  border-color: rgba(214, 59, 48, 0.85);
+}
+
+.event-upload-queue-item.is-failed .event-upload-queue-loader {
+  display: none;
+}
+
 .event-upload-preview {
   position: absolute;
   inset: 0;
@@ -3470,7 +3523,7 @@ input[type="checkbox"]:checked {
 }
 
 .event-upload-bar.has-preview .event-upload-inner {
-  opacity: 0;
+  opacity: 0.18;
 }
 
 .event-upload-bar.is-uploading .event-upload-trigger::after {
@@ -3633,6 +3686,18 @@ input[type="checkbox"]:checked {
 
   .event-upload-preview {
     padding: 28px;
+  }
+
+  .event-upload-queue {
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    gap: 10px;
+  }
+
+  .event-upload-queue-item {
+    flex-basis: 132px;
+    height: 86px;
   }
 }
 
@@ -4122,11 +4187,16 @@ input[type="checkbox"]:checked {
     width: 100%;
   }
 
-  .event-public-cover,
-  .event-upload-bar,
-  .event-upload-trigger {
+  .event-public-cover {
     min-height: 100vh;
     min-height: 100svh;
+  }
+
+  .event-public-cover-upload,
+  .event-upload-bar,
+  .event-upload-trigger {
+    min-height: 50vh;
+    min-height: 50svh;
   }
 
   .manage-event-cover {

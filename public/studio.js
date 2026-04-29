@@ -153,6 +153,7 @@ const eventUploadInput = document.getElementById("event-upload-input");
 const eventUploadStatus = document.getElementById("event-upload-status");
 const eventPublicGrid = document.getElementById("event-public-grid");
 const eventUploadPreview = document.getElementById("event-upload-preview");
+const eventUploadQueue = document.getElementById("event-upload-queue");
 const screenEventPresent = document.getElementById("screen-event-present");
 const eventPresentImage = document.getElementById("event-present-image");
 const eventPresentExitButton = document.getElementById("event-present-exit");
@@ -185,6 +186,7 @@ let currentEventPresentationTimer = null;
 let currentEventPresentationPhotos = [];
 let currentEventPresentationIndex = 0;
 let currentEventUploadPreviewUrl = "";
+let currentEventUploadQueue = [];
 let currentPublicEvent = null;
 let currentEventPresentationSlug = "";
 let currentEventPresentationRefreshTimer = null;
@@ -2228,12 +2230,148 @@ function resetEventUploadPreview() {
     currentEventUploadPreviewUrl = "";
   }
 
+  currentEventUploadQueue.forEach((item) => {
+    if (item.previewUrl) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+    if (item.loaderAnimation?.destroy) {
+      item.loaderAnimation.destroy();
+    }
+  });
+  currentEventUploadQueue = [];
+
   eventUploadForm?.classList.remove("is-uploading", "has-preview");
+  eventUploadQueue?.classList.add("hidden");
+  if (eventUploadQueue) {
+    eventUploadQueue.innerHTML = "";
+  }
   if (eventUploadPreview) {
     eventUploadPreview.classList.add("hidden");
     eventUploadPreview.removeAttribute("src");
     eventUploadPreview.alt = "";
   }
+}
+
+function createEventUploadQueueItem(file) {
+  if (!eventUploadQueue) {
+    return null;
+  }
+
+  const card = document.createElement("div");
+  card.className = "event-upload-queue-item is-uploading";
+  card.innerHTML = `
+    <img class="event-upload-queue-image" alt="${escapeMarkup(file.name || "Uploading photo")}" />
+    <div class="event-upload-queue-loader" aria-hidden="true"></div>
+  `;
+
+  const imageEl = card.querySelector(".event-upload-queue-image");
+  const loaderEl = card.querySelector(".event-upload-queue-loader");
+  const previewUrl = URL.createObjectURL(file);
+  imageEl.src = previewUrl;
+  eventUploadQueue.appendChild(card);
+  eventUploadQueue.classList.remove("hidden");
+
+  let loaderAnimation = null;
+  if (window.lottie && loaderEl) {
+    loaderAnimation = window.lottie.loadAnimation({
+      container: loaderEl,
+      renderer: "svg",
+      loop: true,
+      autoplay: true,
+      path: "/assets/boot-loader.json?v=20260428a",
+    });
+  }
+
+  const item = {
+    file,
+    card,
+    previewUrl,
+    loaderAnimation,
+    markDone() {
+      card.classList.remove("is-uploading");
+      card.classList.add("is-uploaded");
+      loaderAnimation?.destroy?.();
+      if (loaderEl) {
+        loaderEl.innerHTML = "";
+      }
+    },
+    markFailed() {
+      card.classList.remove("is-uploading");
+      card.classList.add("is-failed");
+      loaderAnimation?.destroy?.();
+      if (loaderEl) {
+        loaderEl.innerHTML = "";
+      }
+    },
+  };
+  currentEventUploadQueue.push(item);
+  return item;
+}
+
+async function uploadSingleEventPhoto(slug, item) {
+  const formData = new FormData();
+  formData.append("slug", slug);
+  formData.append("photo", item.file);
+  const response = await fetch("/api/events/upload", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `Could not upload ${item.file.name || "photo"}.`);
+  }
+}
+
+async function uploadEventPhotos(files) {
+  const slug = String(eventUploadForm?.dataset.slug || "").trim();
+  if (!slug) {
+    throw new Error("This event is not ready yet.");
+  }
+  if (!files.length) {
+    throw new Error("Please choose at least one photo.");
+  }
+  if (eventUploadInput?.disabled) {
+    throw new Error("Photo uploads open only when the event is live.");
+  }
+
+  resetEventUploadPreview();
+  eventUploadForm?.classList.add("has-preview", "is-uploading");
+  const items = files.map((file) => createEventUploadQueueItem(file)).filter(Boolean);
+
+  const results = await Promise.allSettled(
+    items.map(async (item) => {
+      await uploadSingleEventPhoto(slug, item);
+      item.markDone();
+    })
+  );
+
+  const failedCount = results.filter((result) => result.status === "rejected").length;
+  const successCount = results.length - failedCount;
+  eventUploadForm?.classList.remove("is-uploading");
+  eventUploadForm?.reset();
+
+  if (failedCount > 0 && successCount === 0) {
+    setStudioStatus(eventUploadStatus, "Could not upload selected photos. Please try again.", true);
+    items.forEach((item) => item.markFailed());
+    return;
+  }
+
+  if (failedCount > 0) {
+    setStudioStatus(
+      eventUploadStatus,
+      `${successCount} photo(s) uploaded. ${failedCount} failed, please retry.`,
+      true
+    );
+    items.forEach((item, index) => {
+      if (results[index].status === "rejected") {
+        item.markFailed();
+      }
+    });
+  } else {
+    setStudioStatus(eventUploadStatus, "Your uploaded photo has been pushed to queue, will become live soon!");
+  }
+
+  await loadPublicEvent(slug);
 }
 
 function getEventPhotoLikeCount(photo) {
@@ -4144,40 +4282,11 @@ window.addEventListener("carnival-photo-like-updated", (event) => {
 eventUploadForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const slug = String(eventUploadForm.dataset.slug || "").trim();
-    const file = eventUploadInput?.files?.[0];
-    if (!slug) {
-      throw new Error("This event is not ready yet.");
-    }
-    if (!file) {
+    const selectedFiles = Array.from(eventUploadInput?.files || []);
+    if (!selectedFiles.length) {
       throw new Error("Please choose a photo first.");
     }
-
-    resetEventUploadPreview();
-    currentEventUploadPreviewUrl = URL.createObjectURL(file);
-    if (eventUploadPreview) {
-      eventUploadPreview.src = currentEventUploadPreviewUrl;
-      eventUploadPreview.alt = file.name || "Uploading photo preview";
-      eventUploadPreview.classList.remove("hidden");
-    }
-    eventUploadForm.classList.add("has-preview", "is-uploading");
-
-    const formData = new FormData();
-    formData.append("slug", slug);
-    formData.append("photo", file);
-    setStudioStatus(eventUploadStatus, "Your uploaded photo has been pushed to queue, will become live soon!");
-    const response = await fetch("/api/events/upload", {
-      method: "POST",
-      body: formData,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || "Could not upload the photo.");
-    }
-    setStudioStatus(eventUploadStatus, "Your uploaded photo has been pushed to queue, will become live soon!");
-    eventUploadForm.reset();
-    resetEventUploadPreview();
-    await loadPublicEvent(slug);
+    await uploadEventPhotos(selectedFiles);
   } catch (error) {
     eventUploadForm?.classList.remove("is-uploading");
     setStudioStatus(eventUploadStatus, error.message || "Could not upload the photo.", true);
@@ -4185,23 +4294,15 @@ eventUploadForm?.addEventListener("submit", async (event) => {
 });
 
 eventUploadInput?.addEventListener("change", () => {
-  const file = eventUploadInput.files?.[0];
-  if (!file) {
+  const files = Array.from(eventUploadInput.files || []);
+  if (!files.length) {
     resetEventUploadPreview();
     return;
   }
-
-  resetEventUploadPreview();
-  currentEventUploadPreviewUrl = URL.createObjectURL(file);
-  if (eventUploadPreview) {
-    eventUploadPreview.src = currentEventUploadPreviewUrl;
-    eventUploadPreview.alt = file.name || "Selected photo preview";
-    eventUploadPreview.classList.remove("hidden");
-  }
-  eventUploadForm?.classList.add("has-preview");
-  if (!eventUploadInput.disabled) {
-    eventUploadForm?.requestSubmit();
-  }
+  void uploadEventPhotos(files).catch((error) => {
+    eventUploadForm?.classList.remove("is-uploading");
+    setStudioStatus(eventUploadStatus, error.message || "Could not upload selected photos.", true);
+  });
 });
 
 wizardDriveForm?.addEventListener("submit", async (event) => {
