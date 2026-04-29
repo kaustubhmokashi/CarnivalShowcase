@@ -145,6 +145,7 @@ let pendingSharedPhotoId = "";
 let pendingAlbumPresentationFromUrl = false;
 let albumPresentationActive = false;
 let albumPresentationSourceImages = null;
+let allMediaItems = [];
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
 function focusElement(element) {
@@ -1565,7 +1566,7 @@ function applyFolderState(folders, options = {}) {
   if (pendingSharedFolderId && currentFolders.some((folder) => folder.id === pendingSharedFolderId)) {
     selectedFolderId = pendingSharedFolderId;
   }
-  const allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
+  allMediaItems = currentFolders.flatMap((folder) => folder.images || []);
   coverPhoto = options.coverFileId
     ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
     : currentFolders[0]?.images?.[0] || null;
