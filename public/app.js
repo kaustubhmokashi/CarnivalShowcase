@@ -2018,9 +2018,6 @@ function showSlide(index) {
   const previewSource = photo.thumbnailUrl || photo.slideshowUrl || photo.url;
   const fullSource = photo.slideshowUrl || photo.url || previewSource;
   const isVideo = isVideoMedia(photo);
-  const slideCards = getSlideCardEntries();
-  const hasCards = slideCards.length === 2;
-
   cancelBackgroundFolderPreload();
   clearSlideshowAdvanceTimer();
   resetSlideshowVideoState();
@@ -2052,6 +2049,12 @@ function showSlide(index) {
   }
 
   slideVideoEl?.classList.add("hidden");
+  hideSlidePhotoCards();
+  slideImageFullEl?.classList.add("hidden");
+  slideImageEl.classList.remove("hidden");
+  slideImageEl.fetchPriority = "high";
+  slideImageEl.src = previewSource;
+  slideImageEl.alt = photo.name;
 
   const fullImage = new Image();
   fullImage.decoding = "async";
@@ -2060,45 +2063,7 @@ function showSlide(index) {
       return;
     }
 
-    if (!hasCards) {
-      slideImageEl.classList.remove("hidden");
-      slideImageEl.fetchPriority = "high";
-      slideImageEl.src = fullSource;
-      slideImageEl.alt = photo.name;
-    } else {
-      const incomingIndex = activeSlideCardIndex === 0 ? 1 : 0;
-      const outgoingIndex = activeSlideCardIndex >= 0 ? activeSlideCardIndex : -1;
-      const incomingEntry = slideCards[incomingIndex];
-      const outgoingEntry = outgoingIndex >= 0 ? slideCards[outgoingIndex] : null;
-      const motion = getNextSlideshowMotionPreset();
-      const tilt = getRandomSlideTilt();
-
-      applySlideCardMotion(incomingEntry.card, motion, tilt);
-      incomingEntry.image.fetchPriority = "high";
-      incomingEntry.image.src = fullSource;
-      incomingEntry.image.alt = photo.name;
-      incomingEntry.image.classList.remove("hidden");
-      incomingEntry.card.classList.remove("hidden", "is-leaving");
-      incomingEntry.card.setAttribute("aria-hidden", "false");
-
-      if (outgoingEntry) {
-        outgoingEntry.card.classList.remove("hidden");
-        outgoingEntry.card.classList.add("is-leaving");
-        outgoingEntry.card.classList.remove("is-active");
-        outgoingEntry.card.setAttribute("aria-hidden", "true");
-        window.setTimeout(() => {
-          if (activeSlideCardIndex !== incomingIndex) {
-            resetSlideCard(outgoingEntry);
-          }
-        }, 860);
-      }
-
-      window.requestAnimationFrame(() => {
-        incomingEntry.card.classList.add("is-active");
-      });
-
-      activeSlideCardIndex = incomingIndex;
-    }
+    slideImageEl.src = fullSource;
 
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
@@ -2111,45 +2076,7 @@ function showSlide(index) {
       return;
     }
 
-    if (!hasCards) {
-      slideImageEl.classList.remove("hidden");
-      slideImageEl.fetchPriority = "high";
-      slideImageEl.src = previewSource;
-      slideImageEl.alt = photo.name;
-    } else {
-      const incomingIndex = activeSlideCardIndex === 0 ? 1 : 0;
-      const outgoingIndex = activeSlideCardIndex >= 0 ? activeSlideCardIndex : -1;
-      const incomingEntry = slideCards[incomingIndex];
-      const outgoingEntry = outgoingIndex >= 0 ? slideCards[outgoingIndex] : null;
-      const motion = getNextSlideshowMotionPreset();
-      const tilt = getRandomSlideTilt();
-
-      applySlideCardMotion(incomingEntry.card, motion, tilt);
-      incomingEntry.image.fetchPriority = "high";
-      incomingEntry.image.src = previewSource;
-      incomingEntry.image.alt = photo.name;
-      incomingEntry.image.classList.remove("hidden");
-      incomingEntry.card.classList.remove("hidden", "is-leaving");
-      incomingEntry.card.setAttribute("aria-hidden", "false");
-
-      if (outgoingEntry) {
-        outgoingEntry.card.classList.remove("hidden");
-        outgoingEntry.card.classList.add("is-leaving");
-        outgoingEntry.card.classList.remove("is-active");
-        outgoingEntry.card.setAttribute("aria-hidden", "true");
-        window.setTimeout(() => {
-          if (activeSlideCardIndex !== incomingIndex) {
-            resetSlideCard(outgoingEntry);
-          }
-        }, 860);
-      }
-
-      window.requestAnimationFrame(() => {
-        incomingEntry.card.classList.add("is-active");
-      });
-
-      activeSlideCardIndex = incomingIndex;
-    }
+    slideImageEl.src = previewSource;
 
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
