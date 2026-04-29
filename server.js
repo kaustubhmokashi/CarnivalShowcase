@@ -440,11 +440,23 @@ function findEventByPublicToken(token) {
     readAllEvents().find((event) => {
       const uploadPath = String(event?.uploadUrl || "").trim();
       const displayPath = String(event?.displayUrl || "").trim();
-      const uploadSegments = uploadPath ? new URL(uploadPath).pathname.split("/").filter(Boolean) : [];
-      const displaySegments = displayPath ? new URL(displayPath).pathname.split("/").filter(Boolean) : [];
+      const eventSlug = String(event?.slug || "").trim();
+      const safeSegments = (value) => {
+        if (!value) {
+          return [];
+        }
+        try {
+          return new URL(value, "https://carnival.local").pathname.split("/").filter(Boolean);
+        } catch (_error) {
+          return [];
+        }
+      };
+      const uploadSegments = safeSegments(uploadPath);
+      const displaySegments = safeSegments(displayPath);
       return (
         uploadSegments.includes(normalizedToken) ||
-        displaySegments.includes(normalizedToken)
+        displaySegments.includes(normalizedToken) ||
+        eventSlug.endsWith(normalizedToken)
       );
     }) || null
   );

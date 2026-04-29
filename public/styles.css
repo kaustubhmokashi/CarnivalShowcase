@@ -3213,7 +3213,7 @@ input[type="checkbox"]:checked {
   padding: 0 0 var(--space-5);
 }
 
-.manage-event-panel.studio-wizard {
+#manage-event-panel.studio-wizard {
   width: 100vw;
   min-height: 100vh;
   max-height: none;
@@ -3307,9 +3307,9 @@ input[type="checkbox"]:checked {
 
 .event-public-shell {
   position: relative;
-  width: 100%;
+  width: 100vw;
   min-height: 100vh;
-  margin: 0;
+  margin: 0 calc(50% - 50vw);
   padding: 0 0 var(--space-5);
   display: grid;
   align-content: start;
@@ -3318,13 +3318,14 @@ input[type="checkbox"]:checked {
 
 .event-public-cover {
   position: relative;
-  width: 100%;
-  min-height: 1000px;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100svh;
   display: grid;
   place-items: center;
   overflow: hidden;
   background: transparent;
-  padding: 40px 24px;
+  padding: 0;
 }
 
 .event-public-cover-upload {
@@ -3341,16 +3342,19 @@ input[type="checkbox"]:checked {
 }
 
 .event-upload-bar {
-  min-height: 1000px;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
   display: grid;
 }
 
 .event-upload-trigger {
-  min-height: 1000px;
+  min-height: 100vh;
+  min-height: 100svh;
   width: 100%;
   display: grid;
   place-items: center;
-  padding: 40px;
+  padding: 56px;
   border: 0;
   background:
     radial-gradient(circle at center, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 28%, rgba(0, 0, 0, 0) 58%),
@@ -3367,13 +3371,13 @@ input[type="checkbox"]:checked {
 .event-upload-trigger::before {
   content: "";
   position: absolute;
-  inset: 24px;
+  inset: 32px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   pointer-events: none;
   z-index: 0;
 }
 
-.manage-event-panel .studio-event-logo-link,
+#manage-event-panel .studio-event-logo-link,
 .event-public-shell .studio-event-logo-link {
   position: absolute;
   top: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
@@ -3385,7 +3389,7 @@ input[type="checkbox"]:checked {
   transform: translateY(-50%);
 }
 
-.manage-event-panel .studio-wizard-head {
+#manage-event-panel .studio-wizard-head {
   position: absolute;
   top: calc(var(--brand-logo-top) + (var(--cover-header-height) / 2));
   right: var(--brand-logo-left);
@@ -3393,11 +3397,11 @@ input[type="checkbox"]:checked {
   transform: translateY(-50%);
 }
 
-.manage-event-panel .studio-wizard-head .studio-kicker {
+#manage-event-panel .studio-wizard-head .studio-kicker {
   display: none;
 }
 
-.manage-event-panel .studio-status {
+#manage-event-panel .studio-status {
   padding-left: var(--space-3);
 }
 
@@ -3565,7 +3569,7 @@ input[type="checkbox"]:checked {
 .event-public-like-badge {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 12px;
   background: transparent;
   color: #ffffff;
   box-shadow: none;
@@ -3575,7 +3579,7 @@ input[type="checkbox"]:checked {
 
 .event-public-download-button {
   position: absolute;
-  left: 12px;
+  right: 12px;
   bottom: 12px;
   width: 36px;
   height: 36px;
@@ -3603,11 +3607,11 @@ input[type="checkbox"]:checked {
 
 @media (max-width: 900px) {
   .event-upload-trigger {
-    padding: 28px;
+    padding: 36px;
   }
 
   .event-upload-trigger::before {
-    inset: 16px;
+    inset: 20px;
   }
 
   .event-upload-trigger .icon-mask {
@@ -4136,12 +4140,13 @@ input[type="checkbox"]:checked {
   }
 
   .event-public-shell {
-    width: 100%;
+    width: 100vw;
     min-height: auto;
     max-height: none;
     overflow-y: visible;
-    padding-left: 16px;
-    padding-right: 16px;
+    margin: 0 calc(50% - 50vw);
+    padding-left: 0;
+    padding-right: 0;
   }
 }
 

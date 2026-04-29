@@ -188,6 +188,7 @@ let currentEventUploadPreviewUrl = "";
 let currentPublicEvent = null;
 let currentEventPresentationSlug = "";
 let currentEventPresentationRefreshTimer = null;
+let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
 
@@ -806,6 +807,7 @@ function showStudioView(view) {
   studioNamePanel.classList.toggle("hidden", !isName);
   studioAdminPanel?.classList.toggle("hidden", !isAdmin);
   studioDashboardPanel.classList.toggle("hidden", !isDashboard);
+  stopManageEventRefreshLoop();
   createPagePanel.classList.add("hidden");
   createEventPanel?.classList.add("hidden");
   manageEventPanel?.classList.add("hidden");
@@ -868,6 +870,7 @@ function closeCreateEventPanel({ skipHistory = false } = {}) {
 }
 
 function closeManageEventPanel({ skipHistory = false } = {}) {
+  stopManageEventRefreshLoop();
   manageEventPanel?.classList.add("hidden");
   studioDashboardPanel.classList.remove("hidden");
   moderationAccessToken = "";
@@ -879,6 +882,7 @@ function closeManageEventPanel({ skipHistory = false } = {}) {
 function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   currentManagedEvent = event;
   moderationAccessToken = token || "";
+  stopManageEventRefreshLoop();
   studioDashboardPanel?.classList.add("hidden");
   createEventPanel?.classList.add("hidden");
   manageEventPanel?.classList.remove("hidden");
@@ -895,9 +899,37 @@ function openManageEventPanel(event, { skipHistory = false, token = "" } = {}) {
   }
   updateEventPhotoFilterTabLabels();
   showEventPhotoFilter("queue");
+  startManageEventRefreshLoop();
   if (!skipHistory) {
     history.pushState({}, "", token ? `/event-moderate/${encodeURIComponent(token)}` : `/studio?event=${encodeURIComponent(event.id)}`);
   }
+}
+
+function stopManageEventRefreshLoop() {
+  if (manageEventRefreshTimer) {
+    window.clearTimeout(manageEventRefreshTimer);
+    manageEventRefreshTimer = null;
+  }
+}
+
+function startManageEventRefreshLoop() {
+  stopManageEventRefreshLoop();
+
+  if (!manageEventPanel || manageEventPanel.classList.contains("hidden")) {
+    return;
+  }
+
+  manageEventRefreshTimer = window.setTimeout(async () => {
+    try {
+      await refreshManagedEvent();
+    } catch (error) {
+      console.warn(error);
+    } finally {
+      if (manageEventPanel && !manageEventPanel.classList.contains("hidden")) {
+        startManageEventRefreshLoop();
+      }
+    }
+  }, 3500);
 }
 
 function showStudioBootState() {
@@ -3564,10 +3596,21 @@ function initializeFirebase() {
       screenDirectLink.classList.remove("active");
       screenGallery.classList.remove("active");
       screenStudio.classList.remove("active");
-      screenEventPresent?.classList.remove("active");
-      screenEventPublic?.classList.add("active");
-      setStudioStatus(eventUploadStatus, error.message || "This event could not be opened.", true);
-      renderPublicEventGrid([]);
+      if (route.mode === "present") {
+        screenEventPublic?.classList.remove("active");
+        screenEventPresent?.classList.add("active");
+        if (eventPresentImage) {
+          eventPresentImage.removeAttribute("src");
+          eventPresentImage.alt = "";
+        }
+        setStudioStatus(eventUploadStatus, "");
+        window.CarnivalGallery?.showError?.(error.message || "This presentation could not be opened.");
+      } else {
+        screenEventPresent?.classList.remove("active");
+        screenEventPublic?.classList.add("active");
+        setStudioStatus(eventUploadStatus, error.message || "This event could not be opened.", true);
+        renderPublicEventGrid([]);
+      }
     });
     return;
   }
