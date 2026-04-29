@@ -2192,7 +2192,11 @@ function getEventPhotoLikeCount(photo) {
 }
 
 function getEventPhotoPreviewUrl(photo) {
-  return String(photo?.slideshowUrl || photo?.fullUrl || photo?.thumbnailUrl || "").trim();
+  return String(photo?.thumbnailUrl || photo?.slideshowUrl || photo?.fullUrl || "").trim();
+}
+
+function getEventPhotoPresentationUrl(photo) {
+  return String(photo?.slideshowUrl || photo?.thumbnailUrl || photo?.fullUrl || "").trim();
 }
 
 function renderEventPhotoLikeBadge(photo) {
@@ -2359,16 +2363,17 @@ async function renderEventPresentationSlide() {
     return;
   }
   clearEventPresentationSlideTimer();
+  const presentationUrl = getEventPhotoPresentationUrl(photo);
   const preload = new Image();
   preload.onload = () => {
-    eventPresentImage.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
+    eventPresentImage.src = presentationUrl;
     eventPresentImage.alt = photo.name || "Event photo";
     queueNextEventPresentationSlide();
   };
   preload.onerror = () => {
     queueNextEventPresentationSlide();
   };
-  preload.src = photo.fullUrl || photo.slideshowUrl || photo.thumbnailUrl || "";
+  preload.src = presentationUrl;
 }
 
 async function refreshEventPresentationFeed() {

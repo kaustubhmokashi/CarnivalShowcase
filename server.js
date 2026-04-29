@@ -182,19 +182,24 @@ async function fetchMediaCandidateWithCache(candidates, rangeHeader, cacheKey) {
     let lastError = "Unable to fetch media from Google Drive.";
 
     for (const candidate of candidates) {
-      const response = await fetch(candidate, {
+      const candidateUrl = typeof candidate === "string" ? candidate : String(candidate?.url || "");
+      const candidateHeaders =
+        candidate && typeof candidate === "object" && !Array.isArray(candidate)
+          ? { ...(candidate.headers || {}) }
+          : {};
+      const response = await fetch(candidateUrl, {
         redirect: "follow",
-        headers: rangeHeader ? { Range: rangeHeader } : undefined,
+        headers: rangeHeader ? { ...candidateHeaders, Range: rangeHeader } : candidateHeaders,
       });
       const contentType = response.headers.get("content-type") || "";
 
       if (!response.ok) {
-        lastError = `Media request failed (${response.status}) for ${candidate}`;
+        lastError = `Media request failed (${response.status}) for ${candidateUrl}`;
         continue;
       }
 
       if (!response.body || (!contentType.startsWith("image/") && !contentType.startsWith("video/"))) {
-        lastError = `Non-media response returned for ${candidate}`;
+        lastError = `Non-media response returned for ${candidateUrl}`;
         continue;
       }
 
@@ -250,6 +255,25 @@ async function fetchMediaCandidateWithCache(candidates, rangeHeader, cacheKey) {
       mediaInflightRequests.delete(cacheKey);
     }
   }
+}
+
+function findEventOwnerUidByDriveFileId(fileId) {
+  const normalizedFileId = String(fileId || "").trim();
+  if (!normalizedFileId) {
+    return "";
+  }
+
+  const events = readEventsStore().events || [];
+  for (const event of events) {
+    const photoLists = [event?.queuedPhotos || [], event?.livePhotos || [], event?.rejectedPhotos || []];
+    for (const list of photoLists) {
+      if (list.some((photo) => String(photo?.driveFileId || "").trim() === normalizedFileId)) {
+        return String(event?.ownerUid || "").trim();
+      }
+    }
+  }
+
+  return "";
 }
 
 function ensureDataStore() {
@@ -2110,7 +2134,7 @@ async function proxyDriveImage(req, res) {
       }
     }
 
-    const candidates =
+    const publicCandidates =
       mode === "thumb"
         ? [
             `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w480`,
@@ -2131,6 +2155,22 @@ async function proxyDriveImage(req, res) {
             `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w1600`,
             `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`,
           ];
+
+    const candidates = [...publicCandidates];
+    const ownerUid = findEventOwnerUidByDriveFileId(fileId);
+    if (ownerUid) {
+      try {
+        const driveToken = await getDriveWriteAccessTokenForUser(ownerUid);
+        candidates.unshift({
+          url: `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+          headers: {
+            Authorization: `Bearer ${driveToken}`,
+          },
+        });
+      } catch (error) {
+        console.warn(`Falling back to public event media fetch for ${fileId}: ${error.message}`);
+      }
+    }
 
     const result = await fetchMediaCandidateWithCache(candidates, rangeHeader, mediaCacheKey);
     if (Buffer.isBuffer(result.body)) {
