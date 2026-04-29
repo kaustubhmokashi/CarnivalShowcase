@@ -1089,7 +1089,7 @@ async function ensureUserShell(user) {
 
 function renderSavedPagesTable() {
   if (!savedPages.length) {
-    savedPagesTable.innerHTML = '<p class="studio-empty">No pages yet.</p>';
+    savedPagesTable.innerHTML = '<p class="studio-empty">No albums yet.</p>';
     return;
   }
 
