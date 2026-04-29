@@ -8,9 +8,9 @@
       (() => {
         const pathSegments = window.location.pathname.split("/").filter(Boolean);
         const firstSegment = pathSegments[0] || "";
-        const reservedRoutes = new Set(["studio", "privacy-policy", "terms-of-service", "remote", "remote-tv", "remote-firebase", "event", "event-moderate"]);
+        const reservedRoutes = new Set(["studio", "privacy-policy", "terms-of-service", "remote", "remote-tv", "remote-firebase", "event", "e", "event-moderate"]);
         window.CarnivalEventPublicRoute =
-          firstSegment === "event" && pathSegments.length >= 2
+          (firstSegment === "event" || firstSegment === "e") && pathSegments.length >= 2
             ? {
                 slug: decodeURIComponent(pathSegments[1]),
                 mode: pathSegments[2] === "present" ? "present" : "upload",

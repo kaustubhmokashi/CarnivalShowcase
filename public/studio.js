@@ -1249,7 +1249,11 @@ function getEventPresentUrl(event) {
 }
 
 function getEventUploadUrl(event) {
-  return `${window.location.origin}/event/${encodeURIComponent(event.slug || "")}`;
+  const explicitUploadUrl = String(event?.uploadUrl || "").trim();
+  if (explicitUploadUrl) {
+    return explicitUploadUrl;
+  }
+  return `${window.location.origin}/e/${encodeURIComponent(event.slug || "")}`;
 }
 
 function buildEventShareMessage(event) {
@@ -1321,7 +1325,7 @@ function buildEventQrFilename(event) {
 }
 
 function generateEventQrDataUrl(event) {
-  const qrTarget = getEventUploadUrl(event);
+  const qrTarget = String(event?.uploadUrl || "").trim() || getEventUploadUrl(event);
   if (!qrTarget || typeof window.generateQrDataUrl !== "function") {
     throw new Error("QR code generator is unavailable.");
   }

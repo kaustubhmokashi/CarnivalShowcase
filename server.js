@@ -2240,6 +2240,7 @@ function resolveStaticPathname(pathname) {
     pathname === "/studio" ||
     pathname.startsWith("/studio/") ||
     pathname.startsWith("/event/") ||
+    pathname.startsWith("/e/") ||
     pathname.startsWith("/event-moderate/") ||
     pathname === "/folders" ||
     pathname === "/gallery" ||
@@ -3192,7 +3193,7 @@ async function handleCreateEvent(req, res) {
     });
 
     const origin = buildOriginFromRequest(req);
-    event.uploadUrl = `${origin}/event/${event.slug}`;
+    event.uploadUrl = `${origin}/e/${event.slug}`;
     event.displayUrl = `${origin}/event/${event.slug}/present`;
     event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
 
