@@ -1298,26 +1298,10 @@ function buildEventQrFilename(event) {
 
 function generateEventQrDataUrl(event) {
   const qrTarget = getEventUploadUrl(event);
-  if (!qrTarget || typeof QRCode !== "function") {
+  if (!qrTarget || typeof window.generateQrDataUrl !== "function") {
     throw new Error("QR code generator is unavailable.");
   }
-
-  const wrap = document.createElement("div");
-  new QRCode(wrap, {
-    text: qrTarget,
-    width: 1200,
-    height: 1200,
-    colorDark: "#000000",
-    colorLight: "rgba(0,0,0,0)",
-    correctLevel: QRCode.CorrectLevel.H,
-  });
-
-  const image = wrap.querySelector("img") || wrap.querySelector("canvas");
-  const href = image?.src || image?.toDataURL?.("image/png");
-  if (!href) {
-    throw new Error("Could not generate QR.");
-  }
-  return href;
+  return window.generateQrDataUrl(qrTarget);
 }
 
 function renderSavedEventsTable() {
