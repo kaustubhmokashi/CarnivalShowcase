@@ -153,6 +153,7 @@ const eventUploadPreview = document.getElementById("event-upload-preview");
 const screenEventPresent = document.getElementById("screen-event-present");
 const eventPresentImage = document.getElementById("event-present-image");
 const eventPresentExitButton = document.getElementById("event-present-exit");
+const STUDIO_PROFILE_CACHE_KEY = "carnival_studio_profile_cache";
 
 let app = null;
 let auth = null;
@@ -792,17 +793,22 @@ async function refreshDomainVerificationPreview(domainValue = "") {
 }
 
 function showStudioView(view) {
-  studioAuthPanel.classList.toggle("hidden", view !== "auth");
-  studioNamePanel.classList.toggle("hidden", view !== "name");
-  studioAdminPanel?.classList.toggle("hidden", view !== "admin");
-  studioDashboardPanel.classList.toggle("hidden", view !== "dashboard");
+  const isAuth = view === "auth";
+  const isName = view === "name";
+  const isAdmin = view === "admin";
+  const isDashboard = view === "dashboard";
+
+  studioAuthPanel.classList.toggle("hidden", !isAuth);
+  studioNamePanel.classList.toggle("hidden", !isName);
+  studioAdminPanel?.classList.toggle("hidden", !isAdmin);
+  studioDashboardPanel.classList.toggle("hidden", !isDashboard);
   createPagePanel.classList.add("hidden");
   createEventPanel?.classList.add("hidden");
   manageEventPanel?.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
-  studioSidebarName?.classList.toggle("hidden", view === "admin");
+  studioSidebarName?.classList.toggle("hidden", isAdmin || isAuth || isName);
   closeStudioSidebarDrawer();
-  if (view === "dashboard") {
+  if (isDashboard) {
     showStudioDashboardSection("pages");
   }
 }
@@ -948,6 +954,83 @@ function getPagesCollection(uid = currentUser?.uid) {
 async function loadUserProfile(user) {
   const snapshot = await getDoc(getUserRef(user.uid));
   return snapshot.exists() ? snapshot.data() : null;
+}
+
+function cacheStudioProfile(profile) {
+  if (!currentUser?.uid || !profile) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      `${STUDIO_PROFILE_CACHE_KEY}:${currentUser.uid}`,
+      JSON.stringify({
+        studioName: String(profile.studioName || "").trim(),
+        studioSlug: String(profile.studioSlug || "").trim(),
+        accountStatus: String(profile.accountStatus || "").trim(),
+      })
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function getCachedStudioProfile(uid) {
+  if (!uid) {
+    return null;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(`${STUDIO_PROFILE_CACHE_KEY}:${uid}`);
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = JSON.parse(rawValue);
+    return {
+      studioName: String(parsed?.studioName || "").trim(),
+      studioSlug: String(parsed?.studioSlug || "").trim(),
+      accountStatus: String(parsed?.accountStatus || "").trim(),
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+async function resolveExistingStudioIdentity(user, profile) {
+  const normalizedProfile = profile ? { ...profile } : {};
+  if (normalizedProfile?.studioName) {
+    return normalizedProfile;
+  }
+
+  const cachedProfile = getCachedStudioProfile(user.uid);
+  if (cachedProfile?.studioName) {
+    return {
+      ...normalizedProfile,
+      ...cachedProfile,
+    };
+  }
+
+  const pagesSnapshot = await getDocs(getPagesCollection(user.uid));
+  const firstPage = pagesSnapshot.docs.map((pageDoc) => pageDoc.data()).find((page) => page?.studioName || page?.studioSlug);
+  if (!firstPage) {
+    return normalizedProfile;
+  }
+
+  const recoveredProfile = {
+    ...normalizedProfile,
+    studioName: String(firstPage.studioName || "").trim(),
+    studioSlug: String(firstPage.studioSlug || "").trim(),
+  };
+
+  if (recoveredProfile.studioName && recoveredProfile.studioSlug) {
+    await setDoc(getUserRef(user.uid), {
+      studioName: recoveredProfile.studioName,
+      studioSlug: recoveredProfile.studioSlug,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
+
+  return recoveredProfile;
 }
 
 async function ensureUserShell(user) {
@@ -2370,7 +2453,7 @@ async function refreshStudioState(user) {
   showStudioView("name");
   setStudioStatus(studioNameStatus, "Preparing your studio...");
   await ensureUserShell(user);
-  currentProfile = await loadUserProfile(user);
+  currentProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
   setStudioStatus(studioNameStatus, "");
 
   if (isAdminEmail(user.email)) {
@@ -2390,6 +2473,7 @@ async function refreshStudioState(user) {
     return;
   }
 
+  cacheStudioProfile(currentProfile);
   hydrateStudioSettingsForms();
   updateDomainSummary();
   if (window.location.pathname === "/login") {
@@ -2487,6 +2571,13 @@ async function saveStudioName(name) {
       }
     });
   });
+
+  currentProfile = {
+    ...currentProfile,
+    studioName,
+    studioSlug,
+  };
+  cacheStudioProfile(currentProfile);
 }
 
 async function saveBrandingSettings(branding) {
