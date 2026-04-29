@@ -364,13 +364,11 @@ function normalizeEventVisibility(event, now = Date.now()) {
   const endAt = Date.parse(String(event?.endAt || ""));
 
   let phase = "upcoming";
-  if (Number.isFinite(startAt) && Number.isFinite(endAt)) {
-    if (now >= startAt && now <= endAt) {
-      phase = "live";
-    } else if (now > endAt) {
-      phase = "ended";
-    }
+  if (Number.isFinite(endAt) && now > endAt) {
+    phase = "ended";
   } else if (Number.isFinite(startAt) && now >= startAt) {
+    phase = "live";
+  } else if (Number.isFinite(startAt) && Number.isFinite(endAt) && now >= startAt && now <= endAt) {
     phase = "live";
   }
 
