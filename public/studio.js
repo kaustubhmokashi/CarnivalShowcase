@@ -1579,6 +1579,10 @@ function renderEventPhotoGrid() {
         await moderateEventPhoto(photo.id, button.dataset.action || "");
       });
     });
+    card.querySelector("img")?.addEventListener("click", () => {
+      const slideshowIndex = photos.findIndex((entry) => entry.id === photo.id);
+      openEventPhotosSlideshow(photos, slideshowIndex >= 0 ? slideshowIndex : 0);
+    });
     manageEventPhotoGrid.appendChild(card);
   });
 }
@@ -2608,20 +2612,7 @@ function renderPublicEventGrid(photos) {
       </div>
     `;
     item.querySelector(".event-public-photo-open")?.addEventListener("click", () => {
-      window.CarnivalGallery?.openExternalSlideshow?.(photos, {
-        index,
-        photoLikes: Object.fromEntries(
-          photos.map((entry) => [entry.id, getEventPhotoLikeCount(entry)])
-        ),
-        likeEndpoint: "/api/events/photo-like",
-        unlikeEndpoint: "/api/events/photo-unlike",
-        likePayload: { slug: currentPublicEvent?.slug || "" },
-        tagline: currentPublicEvent?.name || "Event",
-        studioName: "",
-        pageUrl: window.location.href,
-        pairingCode: "",
-        shareEnabled: false,
-      });
+      openEventPhotosSlideshow(photos, index);
     });
     item.querySelector(".event-public-like-badge")?.addEventListener("click", async (event) => {
       event.stopPropagation();
@@ -2640,6 +2631,30 @@ function renderPublicEventGrid(photos) {
       }
     });
     eventPublicGrid.appendChild(item);
+  });
+}
+
+function openEventPhotosSlideshow(photos, index = 0) {
+  if (!window.CarnivalGallery?.openExternalSlideshow) {
+    return;
+  }
+  const safePhotos = Array.isArray(photos) ? photos : [];
+  if (!safePhotos.length) {
+    return;
+  }
+  window.CarnivalGallery.openExternalSlideshow(safePhotos, {
+    index: Math.max(0, Number(index) || 0),
+    photoLikes: Object.fromEntries(
+      safePhotos.map((entry) => [entry.id, getEventPhotoLikeCount(entry)])
+    ),
+    likeEndpoint: "/api/events/photo-like",
+    unlikeEndpoint: "/api/events/photo-unlike",
+    likePayload: { slug: currentPublicEvent?.slug || currentManagedEvent?.slug || "" },
+    tagline: currentPublicEvent?.name || currentManagedEvent?.name || "Event",
+    studioName: "",
+    pageUrl: window.location.href,
+    pairingCode: "",
+    shareEnabled: false,
   });
 }
 
