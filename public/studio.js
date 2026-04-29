@@ -11,12 +11,14 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   getFirestore,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -1000,6 +1002,28 @@ async function resolveExistingStudioIdentity(user, profile) {
   const normalizedProfile = profile ? { ...profile } : {};
   if (normalizedProfile?.studioName) {
     return normalizedProfile;
+  }
+
+  const studioNameSnapshot = await getDocs(
+    query(collection(db, collections.studioNames), where("uid", "==", user.uid), limit(1))
+  );
+  const studioNameRecord = studioNameSnapshot.docs[0]?.data?.();
+  if (studioNameRecord?.studioName) {
+    const recoveredProfile = {
+      ...normalizedProfile,
+      studioName: String(studioNameRecord.studioName || "").trim(),
+      studioSlug: String(studioNameRecord.studioSlug || studioNameSnapshot.docs[0]?.id || "").trim(),
+    };
+
+    if (recoveredProfile.studioName && recoveredProfile.studioSlug) {
+      await setDoc(getUserRef(user.uid), {
+        studioName: recoveredProfile.studioName,
+        studioSlug: recoveredProfile.studioSlug,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+
+    return recoveredProfile;
   }
 
   const cachedProfile = getCachedStudioProfile(user.uid);
