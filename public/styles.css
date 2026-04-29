@@ -1169,12 +1169,14 @@ label:focus-within {
   background: rgba(255, 255, 255, 0.9);
   color: #000000;
   cursor: pointer;
+  padding: 0;
 }
 
-.cover-action-button .icon-mask {
+.cover-action-image {
   width: 24px;
   height: 24px;
-  background-color: currentColor;
+  display: block;
+  object-fit: contain;
 }
 
 .cover-date-range,

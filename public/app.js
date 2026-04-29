@@ -146,8 +146,36 @@ let pendingAlbumPresentationFromUrl = false;
 let albumPresentationActive = false;
 let albumPresentationSourceImages = null;
 let allMediaItems = [];
+let galleryVisualReadyPromise = null;
+let resolveGalleryVisualReady = null;
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
+
+function beginGalleryVisualWait() {
+  galleryVisualReadyPromise = new Promise((resolve) => {
+    resolveGalleryVisualReady = resolve;
+  });
+}
+
+function markGalleryVisualReady() {
+  if (!resolveGalleryVisualReady) {
+    return;
+  }
+  resolveGalleryVisualReady();
+  resolveGalleryVisualReady = null;
+}
+
+async function waitForGalleryVisualReady(timeoutMs = 3500) {
+  if (!galleryVisualReadyPromise) {
+    return;
+  }
+
+  await Promise.race([
+    galleryVisualReadyPromise,
+    new Promise((resolve) => window.setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
 function focusElement(element) {
   if (!element) {
     return;
@@ -1001,6 +1029,7 @@ function setGalleryErrorState(message) {
   screenGallery.classList.remove("revealed");
   screenGallery.classList.add("error-state");
   galleryErrorStateEl?.classList.remove("hidden");
+  markGalleryVisualReady();
 }
 
 function showGalleryError(message) {
@@ -1229,10 +1258,10 @@ function renderCoverChrome() {
   const coverActions = `
     <div class="cover-actions" aria-label="Album actions">
       <button id="cover-presentation-button" type="button" class="cover-action-button" aria-label="Open album presentation">
-        <span class="icon-mask icon-present" aria-hidden="true"></span>
+        <img class="cover-action-image" src="/assets/icons/Present.svg?v=20260424b" alt="" aria-hidden="true" />
       </button>
       <button id="cover-share-button" type="button" class="cover-action-button" aria-label="Share album">
-        <span class="icon-mask icon-share" aria-hidden="true"></span>
+        <img class="cover-action-image" src="/assets/icons/Share.svg?v=20260424b" alt="" aria-hidden="true" />
       </button>
     </div>
   `;
@@ -1698,6 +1727,10 @@ function renderGallery(photoItems) {
         `${imageLoadFailures} image${imageLoadFailures === 1 ? "" : "s"} failed to load. Direct Drive media access may be restricted for some files.`,
         true
       );
+      markGalleryVisualReady();
+    });
+    image.addEventListener("load", () => {
+      markGalleryVisualReady();
     });
     card.appendChild(image);
     coverPhotoEl.appendChild(card);
@@ -1756,6 +1789,7 @@ function renderGallery(photoItems) {
         pendingGalleryThumbnailLoads = Math.max(0, pendingGalleryThumbnailLoads - 1);
         queueGalleryLayout();
         maybeStartBackgroundPreload(renderToken);
+        markGalleryVisualReady();
       });
       image.addEventListener("error", () => {
         if (renderToken !== activeGalleryRenderToken) {
@@ -1777,6 +1811,7 @@ function renderGallery(photoItems) {
           true
         );
         maybeStartBackgroundPreload(renderToken);
+        markGalleryVisualReady();
       });
 
       card.appendChild(image);
@@ -2441,6 +2476,7 @@ async function loadFolder(folderUrl, options = {}) {
 
     setActiveScreen(3, { skipHistory: Boolean(options.preservePath) });
     resetGalleryLoadingShell();
+    beginGalleryVisualWait();
     setLoadingState(true, "Loading your albums.", { progress: 0 });
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
     const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`);
@@ -2467,7 +2503,8 @@ async function loadFolder(folderUrl, options = {}) {
       });
     }
     setLoadingState(true, "Loading your albums.", { progress: 100 });
-    await new Promise((resolve) => window.setTimeout(resolve, 140));
+    await waitForGalleryVisualReady(3800);
+    await new Promise((resolve) => window.setTimeout(resolve, 120));
 
     if (currentFolders.length > 1) {
       setStatus(`You're in. We found ${currentFolders.length} folders to choose from.`);
@@ -2503,6 +2540,7 @@ async function loadSnapshot(snapshot, options = {}) {
   setLoadingCoverBackground(options.coverImageUrl || options.coverThumbnailUrl || "");
   setActiveScreen(3, { skipHistory: Boolean(options.preservePath) });
   resetGalleryLoadingShell();
+  beginGalleryVisualWait();
   setLoadingState(true, "Opening your gallery preview.", { progress: 24 });
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
@@ -2517,6 +2555,7 @@ async function loadSnapshot(snapshot, options = {}) {
     preservePath: options.preservePath,
   });
   setLoadingState(true, "Opening your gallery preview.", { progress: 100 });
+  await waitForGalleryVisualReady(3800);
   await new Promise((resolve) => window.setTimeout(resolve, 80));
   setStatus("Loaded saved album preview.");
   setLoadingState(false);
