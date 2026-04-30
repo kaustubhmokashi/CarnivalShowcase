@@ -129,7 +129,7 @@ const slideshowMotionPresets = [
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
 const ALBUM_PRESENT_ENTER_MS = 500;
-const ALBUM_PRESENT_PUSH_DELAY_MS = 0;
+const ALBUM_PRESENT_PUSH_DELAY_MS = 180;
 const ALBUM_PRESENT_EXIT_MS = 500;
 const ALBUM_PRESENT_HOLD_MS = 3000;
 const ALBUM_PRESENT_CYCLE_MS = ALBUM_PRESENT_ENTER_MS + ALBUM_PRESENT_HOLD_MS;
@@ -2183,6 +2183,30 @@ function applySlideCardMotion(card, motion, tilt) {
   card.style.setProperty("--slide-tilt", tilt);
 }
 
+function createExitCloneFromEntry(cardEntry) {
+  if (!cardEntry?.card || !cardEntry?.image || !cardEntry.card.parentElement) {
+    return null;
+  }
+  const source = cardEntry.image.currentSrc || cardEntry.image.src;
+  if (!source) {
+    return null;
+  }
+
+  const exitCard = cardEntry.card.cloneNode(true);
+  const exitImage = exitCard.querySelector(".slide-image");
+  if (exitImage) {
+    exitImage.src = source;
+    exitImage.alt = cardEntry.image.alt || "";
+    exitImage.classList.remove("hidden");
+  }
+
+  exitCard.classList.remove("hidden", "is-leaving");
+  exitCard.classList.add("is-active");
+  exitCard.setAttribute("aria-hidden", "true");
+  cardEntry.card.parentElement.appendChild(exitCard);
+  return exitCard;
+}
+
 function resetSlideCard(cardEntry) {
   if (!cardEntry?.card || !cardEntry?.image) {
     return;
@@ -2292,22 +2316,29 @@ function showSlide(index) {
 
     if (previousEntry?.card && previousEntry !== activeEntry) {
       const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
-      previousEntry.card.style.setProperty("--slide-to-x", exitMotion.toX);
-      previousEntry.card.style.setProperty("--slide-to-y", exitMotion.toY);
-      previousEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
-      previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
-      // Keep exiting card above the entering one so exit is always visible/clean.
-      previousEntry.card.style.setProperty("--slide-z", "3");
-      previousEntry.card.classList.remove("is-leaving");
+      const exitingCard = createExitCloneFromEntry(previousEntry);
+      if (exitingCard) {
+        exitingCard.style.setProperty("--slide-to-x", exitMotion.toX);
+        exitingCard.style.setProperty("--slide-to-y", exitMotion.toY);
+        exitingCard.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
+        exitingCard.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
+        exitingCard.style.setProperty("--slide-z", "3");
+        exitingCard.classList.remove("is-leaving");
+      }
       logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
-      // Force a stable painted state before transitioning to the leaving transform.
-      previousEntry.card.getBoundingClientRect();
+      // Reset reusable buffer card immediately; the detached clone handles visual exit.
+      resetSlideCard(previousEntry);
+      if (exitingCard) {
+        exitingCard.getBoundingClientRect();
+      }
       window.requestAnimationFrame(() => {
-        previousEntry.card.classList.add("is-leaving");
+        if (exitingCard) {
+          exitingCard.classList.add("is-leaving");
+        }
       });
       window.setTimeout(() => {
-        if (previousEntry.card.classList.contains("is-leaving")) {
-          resetSlideCard(previousEntry);
+        if (exitingCard && exitingCard.isConnected) {
+          exitingCard.remove();
           logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
         }
       }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 240);
