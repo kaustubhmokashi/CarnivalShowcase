@@ -128,9 +128,9 @@ const slideshowMotionPresets = [
   { fromX: "-110vw", fromY: "110vh", toX: "110vw", toY: "-110vh" },
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
-const ALBUM_PRESENT_ENTER_MS = 900;
+const ALBUM_PRESENT_ENTER_MS = 1000;
 const ALBUM_PRESENT_PUSH_DELAY_MS = 0;
-const ALBUM_PRESENT_EXIT_MS = 900;
+const ALBUM_PRESENT_EXIT_MS = 1000;
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
 let bootLoaderHideRequested = false;
@@ -2250,7 +2250,11 @@ function showSlide(index) {
   const usePresentationMotion = albumPresentationActive;
   let activeEntry = entries[0] || null;
 
-  if (usePresentationMotion && entries.length) {
+  const applyPresentationMotion = (resolvedSource) => {
+    if (!usePresentationMotion || !entries.length) {
+      return false;
+    }
+
     const nextEntryIndex = activeSlideCardIndex < 0 ? 0 : (activeSlideCardIndex + 1) % entries.length;
     const previousEntry = activeSlideCardIndex >= 0 ? entries[activeSlideCardIndex] : null;
     activeEntry = entries[nextEntryIndex];
@@ -2258,9 +2262,17 @@ function showSlide(index) {
     const exitMotion = getNextSlideshowExitPreset();
     const tilt = getRandomSlideTilt();
     const enterAt = performance.now();
+
+    if (activeEntry?.image) {
+      activeEntry.image.classList.remove("hidden");
+      activeEntry.image.fetchPriority = "high";
+      activeEntry.image.src = resolvedSource;
+      activeEntry.image.alt = photo.name;
+    }
+
     logPresentationDebug(
       "album",
-      `enter photo="${photo?.name || ""}" id="${photo?.id || ""}" from=(${motion.fromX},${motion.fromY}) to=(${motion.toX},${motion.toY}) tilt=${tilt} enterMs=${ALBUM_PRESENT_ENTER_MS} pushDelayMs=${ALBUM_PRESENT_PUSH_DELAY_MS} exitMs=${ALBUM_PRESENT_EXIT_MS}`
+      `enter photo="${photo?.name || ""}" id="${photo?.id || ""}" from=(${motion.fromX},${motion.fromY}) to=(0,0) tilt=${tilt} enterMs=${ALBUM_PRESENT_ENTER_MS} pushDelayMs=${ALBUM_PRESENT_PUSH_DELAY_MS} exitMs=${ALBUM_PRESENT_EXIT_MS}`
     );
     applySlideCardMotion(activeEntry.card, motion, tilt);
     activeEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_ENTER_MS}ms`);
@@ -2268,49 +2280,36 @@ function showSlide(index) {
     activeEntry.card.style.setProperty("--slide-z", "2");
     activeEntry.card.classList.remove("hidden", "is-leaving", "is-active");
     activeEntry.card.setAttribute("aria-hidden", "false");
-    // Ensure browser paints the off-screen start pose before we trigger enter.
     window.requestAnimationFrame(() => {
       activeEntry?.card?.classList.add("is-active");
     });
+
     if (previousEntry?.card && previousEntry !== activeEntry) {
       const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
-      previousEntry.card.style.setProperty("--slide-to-x", exitMotion.toX)
-      previousEntry.card.style.setProperty("--slide-to-y", exitMotion.toY)
+      previousEntry.card.style.setProperty("--slide-to-x", exitMotion.toX);
+      previousEntry.card.style.setProperty("--slide-to-y", exitMotion.toY);
       previousEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
       previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
-      previousEntry.card.style.setProperty("--slide-z", "3");
-      const onPushStart = (event) => {
-        if (event.propertyName !== "transform") {
-          return;
-        }
-        previousEntry.card.removeEventListener("transitionstart", onPushStart);
-        logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
-      };
-      const onExitDone = (event) => {
-        if (event.propertyName !== "transform") {
-          return;
-        }
-        previousEntry.card.removeEventListener("transitionend", onExitDone);
-        logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
-        resetSlideCard(previousEntry);
-      };
-      previousEntry.card.addEventListener("transitionstart", onPushStart);
-      previousEntry.card.addEventListener("transitionend", onExitDone);
+      previousEntry.card.style.setProperty("--slide-z", "1");
+      previousEntry.card.classList.remove("is-leaving");
       previousEntry.card.classList.remove("is-active");
+      logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
       window.requestAnimationFrame(() => {
         previousEntry.card.classList.add("is-leaving");
       });
       window.setTimeout(() => {
         if (previousEntry.card.classList.contains("is-leaving")) {
-          previousEntry.card.removeEventListener("transitionstart", onPushStart);
-          previousEntry.card.removeEventListener("transitionend", onExitDone);
-          logPresentationDebug("album", `exit-fallback prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
           resetSlideCard(previousEntry);
+          logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
         }
-      }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 120);
+      }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 80);
     }
+
     activeSlideCardIndex = nextEntryIndex;
-  } else {
+    return true;
+  };
+
+  if (!usePresentationMotion || !entries.length) {
     hideSlidePhotoCards();
     if (slideCardEl) {
       slideCardEl.classList.remove("hidden", "is-leaving");
@@ -2322,7 +2321,7 @@ function showSlide(index) {
   }
 
   slideImageFullEl?.classList.add("hidden");
-  if (activeEntry?.image) {
+  if (activeEntry?.image && !usePresentationMotion) {
     activeEntry.image.classList.remove("hidden");
     activeEntry.image.fetchPriority = "high";
     activeEntry.image.src = previewSource;
@@ -2336,7 +2335,9 @@ function showSlide(index) {
       return;
     }
 
-    if (activeEntry?.image) {
+    if (usePresentationMotion) {
+      applyPresentationMotion(fullSource);
+    } else if (activeEntry?.image) {
       activeEntry.image.src = fullSource;
     }
 
@@ -2351,7 +2352,9 @@ function showSlide(index) {
       return;
     }
 
-    if (activeEntry?.image) {
+    if (usePresentationMotion) {
+      applyPresentationMotion(previewSource);
+    } else if (activeEntry?.image) {
       activeEntry.image.src = previewSource;
     }
 
