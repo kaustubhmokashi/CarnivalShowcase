@@ -3944,6 +3944,25 @@ input[type="checkbox"]:checked {
   border-radius: 12px;
 }
 
+.presentation-debug-badge {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .studio-toast {
   position: fixed;
   right: 24px;

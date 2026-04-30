@@ -207,6 +207,49 @@ const EVENT_PRESENT_EXIT_MS = 500;
 let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
+const PRESENTATION_DEBUG_ENABLED = new URLSearchParams(window.location.search).has("debugPresentation");
+
+function ensurePresentationDebugPanel() {
+  if (!PRESENTATION_DEBUG_ENABLED) {
+    return null;
+  }
+  let panel = document.getElementById("presentation-debug-panel");
+  if (panel) {
+    return panel;
+  }
+  panel = document.createElement("textarea");
+  panel.id = "presentation-debug-panel";
+  panel.readOnly = true;
+  panel.setAttribute("aria-label", "Presentation debug log");
+  panel.style.position = "fixed";
+  panel.style.left = "12px";
+  panel.style.right = "12px";
+  panel.style.bottom = "12px";
+  panel.style.height = "160px";
+  panel.style.zIndex = "10000";
+  panel.style.background = "rgba(0,0,0,0.82)";
+  panel.style.color = "#fff";
+  panel.style.border = "1px solid rgba(255,255,255,0.28)";
+  panel.style.borderRadius = "8px";
+  panel.style.padding = "8px";
+  panel.style.font = "11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace";
+  panel.style.whiteSpace = "pre";
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function logPresentationDebug(source, message) {
+  if (!PRESENTATION_DEBUG_ENABLED) {
+    return;
+  }
+  const panel = ensurePresentationDebugPanel();
+  if (!panel) {
+    return;
+  }
+  const timestamp = new Date().toISOString().slice(11, 23);
+  const line = `[${timestamp}] [${source}] ${message}`;
+  panel.value = `${line}\n${panel.value}`.slice(0, 10000);
+}
 
 function isMobileStudioViewport() {
   return window.matchMedia("(max-width: 900px)").matches;
@@ -2794,6 +2837,11 @@ async function renderEventPresentationSlide() {
     ];
     const motion = corners[Math.floor(Math.random() * corners.length)];
     const tilt = ((Math.random() * 20) - 10).toFixed(2);
+    const enterAt = performance.now();
+    logPresentationDebug(
+      "event",
+      `enter photo="${photo?.name || ""}" id="${photo?.id || ""}" from=(${motion.fromX},${motion.fromY}) to=(${motion.toX},${motion.toY}) tilt=${tilt} enterMs=${EVENT_PRESENT_ENTER_MS} pushDelayMs=${EVENT_PRESENT_PUSH_DELAY_MS} exitMs=${EVENT_PRESENT_EXIT_MS}`
+    );
 
     nextImage.src = presentationUrl;
     nextImage.alt = photo.name || "Event photo";
@@ -2814,9 +2862,11 @@ async function renderEventPresentationSlide() {
       activeCard.classList.remove("is-active");
       clearEventPresentationTransitionTimers();
       currentEventPresentationLeaveStartTimer = window.setTimeout(() => {
+        logPresentationDebug("event", `push-start prevId="${images[currentEventPresentationCardIndex]?.alt || ""}" at=${Math.round(performance.now() - enterAt)}ms`);
         activeCard.classList.add("is-leaving");
       }, EVENT_PRESENT_PUSH_DELAY_MS);
       currentEventPresentationLeaveCleanupTimer = window.setTimeout(() => {
+        logPresentationDebug("event", `exit-done total=${Math.round(performance.now() - enterAt)}ms`);
         activeCard.classList.remove("is-leaving");
       }, EVENT_PRESENT_PUSH_DELAY_MS + EVENT_PRESENT_EXIT_MS + 40);
     }

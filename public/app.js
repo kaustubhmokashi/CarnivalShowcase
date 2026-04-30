@@ -153,6 +153,49 @@ let galleryVisualReadyPromise = null;
 let resolveGalleryVisualReady = null;
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
+const PRESENTATION_DEBUG_ENABLED = new URLSearchParams(window.location.search).has("debugPresentation");
+
+function ensurePresentationDebugPanel() {
+  if (!PRESENTATION_DEBUG_ENABLED) {
+    return null;
+  }
+  let panel = document.getElementById("presentation-debug-panel");
+  if (panel) {
+    return panel;
+  }
+  panel = document.createElement("textarea");
+  panel.id = "presentation-debug-panel";
+  panel.readOnly = true;
+  panel.setAttribute("aria-label", "Presentation debug log");
+  panel.style.position = "fixed";
+  panel.style.left = "12px";
+  panel.style.right = "12px";
+  panel.style.bottom = "12px";
+  panel.style.height = "160px";
+  panel.style.zIndex = "10000";
+  panel.style.background = "rgba(0,0,0,0.82)";
+  panel.style.color = "#fff";
+  panel.style.border = "1px solid rgba(255,255,255,0.28)";
+  panel.style.borderRadius = "8px";
+  panel.style.padding = "8px";
+  panel.style.font = "11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace";
+  panel.style.whiteSpace = "pre";
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function logPresentationDebug(source, message) {
+  if (!PRESENTATION_DEBUG_ENABLED) {
+    return;
+  }
+  const panel = ensurePresentationDebugPanel();
+  if (!panel) {
+    return;
+  }
+  const timestamp = new Date().toISOString().slice(11, 23);
+  const line = `[${timestamp}] [${source}] ${message}`;
+  panel.value = `${line}\n${panel.value}`.slice(0, 10000);
+}
 
 function beginGalleryVisualWait() {
   galleryVisualReadyPromise = new Promise((resolve) => {
@@ -2200,19 +2243,29 @@ function showSlide(index) {
     activeEntry = entries[nextEntryIndex];
     const motion = getNextSlideshowMotionPreset();
     const tilt = getRandomSlideTilt();
+    const enterAt = performance.now();
+    logPresentationDebug(
+      "album",
+      `enter photo="${photo?.name || ""}" id="${photo?.id || ""}" from=(${motion.fromX},${motion.fromY}) to=(${motion.toX},${motion.toY}) tilt=${tilt} enterMs=${ALBUM_PRESENT_ENTER_MS} pushDelayMs=${ALBUM_PRESENT_PUSH_DELAY_MS} exitMs=${ALBUM_PRESENT_EXIT_MS}`
+    );
     applySlideCardMotion(activeEntry.card, motion, tilt);
     activeEntry.card.classList.remove("hidden", "is-leaving");
     activeEntry.card.classList.add("is-active");
     activeEntry.card.setAttribute("aria-hidden", "false");
     if (previousEntry?.card && previousEntry !== activeEntry) {
+      const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
       previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
       previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
       previousEntry.card.classList.remove("is-active");
       window.setTimeout(() => {
+        logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
         previousEntry.card.classList.add("is-leaving");
       }, ALBUM_PRESENT_PUSH_DELAY_MS);
       window.setTimeout(
-        () => resetSlideCard(previousEntry),
+        () => {
+          logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
+          resetSlideCard(previousEntry);
+        },
         ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 40
       );
     }
