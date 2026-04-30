@@ -201,9 +201,9 @@ let currentEventPresentationHasFirstPaint = false;
 let eventPresentLoaderAnimation = null;
 let currentEventPresentationLeaveStartTimer = null;
 let currentEventPresentationLeaveCleanupTimer = null;
-const EVENT_PRESENT_ENTER_MS = 500;
-const EVENT_PRESENT_PUSH_DELAY_MS = 250;
-const EVENT_PRESENT_EXIT_MS = 500;
+const EVENT_PRESENT_ENTER_MS = 900;
+const EVENT_PRESENT_PUSH_DELAY_MS = 450;
+const EVENT_PRESENT_EXIT_MS = 900;
 let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
@@ -2730,6 +2730,8 @@ function stopEventPresentation() {
     }
     card.classList.remove("is-active", "is-leaving");
     card.style.setProperty("--motion-delay", "0ms");
+    card.style.setProperty("--motion-duration", `${EVENT_PRESENT_ENTER_MS}ms`);
+    card.style.setProperty("--event-z", "2");
   });
   [eventPresentImageA, eventPresentImageB].forEach((image) => {
     if (!image) {
@@ -2851,8 +2853,14 @@ async function renderEventPresentationSlide() {
     nextCard.style.setProperty("--event-to-x", `${motion.toX}px`);
     nextCard.style.setProperty("--event-to-y", `${motion.toY}px`);
     nextCard.style.setProperty("--event-tilt", `${tilt}deg`);
-    nextCard.classList.remove("is-leaving");
-    nextCard.classList.add("is-active");
+    nextCard.style.setProperty("--motion-duration", `${EVENT_PRESENT_ENTER_MS}ms`);
+    nextCard.style.setProperty("--motion-delay", "0ms");
+    nextCard.style.setProperty("--event-z", "2");
+    nextCard.classList.remove("is-leaving", "is-active");
+    // Paint start pose first, then animate into center.
+    window.requestAnimationFrame(() => {
+      nextCard.classList.add("is-active");
+    });
 
     if (activeCard.classList.contains("is-active")) {
       activeCard.style.setProperty("--event-from-x", "0px");
@@ -2860,8 +2868,9 @@ async function renderEventPresentationSlide() {
       activeCard.style.setProperty("--event-to-x", `${motion.toX}px`);
       activeCard.style.setProperty("--event-to-y", `${motion.toY}px`);
       activeCard.style.setProperty("--event-tilt", `${tilt}deg`);
+      activeCard.style.setProperty("--motion-duration", `${EVENT_PRESENT_EXIT_MS}ms`);
       activeCard.style.setProperty("--motion-delay", `${EVENT_PRESENT_PUSH_DELAY_MS}ms`);
-      activeCard.classList.remove("is-active");
+      activeCard.style.setProperty("--event-z", "3");
       const prevName = activeCard.querySelector("img")?.alt || "";
       clearEventPresentationTransitionTimers();
       const onPushStart = (event) => {

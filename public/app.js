@@ -128,9 +128,9 @@ const slideshowMotionPresets = [
   { fromX: "-110vw", fromY: "110vh", toX: "110vw", toY: "-110vh" },
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
-const ALBUM_PRESENT_ENTER_MS = 500;
-const ALBUM_PRESENT_PUSH_DELAY_MS = 250;
-const ALBUM_PRESENT_EXIT_MS = 500;
+const ALBUM_PRESENT_ENTER_MS = 900;
+const ALBUM_PRESENT_PUSH_DELAY_MS = 450;
+const ALBUM_PRESENT_EXIT_MS = 900;
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
 let bootLoaderHideRequested = false;
@@ -2174,6 +2174,8 @@ function resetSlideCard(cardEntry) {
   cardEntry.card.classList.add("hidden");
   cardEntry.card.classList.remove("is-active", "is-leaving");
   cardEntry.card.style.setProperty("--motion-delay", "0ms");
+  cardEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_ENTER_MS}ms`);
+  cardEntry.card.style.setProperty("--slide-z", "2");
   cardEntry.card.setAttribute("aria-hidden", "true");
   cardEntry.image.classList.add("hidden");
   cardEntry.image.removeAttribute("src");
@@ -2250,15 +2252,22 @@ function showSlide(index) {
       `enter photo="${photo?.name || ""}" id="${photo?.id || ""}" from=(${motion.fromX},${motion.fromY}) to=(${motion.toX},${motion.toY}) tilt=${tilt} enterMs=${ALBUM_PRESENT_ENTER_MS} pushDelayMs=${ALBUM_PRESENT_PUSH_DELAY_MS} exitMs=${ALBUM_PRESENT_EXIT_MS}`
     );
     applySlideCardMotion(activeEntry.card, motion, tilt);
-    activeEntry.card.classList.remove("hidden", "is-leaving");
-    activeEntry.card.classList.add("is-active");
+    activeEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_ENTER_MS}ms`);
+    activeEntry.card.style.setProperty("--motion-delay", "0ms");
+    activeEntry.card.style.setProperty("--slide-z", "2");
+    activeEntry.card.classList.remove("hidden", "is-leaving", "is-active");
     activeEntry.card.setAttribute("aria-hidden", "false");
+    // Ensure browser paints the off-screen start pose before we trigger enter.
+    window.requestAnimationFrame(() => {
+      activeEntry?.card?.classList.add("is-active");
+    });
     if (previousEntry?.card && previousEntry !== activeEntry) {
       const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
       previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
       previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
+      previousEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
       previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
-      previousEntry.card.classList.remove("is-active");
+      previousEntry.card.style.setProperty("--slide-z", "3");
       const onPushStart = (event) => {
         if (event.propertyName !== "transform") {
           return;
