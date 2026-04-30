@@ -128,9 +128,11 @@ const slideshowMotionPresets = [
   { fromX: "-110vw", fromY: "110vh", toX: "110vw", toY: "-110vh" },
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
-const ALBUM_PRESENT_ENTER_MS = 1000;
+const ALBUM_PRESENT_ENTER_MS = 500;
 const ALBUM_PRESENT_PUSH_DELAY_MS = 0;
-const ALBUM_PRESENT_EXIT_MS = 1000;
+const ALBUM_PRESENT_EXIT_MS = 500;
+const ALBUM_PRESENT_HOLD_MS = 3000;
+const ALBUM_PRESENT_CYCLE_MS = ALBUM_PRESENT_ENTER_MS + ALBUM_PRESENT_HOLD_MS;
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
 let bootLoaderHideRequested = false;
@@ -2136,9 +2138,13 @@ function scheduleSlideshowAdvance() {
     return;
   }
 
+  const nextDelayMs = albumPresentationActive
+    ? ALBUM_PRESENT_CYCLE_MS
+    : slideshowConfig.duration * 1000;
+
   slideshowAdvanceTimer = window.setTimeout(() => {
     showSlide(currentSlideIndex + 1);
-  }, slideshowConfig.duration * 1000);
+  }, nextDelayMs);
 }
 
 function getSlideCardEntries() {
