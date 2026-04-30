@@ -2173,6 +2173,7 @@ function resetSlideCard(cardEntry) {
   }
   cardEntry.card.classList.add("hidden");
   cardEntry.card.classList.remove("is-active", "is-leaving");
+  cardEntry.card.style.setProperty("--motion-delay", "0ms");
   cardEntry.card.setAttribute("aria-hidden", "true");
   cardEntry.image.classList.add("hidden");
   cardEntry.image.removeAttribute("src");
@@ -2256,18 +2257,34 @@ function showSlide(index) {
       const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
       previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
       previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
+      previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
       previousEntry.card.classList.remove("is-active");
-      window.setTimeout(() => {
+      const onPushStart = (event) => {
+        if (event.propertyName !== "transform") {
+          return;
+        }
+        previousEntry.card.removeEventListener("transitionstart", onPushStart);
         logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
-        previousEntry.card.classList.add("is-leaving");
-      }, ALBUM_PRESENT_PUSH_DELAY_MS);
-      window.setTimeout(
-        () => {
-          logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
+      };
+      const onExitDone = (event) => {
+        if (event.propertyName !== "transform") {
+          return;
+        }
+        previousEntry.card.removeEventListener("transitionend", onExitDone);
+        logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
+        resetSlideCard(previousEntry);
+      };
+      previousEntry.card.addEventListener("transitionstart", onPushStart);
+      previousEntry.card.addEventListener("transitionend", onExitDone);
+      previousEntry.card.classList.add("is-leaving");
+      window.setTimeout(() => {
+        if (previousEntry.card.classList.contains("is-leaving")) {
+          previousEntry.card.removeEventListener("transitionstart", onPushStart);
+          previousEntry.card.removeEventListener("transitionend", onExitDone);
+          logPresentationDebug("album", `exit-fallback prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
           resetSlideCard(previousEntry);
-        },
-        ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 40
-      );
+        }
+      }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 120);
     }
     activeSlideCardIndex = nextEntryIndex;
   } else {

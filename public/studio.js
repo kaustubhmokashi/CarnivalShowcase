@@ -2729,6 +2729,7 @@ function stopEventPresentation() {
       return;
     }
     card.classList.remove("is-active", "is-leaving");
+    card.style.setProperty("--motion-delay", "0ms");
   });
   [eventPresentImageA, eventPresentImageB].forEach((image) => {
     if (!image) {
@@ -2859,16 +2860,36 @@ async function renderEventPresentationSlide() {
       activeCard.style.setProperty("--event-to-x", `${motion.toX}px`);
       activeCard.style.setProperty("--event-to-y", `${motion.toY}px`);
       activeCard.style.setProperty("--event-tilt", `${tilt}deg`);
+      activeCard.style.setProperty("--motion-delay", `${EVENT_PRESENT_PUSH_DELAY_MS}ms`);
       activeCard.classList.remove("is-active");
+      const prevName = activeCard.querySelector("img")?.alt || "";
       clearEventPresentationTransitionTimers();
-      currentEventPresentationLeaveStartTimer = window.setTimeout(() => {
-        logPresentationDebug("event", `push-start prevId="${images[currentEventPresentationCardIndex]?.alt || ""}" at=${Math.round(performance.now() - enterAt)}ms`);
-        activeCard.classList.add("is-leaving");
-      }, EVENT_PRESENT_PUSH_DELAY_MS);
-      currentEventPresentationLeaveCleanupTimer = window.setTimeout(() => {
-        logPresentationDebug("event", `exit-done total=${Math.round(performance.now() - enterAt)}ms`);
+      const onPushStart = (event) => {
+        if (event.propertyName !== "transform") {
+          return;
+        }
+        activeCard.removeEventListener("transitionstart", onPushStart);
+        logPresentationDebug("event", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
+      };
+      const onExitDone = (event) => {
+        if (event.propertyName !== "transform") {
+          return;
+        }
+        activeCard.removeEventListener("transitionend", onExitDone);
+        logPresentationDebug("event", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
         activeCard.classList.remove("is-leaving");
-      }, EVENT_PRESENT_PUSH_DELAY_MS + EVENT_PRESENT_EXIT_MS + 40);
+      };
+      activeCard.addEventListener("transitionstart", onPushStart);
+      activeCard.addEventListener("transitionend", onExitDone);
+      activeCard.classList.add("is-leaving");
+      currentEventPresentationLeaveCleanupTimer = window.setTimeout(() => {
+        if (activeCard.classList.contains("is-leaving")) {
+          activeCard.removeEventListener("transitionstart", onPushStart);
+          activeCard.removeEventListener("transitionend", onExitDone);
+          logPresentationDebug("event", `exit-fallback prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
+          activeCard.classList.remove("is-leaving");
+        }
+      }, EVENT_PRESENT_PUSH_DELAY_MS + EVENT_PRESENT_EXIT_MS + 120);
     }
     currentEventPresentationCardIndex = nextIndex;
     if (!currentEventPresentationHasFirstPaint) {
