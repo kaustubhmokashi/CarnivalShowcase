@@ -2307,7 +2307,7 @@ function showSlide(index) {
     applySlideCardMotion(activeEntry.card, motion, tilt);
     activeEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_ENTER_MS}ms`);
     activeEntry.card.style.setProperty("--motion-delay", "0ms");
-    activeEntry.card.style.setProperty("--slide-z", "2");
+    activeEntry.card.style.setProperty("--slide-z", "3");
     activeEntry.card.classList.remove("hidden", "is-leaving", "is-active");
     activeEntry.card.setAttribute("aria-hidden", "false");
     window.requestAnimationFrame(() => {
@@ -2322,7 +2322,7 @@ function showSlide(index) {
         exitingCard.style.setProperty("--slide-to-y", exitMotion.toY);
         exitingCard.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
         exitingCard.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
-        exitingCard.style.setProperty("--slide-z", "3");
+        exitingCard.style.setProperty("--slide-z", "2");
         exitingCard.classList.remove("is-leaving");
       }
       logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
