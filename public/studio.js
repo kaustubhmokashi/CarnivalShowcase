@@ -1377,10 +1377,23 @@ async function enqueueFaceDetection(page, { manual = false } = {}) {
       completedAt: null,
     };
 
+    const pageSnapshot = await transaction.get(pageRef);
+    if (!pageSnapshot.exists()) {
+      throw new Error("Album not found.");
+    }
+
+    const primaryPublicSnapshot = await transaction.get(primaryPublicPageRef);
+
     transaction.set(pageRef, { faceDetection: faceDetectionPayload }, { merge: true });
-    transaction.set(primaryPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+    if (primaryPublicSnapshot.exists()) {
+      transaction.set(primaryPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+    }
+
     if (aliasPublicPageRef) {
-      transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+      const aliasPublicSnapshot = await transaction.get(aliasPublicPageRef);
+      if (aliasPublicSnapshot.exists()) {
+        transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+      }
     }
 
     transaction.set(queueRef, {
