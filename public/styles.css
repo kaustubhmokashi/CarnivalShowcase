@@ -3271,14 +3271,14 @@ input[type="checkbox"]:checked {
 .event-public-grid {
   width: 100%;
   column-width: 220px;
-  column-gap: var(--space-2);
+  column-gap: 1px;
   max-width: none !important;
 }
 
 .event-photo-grid {
   width: 100%;
   column-width: 220px;
-  column-gap: var(--space-2);
+  column-gap: 1px;
   max-width: none !important;
 }
 

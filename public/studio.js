@@ -1647,6 +1647,7 @@ function renderEventPhotoGrid() {
     });
     manageEventPhotoGrid.appendChild(card);
   });
+  applyEventGridColumnSizing();
 }
 
 function updateEventPhotoFilterTabLabels() {
@@ -2721,6 +2722,38 @@ function renderPublicEventGrid(photos) {
       }
     });
     eventPublicGrid.appendChild(item);
+  });
+  applyEventGridColumnSizing();
+}
+
+function getEventGridColumnCount(gridEl) {
+  const gridWidth = gridEl?.clientWidth || window.innerWidth;
+  const viewportWidth = window.innerWidth;
+  const gap = 1;
+  let minimumTileWidth = 220;
+  if (viewportWidth <= 1100) {
+    minimumTileWidth = 180;
+  }
+  if (viewportWidth <= 720) {
+    minimumTileWidth = 150;
+  }
+
+  const maxColumnsByWidth = Math.max(1, Math.floor((gridWidth + gap) / (minimumTileWidth + gap)));
+  return Math.min(4, maxColumnsByWidth);
+}
+
+function applyEventGridColumnSizing() {
+  [manageEventPhotoGrid, eventPublicGrid].forEach((gridEl) => {
+    if (!gridEl) {
+      return;
+    }
+    const hasCards = gridEl.querySelector(".event-photo-review-card, .event-public-photo-card");
+    if (!hasCards) {
+      gridEl.style.removeProperty("column-count");
+      return;
+    }
+    const columns = getEventGridColumnCount(gridEl);
+    gridEl.style.columnCount = String(columns);
   });
 }
 
@@ -4600,6 +4633,7 @@ window.addEventListener("resize", () => {
   if (!isMobileStudioViewport()) {
     closeStudioSidebarDrawer();
   }
+  applyEventGridColumnSizing();
 });
 
 window.addEventListener("keydown", (event) => {
