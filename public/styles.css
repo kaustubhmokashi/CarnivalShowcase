@@ -1177,6 +1177,101 @@ label:focus-within {
   padding: 0;
 }
 
+.face-picker-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.face-picker-popup {
+  width: min(720px, 100%);
+  max-height: min(82vh, 860px);
+  overflow: auto;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  padding: 20px;
+}
+
+.face-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.face-picker-header h3 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.face-picker-close,
+.face-picker-clear {
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.face-picker-subtitle {
+  margin: 0 0 12px;
+  color: rgba(0, 0, 0, 0.62);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.face-picker-status {
+  color: rgba(0, 0, 0, 0.68);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 14px 0;
+}
+
+.face-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.face-picker-item {
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  background: #fff;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.face-picker-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.face-picker-item span {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.face-picker-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .cover-action-image {
   width: 14px;
   height: 14px;

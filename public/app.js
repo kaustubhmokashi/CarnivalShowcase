@@ -151,6 +151,12 @@ let pendingAlbumPresentationFromUrl = false;
 let albumPresentationActive = false;
 let albumPresentationSourceImages = null;
 let allMediaItems = [];
+let currentFaceFilter = {
+  active: false,
+  faceId: "",
+  photoIds: new Set(),
+  groupCount: 0,
+};
 let galleryVisualReadyPromise = null;
 let resolveGalleryVisualReady = null;
 const INITIAL_GALLERY_BATCH_SIZE = 36;
@@ -1305,6 +1311,9 @@ function renderCoverChrome() {
     : "";
   const coverActions = `
     <div class="cover-actions" aria-label="Album actions">
+      <button id="cover-face-button" type="button" class="cover-action-button" aria-label="Find photos by face">
+        <img class="cover-action-image" src="/assets/icons/Face-detection.svg?v=20260501a" alt="" aria-hidden="true" />
+      </button>
       <button id="cover-presentation-button" type="button" class="cover-action-button" aria-label="Open album presentation">
         <img class="cover-action-image" src="/assets/icons/Present.svg?v=20260424b" alt="" aria-hidden="true" />
       </button>
@@ -1321,8 +1330,15 @@ function renderCoverChrome() {
     ${coverActions}
   `;
   toggleGallerySettingsButton = document.getElementById("toggle-gallery-settings");
+  const coverFaceButton = document.getElementById("cover-face-button");
   const coverPresentationButton = document.getElementById("cover-presentation-button");
   const coverShareButton = document.getElementById("cover-share-button");
+  if (coverFaceButton && coverFaceButton.dataset.bound !== "true") {
+    coverFaceButton.addEventListener("click", () => {
+      void openFacePickerPopup();
+    });
+    coverFaceButton.dataset.bound = "true";
+  }
   if (coverPresentationButton && coverPresentationButton.dataset.bound !== "true") {
     coverPresentationButton.addEventListener("click", openAlbumPresentationFromCover);
     coverPresentationButton.dataset.bound = "true";
@@ -1340,6 +1356,143 @@ function renderCoverChrome() {
     document.fonts.ready.then(() => {
       updateCoverStoryLayout();
     });
+  }
+}
+
+function clearFaceFilter({ silent = false } = {}) {
+  currentFaceFilter = {
+    active: false,
+    faceId: "",
+    photoIds: new Set(),
+    groupCount: 0,
+  };
+  updateGalleryForSelectedFolder();
+  if (!silent) {
+    setStatus("Face filter cleared.");
+  }
+}
+
+function applyFaceFilter(faceId, photoIds = [], groupCount = 0) {
+  currentFaceFilter = {
+    active: true,
+    faceId: String(faceId || "").trim(),
+    photoIds: new Set(photoIds.map((id) => String(id || "").trim()).filter(Boolean)),
+    groupCount: Math.max(0, Number(groupCount) || 0),
+  };
+  updateGalleryForSelectedFolder();
+}
+
+function closeFacePickerPopup() {
+  const popup = document.getElementById("face-picker-popup");
+  if (popup) {
+    popup.remove();
+  }
+}
+
+function buildFacePickerPopup() {
+  const popup = document.createElement("div");
+  popup.className = "face-picker-popup-backdrop";
+  popup.id = "face-picker-popup";
+  popup.innerHTML = `
+    <div class="face-picker-popup" role="dialog" aria-modal="true" aria-label="Face search">
+      <div class="face-picker-header">
+        <h3>Find By Face</h3>
+        <button type="button" class="face-picker-close" aria-label="Close">Close</button>
+      </div>
+      <p class="face-picker-subtitle">Select a face to filter matching photos.</p>
+      <div class="face-picker-status">Loading faces…</div>
+      <div class="face-picker-grid hidden"></div>
+      <div class="face-picker-footer">
+        <button type="button" class="face-picker-clear">Clear Filter</button>
+      </div>
+    </div>
+  `;
+  popup.querySelector(".face-picker-close")?.addEventListener("click", closeFacePickerPopup);
+  popup.querySelector(".face-picker-clear")?.addEventListener("click", () => {
+    clearFaceFilter();
+    closeFacePickerPopup();
+  });
+  popup.addEventListener("click", (event) => {
+    if (event.target === popup) {
+      closeFacePickerPopup();
+    }
+  });
+  return popup;
+}
+
+async function fetchFaceGroups() {
+  const response = await fetch(`/api/public-page/faces?publicPageId=${encodeURIComponent(currentPublicPageId)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not load detected faces.");
+  }
+  return payload;
+}
+
+async function fetchFaceMatches(faceId) {
+  const response = await fetch(
+    `/api/public-page/face-photos?publicPageId=${encodeURIComponent(currentPublicPageId)}&faceId=${encodeURIComponent(faceId)}`
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not load face matches.");
+  }
+  return payload;
+}
+
+async function openFacePickerPopup() {
+  if (!currentPublicPageId) {
+    setStatus("Face search is unavailable for this album.", true);
+    return;
+  }
+  closeFacePickerPopup();
+  const popup = buildFacePickerPopup();
+  document.body.appendChild(popup);
+
+  const statusEl = popup.querySelector(".face-picker-status");
+  const gridEl = popup.querySelector(".face-picker-grid");
+  try {
+    const payload = await fetchFaceGroups();
+    const status = String(payload?.status || "").trim().toLowerCase();
+    const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+    if (status === "queued" || status === "processing") {
+      statusEl.textContent = "Face detection is in progress. Please try again in a few minutes.";
+      return;
+    }
+    if (status !== "completed" || !groups.length) {
+      statusEl.textContent = "No detected faces available yet for this album.";
+      return;
+    }
+
+    statusEl.classList.add("hidden");
+    gridEl.classList.remove("hidden");
+    gridEl.innerHTML = "";
+    groups.forEach((group) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "face-picker-item";
+      const image = document.createElement("img");
+      image.src = String(group.previewDataUrl || "").trim();
+      image.alt = "";
+      const label = document.createElement("span");
+      label.textContent = `${Math.max(0, Number(group.photoCount || group.count) || 0)} photos`;
+      button.appendChild(image);
+      button.appendChild(label);
+      button.addEventListener("click", async () => {
+        try {
+          const matches = await fetchFaceMatches(group.id);
+          const photoIds = Array.isArray(matches?.photoIds) ? matches.photoIds : [];
+          applyFaceFilter(group.id, photoIds, photoIds.length);
+          closeFacePickerPopup();
+          setStatus(`Showing ${photoIds.length} photos for selected face.`);
+        } catch (error) {
+          setStatus(error?.message || "Could not filter by face.", true);
+        }
+      });
+      gridEl.appendChild(button);
+    });
+  } catch (error) {
+    statusEl.textContent = error?.message || "Could not load detected faces.";
   }
 }
 
@@ -1909,7 +2062,11 @@ function renderGallery(photoItems) {
 
 function updateGalleryForSelectedFolder() {
   const selectedFolder = getSelectedFolder();
-  images = selectedFolder ? selectedFolder.images : [];
+  const baseImages = selectedFolder ? selectedFolder.images : [];
+  const filteredImages = currentFaceFilter.active
+    ? baseImages.filter((photo) => currentFaceFilter.photoIds.has(String(photo?.id || "").trim()))
+    : baseImages;
+  images = filteredImages;
   if (photoCountEl) {
     photoCountEl.textContent = `${images.length}`;
   }
@@ -1926,9 +2083,13 @@ function updateGalleryForSelectedFolder() {
     }
   }
   if (selectedGridFolderEl) {
-    selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
+    if (currentFaceFilter.active) {
+      selectedGridFolderEl.textContent = `Face results · ${images.length} photo${images.length === 1 ? "" : "s"}`;
+    } else {
+      selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
+    }
   }
-  renderGallery(selectedFolder ? selectedFolder.images : []);
+  renderGallery(filteredImages);
   if (selectedFolder && pendingSharedPhotoId && (!pendingSharedFolderId || pendingSharedFolderId === selectedFolder.id)) {
     const sharedPhotoIndex = images.findIndex((photo) => photo.id === pendingSharedPhotoId);
     if (sharedPhotoIndex >= 0) {
