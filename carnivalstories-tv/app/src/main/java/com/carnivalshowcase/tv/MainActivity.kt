@@ -2467,9 +2467,7 @@ class DriveDeckViewModel(
             statusTone = StatusTone.Neutral,
             folders = folders,
             selectedFolder = selectedFolder,
-            albumCoverBackgroundUrl = resolution.coverBackgroundUrl.ifBlank {
-              selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty()
-            },
+            albumCoverBackgroundUrl = resolution.coverBackgroundUrl,
             images = selectedFolder?.images.orEmpty(),
             screen = nextScreen,
             gallerySettingsVisible = false
@@ -2590,7 +2588,7 @@ class DriveDeckViewModel(
         statusTone = StatusTone.Neutral,
         folders = folders,
         selectedFolder = selectedFolder,
-        albumCoverBackgroundUrl = selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty(),
+        albumCoverBackgroundUrl = "",
         images = selectedFolder?.images.orEmpty(),
         screen = nextScreen,
         gallerySettingsVisible = false,
@@ -2614,9 +2612,7 @@ class DriveDeckViewModel(
     stopEventPresentationRefresh()
     uiState = uiState.copy(
       selectedFolder = folder,
-      albumCoverBackgroundUrl = uiState.albumCoverBackgroundUrl.ifBlank {
-        folder.images.firstOrNull()?.fullUrl.orEmpty()
-      },
+      albumCoverBackgroundUrl = uiState.albumCoverBackgroundUrl,
       images = folder.images,
       screen = TvScreen.Gallery,
       gallerySettingsVisible = false,
@@ -2660,12 +2656,7 @@ class DriveDeckViewModel(
       return
     }
 
-    val backgroundUrl = uiState.albumCoverBackgroundUrl.ifBlank {
-      uiState.selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty()
-    }.ifBlank {
-      uiState.images.firstOrNull()?.fullUrl.orEmpty()
-    }
-      .ifBlank { pool.firstOrNull()?.fullUrl.orEmpty() }
+    val backgroundUrl = uiState.albumCoverBackgroundUrl.trim()
 
     uiState = uiState.copy(
       images = pool.shuffled(),
