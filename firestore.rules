@@ -85,10 +85,12 @@ service cloud.firestore {
 
     match /faceDetectionQueue/{pageId} {
       allow get: if isAdmin()
-        || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+        || (isSignedIn() && (
+          !exists(/databases/$(database)/documents/faceDetectionQueue/$(pageId))
+          || resource.data.ownerUid == request.auth.uid
+        ));
       allow list: if isAdmin();
       allow create: if isSignedIn()
-        && canCreateLinks()
         && request.resource.data.ownerUid == request.auth.uid;
       allow update, delete: if isAdmin()
         || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
