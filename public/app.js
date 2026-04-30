@@ -128,6 +128,9 @@ const slideshowMotionPresets = [
   { fromX: "-110vw", fromY: "110vh", toX: "110vw", toY: "-110vh" },
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
+const ALBUM_PRESENT_ENTER_MS = 500;
+const ALBUM_PRESENT_PUSH_DELAY_MS = 250;
+const ALBUM_PRESENT_EXIT_MS = 500;
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
 let bootLoaderHideRequested = false;
@@ -2205,8 +2208,13 @@ function showSlide(index) {
       previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
       previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
       previousEntry.card.classList.remove("is-active");
-      previousEntry.card.classList.add("is-leaving");
-      window.setTimeout(() => resetSlideCard(previousEntry), 860);
+      window.setTimeout(() => {
+        previousEntry.card.classList.add("is-leaving");
+      }, ALBUM_PRESENT_PUSH_DELAY_MS);
+      window.setTimeout(
+        () => resetSlideCard(previousEntry),
+        ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 40
+      );
     }
     activeSlideCardIndex = nextEntryIndex;
   } else {

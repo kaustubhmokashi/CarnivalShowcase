@@ -160,6 +160,8 @@ const eventPresentCardA = document.getElementById("event-present-card-a");
 const eventPresentCardB = document.getElementById("event-present-card-b");
 const eventPresentImageA = document.getElementById("event-present-image-a");
 const eventPresentImageB = document.getElementById("event-present-image-b");
+const eventPresentLoader = document.getElementById("event-present-loader");
+const eventPresentLoaderAnimationEl = document.getElementById("event-present-loader-animation");
 const eventPresentExitButton = document.getElementById("event-present-exit");
 const STUDIO_PROFILE_CACHE_KEY = "carnival_studio_profile_cache";
 
@@ -195,6 +197,13 @@ let currentPublicEvent = null;
 let currentEventPresentationSlug = "";
 let currentEventPresentationRefreshTimer = null;
 let currentEventPresentationCardIndex = 0;
+let currentEventPresentationHasFirstPaint = false;
+let eventPresentLoaderAnimation = null;
+let currentEventPresentationLeaveStartTimer = null;
+let currentEventPresentationLeaveCleanupTimer = null;
+const EVENT_PRESENT_ENTER_MS = 500;
+const EVENT_PRESENT_PUSH_DELAY_MS = 250;
+const EVENT_PRESENT_EXIT_MS = 500;
 let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
 const adminFolderNameCache = new Map();
@@ -2661,8 +2670,11 @@ function openEventPhotosSlideshow(photos, index = 0) {
 function stopEventPresentation() {
   clearEventPresentationSlideTimer();
   clearEventPresentationRefreshTimer();
+  clearEventPresentationTransitionTimers();
   currentEventPresentationSlug = "";
   currentEventPresentationCardIndex = 0;
+  currentEventPresentationHasFirstPaint = false;
+  hideEventPresentationLoader();
   if (screenEventPresent) {
     screenEventPresent.style.backgroundImage = "";
     screenEventPresent.style.backgroundSize = "";
@@ -2696,6 +2708,55 @@ function clearEventPresentationRefreshTimer() {
     window.clearTimeout(currentEventPresentationRefreshTimer);
     currentEventPresentationRefreshTimer = null;
   }
+}
+
+function clearEventPresentationTransitionTimers() {
+  if (currentEventPresentationLeaveStartTimer) {
+    window.clearTimeout(currentEventPresentationLeaveStartTimer);
+    currentEventPresentationLeaveStartTimer = null;
+  }
+  if (currentEventPresentationLeaveCleanupTimer) {
+    window.clearTimeout(currentEventPresentationLeaveCleanupTimer);
+    currentEventPresentationLeaveCleanupTimer = null;
+  }
+}
+
+async function ensureEventPresentationLoaderAnimation() {
+  if (!eventPresentLoaderAnimationEl || eventPresentLoaderAnimation || typeof window.lottie?.loadAnimation !== "function") {
+    return;
+  }
+
+  try {
+    const response = await fetch("/assets/boot-loader.json?v=20260428a", { cache: "force-cache" });
+    if (!response.ok) {
+      throw new Error(`Presentation loader animation could not be loaded (${response.status}).`);
+    }
+    const animationData = await response.json();
+    eventPresentLoaderAnimation = window.lottie.loadAnimation({
+      container: eventPresentLoaderAnimationEl,
+      renderer: "svg",
+      loop: true,
+      autoplay: true,
+      animationData,
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid meet",
+      },
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function showEventPresentationLoader() {
+  if (!eventPresentLoader) {
+    return;
+  }
+  eventPresentLoader.classList.remove("hidden");
+  void ensureEventPresentationLoaderAnimation();
+}
+
+function hideEventPresentationLoader() {
+  eventPresentLoader?.classList.add("hidden");
 }
 
 function queueNextEventPresentationSlide() {
@@ -2750,13 +2811,20 @@ async function renderEventPresentationSlide() {
       activeCard.style.setProperty("--event-to-x", `${motion.toX}px`);
       activeCard.style.setProperty("--event-to-y", `${motion.toY}px`);
       activeCard.style.setProperty("--event-tilt", `${tilt}deg`);
-      activeCard.classList.add("is-leaving");
       activeCard.classList.remove("is-active");
-      window.setTimeout(() => {
+      clearEventPresentationTransitionTimers();
+      currentEventPresentationLeaveStartTimer = window.setTimeout(() => {
+        activeCard.classList.add("is-leaving");
+      }, EVENT_PRESENT_PUSH_DELAY_MS);
+      currentEventPresentationLeaveCleanupTimer = window.setTimeout(() => {
         activeCard.classList.remove("is-leaving");
-      }, 860);
+      }, EVENT_PRESENT_PUSH_DELAY_MS + EVENT_PRESENT_EXIT_MS + 40);
     }
     currentEventPresentationCardIndex = nextIndex;
+    if (!currentEventPresentationHasFirstPaint) {
+      currentEventPresentationHasFirstPaint = true;
+      hideEventPresentationLoader();
+    }
     queueNextEventPresentationSlide();
   };
   preload.onerror = () => {
@@ -2832,6 +2900,8 @@ async function loadEventPresentation(slug) {
   screenStudio.classList.remove("active");
   screenEventPublic?.classList.remove("active");
   screenEventPresent?.classList.add("active");
+  currentEventPresentationHasFirstPaint = false;
+  showEventPresentationLoader();
   document.body.classList.remove("studio-scroll-lock");
   if (screenEventPresent) {
     const backgroundUrl = String(event.backgroundUrl || "").trim();

@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PresentToAll
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
@@ -257,6 +258,7 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
       state = state,
       onBack = viewModel::onBack,
       onOpenFolder = viewModel::openFolder,
+      onOpenPresentation = viewModel::openAlbumPresentation,
     )
 
     is TvScreen.Gallery -> GalleryScreen(
@@ -270,6 +272,7 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
       onToggleAutoplay = viewModel::toggleAutoplay,
       onTogglePlayVideos = viewModel::togglePlayVideosInSlideshow,
       onStartSlideshow = { viewModel.openSlideshow(0) },
+      onOpenPresentation = viewModel::openAlbumPresentation,
     )
 
     is TvScreen.Slideshow -> SlideshowScreen(
@@ -563,6 +566,7 @@ private fun FolderGridScreen(
   state: DriveDeckUiState,
   onBack: () -> Unit,
   onOpenFolder: (FolderSummary) -> Unit,
+  onOpenPresentation: () -> Unit,
 ) {
   val firstFolderFocusRequester = remember { FocusRequester() }
 
@@ -576,6 +580,11 @@ private fun FolderGridScreen(
     title = "Choose a folder",
     subtitle = state.status.ifBlank { "Pick a folder to browse." },
     onBack = onBack,
+    topAction = {
+      FocusableIconAction(onClick = onOpenPresentation) {
+        Icon(Icons.Default.PresentToAll, contentDescription = "Open presentation", tint = TextPrimary)
+      }
+    }
   ) { padding ->
     LazyVerticalGrid(
       columns = GridCells.Adaptive(240.dp),
@@ -604,6 +613,7 @@ private fun GalleryScreen(
   state: DriveDeckUiState,
   onBack: () -> Unit,
   onOpenSlideshow: (Int) -> Unit,
+  onOpenPresentation: () -> Unit,
   onToggleSettings: () -> Unit,
   onDecreaseDuration: () -> Unit,
   onIncreaseDuration: () -> Unit,
@@ -630,8 +640,13 @@ private fun GalleryScreen(
     subtitle = "${state.images.size} photos ready to browse.",
     onBack = onBack,
     topAction = {
-      FocusableIconAction(onClick = onToggleSettings) {
-        Icon(Icons.Default.Settings, contentDescription = "Open settings", tint = TextPrimary)
+      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        FocusableIconAction(onClick = onOpenPresentation) {
+          Icon(Icons.Default.PresentToAll, contentDescription = "Open presentation", tint = TextPrimary)
+        }
+        FocusableIconAction(onClick = onToggleSettings) {
+          Icon(Icons.Default.Settings, contentDescription = "Open settings", tint = TextPrimary)
+        }
       }
     }
   ) { padding ->
@@ -689,6 +704,7 @@ private fun SlideshowScreen(
   onOpenVideoPlayer: () -> Unit,
 ) {
   val current = state.currentSlide ?: return
+  val isPresentationMode = state.isEventPresentationMode || state.isAlbumPresentationMode
   val context = LocalContext.current
   val imageLoader = context.imageLoader
   var interactionVersion by remember { mutableStateOf(0) }
@@ -701,7 +717,7 @@ private fun SlideshowScreen(
   var inlineVideoError by remember(current.id, current.fullUrl, inlineVideoAllowed) { mutableStateOf<String?>(null) }
   val shouldPromptForVideoPlayer = current.isVideo &&
     !state.playVideosInSlideshow &&
-    !state.isEventPresentationMode &&
+    !isPresentationMode &&
     state.videoPlayerPromptDismissedId != current.id
   val inlinePlayer = remember(current.id, current.fullUrl, inlineVideoAllowed) {
     if (inlineVideoAllowed) {
@@ -721,7 +737,7 @@ private fun SlideshowScreen(
   }
 
   fun registerInteraction(showChrome: Boolean = true) {
-    if (state.isEventPresentationMode) {
+    if (isPresentationMode) {
       return
     }
     if (showChrome) {
@@ -818,7 +834,7 @@ private fun SlideshowScreen(
   }
 
   LaunchedEffect(state.slideshowChromeVisible, interactionVersion) {
-    if (!state.slideshowChromeVisible || state.isEventPresentationMode) {
+    if (!state.slideshowChromeVisible || isPresentationMode) {
       return@LaunchedEffect
     }
 
@@ -846,7 +862,7 @@ private fun SlideshowScreen(
           }
         }
 
-        if (state.isEventPresentationMode) {
+        if (isPresentationMode) {
           return@onPreviewKeyEvent when (event.key) {
             Key.Escape, Key.Back -> {
               onBack()
@@ -887,14 +903,14 @@ private fun SlideshowScreen(
         }
       }
       .clickable {
-        if (state.isEventPresentationMode) {
+        if (isPresentationMode) {
           return@clickable
         }
         registerInteraction()
         onTogglePlay()
       }
   ) {
-    if (state.isEventPresentationMode) {
+    if (isPresentationMode) {
       EventPresentationSurface(
         state = state,
         slide = current,
@@ -995,7 +1011,7 @@ private fun SlideshowScreen(
       }
     }
 
-    if (state.slideshowChromeVisible && !state.isEventPresentationMode) {
+    if (state.slideshowChromeVisible && !isPresentationMode) {
       Column(
         modifier = Modifier
           .fillMaxSize()
@@ -1178,7 +1194,12 @@ private fun EventPresentationSurface(
   slideReady: Boolean,
   onSlideReady: (Boolean) -> Unit,
 ) {
-  val backgroundUrl = state.eventPresentationBackgroundUrl.trim()
+  val backgroundUrl = state.presentationBackgroundUrl.trim()
+  val overlayColor = if (state.isAlbumPresentationMode) {
+    AppBackground.copy(alpha = 0.8f)
+  } else {
+    Color(0x66000000)
+  }
   var displayedSlide by remember { mutableStateOf(slide) }
   var stagedSlide by remember { mutableStateOf(slide) }
   var stagedReady by remember { mutableStateOf(true) }
@@ -1204,7 +1225,7 @@ private fun EventPresentationSurface(
   Box(modifier = Modifier.fillMaxSize()) {
     // Immediate fallback background to avoid delayed appearance on slow networks.
     AsyncImage(
-      model = displayedSlide.thumbnailUrl,
+      model = if (backgroundUrl.isNotBlank()) backgroundUrl else displayedSlide.thumbnailUrl,
       contentDescription = null,
       contentScale = ContentScale.Crop,
       modifier = Modifier.fillMaxSize()
@@ -1219,7 +1240,7 @@ private fun EventPresentationSurface(
       Box(
         modifier = Modifier
           .fillMaxSize()
-          .background(Color(0x66000000))
+          .background(overlayColor)
       )
     }
 
@@ -1233,7 +1254,7 @@ private fun EventPresentationSurface(
         .padding(0.dp)
     ) {
       SubcomposeAsyncImage(
-        model = stagedSlide.fullUrl,
+        model = stagedSlide.slideshowUrl.ifBlank { stagedSlide.fullUrl },
         contentDescription = null,
         contentScale = ContentScale.Fit,
         modifier = Modifier.fillMaxSize()
@@ -1297,7 +1318,7 @@ private fun EventPresentationSurface(
             .padding(12.dp)
         ) {
           SubcomposeAsyncImage(
-            model = targetSlide.fullUrl,
+            model = targetSlide.slideshowUrl.ifBlank { targetSlide.fullUrl },
             contentDescription = targetSlide.name,
             contentScale = ContentScale.Fit,
             modifier = Modifier
@@ -2297,6 +2318,7 @@ data class DriveDeckUiState(
   val isLoading: Boolean = false,
   val folders: List<FolderSummary> = emptyList(),
   val selectedFolder: FolderSummary? = null,
+  val albumCoverBackgroundUrl: String = "",
   val images: List<PhotoAsset> = emptyList(),
   val currentSlideIndex: Int = 0,
   val durationSeconds: Int = 4,
@@ -2307,6 +2329,9 @@ data class DriveDeckUiState(
   val slideshowSettingsVisible: Boolean = false,
   val slideshowChromeVisible: Boolean = true,
   val isEventPresentationMode: Boolean = false,
+  val isAlbumPresentationMode: Boolean = false,
+  val albumPresentationBackgroundUrl: String = "",
+  val albumPresentationReturnScreen: TvScreen = TvScreen.Gallery,
   val eventPresentationTitle: String = "",
   val eventPresentationSlug: String = "",
   val eventPresentationBackgroundUrl: String = "",
@@ -2315,6 +2340,9 @@ data class DriveDeckUiState(
 ) {
   val currentSlide: PhotoAsset?
     get() = images.getOrNull(currentSlideIndex)
+
+  val presentationBackgroundUrl: String
+    get() = if (isEventPresentationMode) eventPresentationBackgroundUrl else albumPresentationBackgroundUrl
 }
 
 enum class StatusTone {
@@ -2439,6 +2467,9 @@ class DriveDeckViewModel(
             statusTone = StatusTone.Neutral,
             folders = folders,
             selectedFolder = selectedFolder,
+            albumCoverBackgroundUrl = resolution.coverBackgroundUrl.ifBlank {
+              selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty()
+            },
             images = selectedFolder?.images.orEmpty(),
             screen = nextScreen,
             gallerySettingsVisible = false
@@ -2501,6 +2532,8 @@ class DriveDeckViewModel(
       inlineVideoPlaybackApprovedId = null,
       videoPlayerPromptDismissedId = null,
       isEventPresentationMode = true,
+      isAlbumPresentationMode = false,
+      albumPresentationBackgroundUrl = "",
       eventPresentationTitle = resolution.name,
       eventPresentationSlug = resolution.slug,
       eventPresentationBackgroundUrl = resolution.backgroundUrl
@@ -2557,10 +2590,13 @@ class DriveDeckViewModel(
         statusTone = StatusTone.Neutral,
         folders = folders,
         selectedFolder = selectedFolder,
+        albumCoverBackgroundUrl = selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty(),
         images = selectedFolder?.images.orEmpty(),
         screen = nextScreen,
         gallerySettingsVisible = false,
         isEventPresentationMode = false,
+        isAlbumPresentationMode = false,
+        albumPresentationBackgroundUrl = "",
         eventPresentationTitle = "",
         eventPresentationSlug = "",
         eventPresentationBackgroundUrl = ""
@@ -2578,12 +2614,17 @@ class DriveDeckViewModel(
     stopEventPresentationRefresh()
     uiState = uiState.copy(
       selectedFolder = folder,
+      albumCoverBackgroundUrl = uiState.albumCoverBackgroundUrl.ifBlank {
+        folder.images.firstOrNull()?.fullUrl.orEmpty()
+      },
       images = folder.images,
       screen = TvScreen.Gallery,
       gallerySettingsVisible = false,
       status = "",
       statusTone = StatusTone.Neutral,
       isEventPresentationMode = false,
+      isAlbumPresentationMode = false,
+      albumPresentationBackgroundUrl = "",
       eventPresentationTitle = "",
       eventPresentationSlug = "",
       eventPresentationBackgroundUrl = ""
@@ -2599,6 +2640,52 @@ class DriveDeckViewModel(
       slideshowSettingsVisible = false,
       inlineVideoPlaybackApprovedId = null,
       videoPlayerPromptDismissedId = null,
+      isAlbumPresentationMode = false,
+      albumPresentationBackgroundUrl = "",
+    )
+  }
+
+  fun openAlbumPresentation() {
+    stopEventPresentationRefresh()
+    val pool = uiState.folders
+      .flatMap { folder -> folder.images }
+      .filterNot { it.isVideo }
+      .ifEmpty { uiState.images.filterNot { it.isVideo } }
+
+    if (pool.isEmpty()) {
+      uiState = uiState.copy(
+        status = "No photos are ready for presentation yet.",
+        statusTone = StatusTone.Error
+      )
+      return
+    }
+
+    val backgroundUrl = uiState.albumCoverBackgroundUrl.ifBlank {
+      uiState.selectedFolder?.images?.firstOrNull()?.fullUrl.orEmpty()
+    }.ifBlank {
+      uiState.images.firstOrNull()?.fullUrl.orEmpty()
+    }
+      .ifBlank { pool.firstOrNull()?.fullUrl.orEmpty() }
+
+    uiState = uiState.copy(
+      images = pool.shuffled(),
+      currentSlideIndex = 0,
+      screen = TvScreen.Slideshow,
+      autoplayEnabled = true,
+      slideshowChromeVisible = false,
+      slideshowSettingsVisible = false,
+      gallerySettingsVisible = false,
+      inlineVideoPlaybackApprovedId = null,
+      videoPlayerPromptDismissedId = null,
+      isEventPresentationMode = false,
+      eventPresentationTitle = "",
+      eventPresentationSlug = "",
+      eventPresentationBackgroundUrl = "",
+      isAlbumPresentationMode = true,
+      albumPresentationBackgroundUrl = backgroundUrl,
+      albumPresentationReturnScreen = uiState.screen,
+      status = "",
+      statusTone = StatusTone.Neutral
     )
   }
 
@@ -2741,6 +2828,17 @@ class DriveDeckViewModel(
           images = emptyList(),
           status = "",
           statusTone = StatusTone.Neutral
+        )
+      } else if (uiState.isAlbumPresentationMode) {
+        uiState.copy(
+          screen = uiState.albumPresentationReturnScreen,
+          autoplayEnabled = false,
+          slideshowChromeVisible = true,
+          slideshowSettingsVisible = false,
+          inlineVideoPlaybackApprovedId = null,
+          videoPlayerPromptDismissedId = null,
+          isAlbumPresentationMode = false,
+          albumPresentationBackgroundUrl = "",
         )
       } else uiState.copy(
         screen = TvScreen.Gallery,
@@ -2903,6 +3001,7 @@ sealed interface PairingResolution {
   data class Snapshot(
     val snapshot: AlbumSnapshotPayload,
     val folderUrl: String = "",
+    val coverBackgroundUrl: String = "",
   ) : PairingResolution
   data class EventPresentation(
     val name: String,
@@ -2969,7 +3068,8 @@ class DriveDeckRepository(
         parsed.mode == "snapshot" && parsed.snapshot != null -> {
           PairingResolution.Snapshot(
             snapshot = parsed.snapshot,
-            folderUrl = parsed.folderUrl.orEmpty()
+            folderUrl = parsed.folderUrl.orEmpty(),
+            coverBackgroundUrl = resolveSnapshotCoverBackground(parsed.snapshot)
           )
         }
 
@@ -3052,6 +3152,25 @@ class DriveDeckRepository(
       json.decodeFromString<ErrorResponse>(body).error
     }.getOrDefault("Request failed.")
     return normalizeErrorMessage(rawMessage)
+  }
+
+  private fun resolveSnapshotCoverBackground(snapshot: AlbumSnapshotPayload): String {
+    val explicitCover = snapshot.coverImageUrl.ifBlank { snapshot.coverThumbnailUrl }.trim()
+    if (explicitCover.isNotBlank()) {
+      return makeAbsolute(explicitCover)
+    }
+
+    val coverId = snapshot.coverFileId.trim()
+    if (coverId.isNotBlank()) {
+      snapshot.folders.forEach { folder ->
+        val match = folder.images.firstOrNull { image -> image.id.trim() == coverId }
+        if (match != null) {
+          return makeAbsolute(match.slideshowUrl.ifBlank { match.url })
+        }
+      }
+    }
+
+    return ""
   }
 
   private fun normalizeErrorMessage(message: String): String {
@@ -3152,6 +3271,9 @@ data class AlbumSnapshotPayload(
   val folderCount: Int = 0,
   val mediaCount: Int = 0,
   val generatedAt: String = "",
+  val coverFileId: String = "",
+  val coverImageUrl: String = "",
+  val coverThumbnailUrl: String = "",
   val folders: List<SnapshotFolder> = emptyList(),
 )
 
