@@ -2299,8 +2299,9 @@ function showSlide(index) {
       // Keep exiting card above the entering one so exit is always visible/clean.
       previousEntry.card.style.setProperty("--slide-z", "3");
       previousEntry.card.classList.remove("is-leaving");
-      previousEntry.card.classList.remove("is-active");
       logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
+      // Force a stable painted state before transitioning to the leaving transform.
+      previousEntry.card.getBoundingClientRect();
       window.requestAnimationFrame(() => {
         previousEntry.card.classList.add("is-leaving");
       });
@@ -2309,7 +2310,7 @@ function showSlide(index) {
           resetSlideCard(previousEntry);
           logPresentationDebug("album", `exit-done prev="${prevName}" total=${Math.round(performance.now() - enterAt)}ms`);
         }
-      }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 80);
+      }, ALBUM_PRESENT_PUSH_DELAY_MS + ALBUM_PRESENT_EXIT_MS + 240);
     }
 
     activeSlideCardIndex = nextEntryIndex;
