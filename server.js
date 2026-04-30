@@ -6,6 +6,12 @@ const path = require("path");
 const crypto = require("crypto");
 const { URL } = require("url");
 const QRCode = require("qrcode");
+let faceapi = null;
+let tfjsNode = null;
+let canvasLib = null;
+let faceModelsReady = false;
+let faceDetectionRuntimeError = "";
+let faceDetectionProcessingLoopActive = false;
 
 loadEnvFile(path.join(__dirname, ".env"));
 
@@ -83,8 +89,11 @@ const FIREBASE_COLLECTIONS = {
   publicPages: process.env.FIREBASE_PUBLICPAGES_COLLECTION || "publicPages",
   pairingCodes: process.env.FIREBASE_PAIRINGCODES_COLLECTION || "pairingCodes",
   customDomains: process.env.FIREBASE_CUSTOMDOMAINS_COLLECTION || "customDomains",
+  faceDetectionQueue: process.env.FIREBASE_FACEDETECTIONQUEUE_COLLECTION || "faceDetectionQueue",
 };
 const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
+const FACE_GROUPS_SUBCOLLECTION = "faceDetectionGroups";
+const FACE_MATCHES_SUBCOLLECTION = "faceDetectionPhotoMatches";
 const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
 const FOLDER_CACHE_FRESH_MS = Number(process.env.FOLDER_CACHE_FRESH_MS || 5 * 60 * 1000);
 const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 60 * 1000);
@@ -93,6 +102,21 @@ const MEDIA_CACHE_MAX_BYTES = Number(process.env.MEDIA_CACHE_MAX_BYTES || 120 * 
 const MEDIA_CACHE_MAX_ENTRY_BYTES = Number(process.env.MEDIA_CACHE_MAX_ENTRY_BYTES || 8 * 1024 * 1024);
 const EVENT_UPLOAD_MAX_BYTES = Number(process.env.EVENT_UPLOAD_MAX_BYTES || 20 * 1024 * 1024);
 const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
+const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
+const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
+const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.47);
+const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
+const FACE_MODEL_BASE_URL =
+  process.env.FACE_MODEL_BASE_URL ||
+  "https://raw.githubusercontent.com/vladmandic/face-api/master/model";
+const FACE_MODEL_FILES = [
+  "tiny_face_detector_model-weights_manifest.json",
+  "tiny_face_detector_model-shard1",
+  "face_landmark_68_tiny_model-weights_manifest.json",
+  "face_landmark_68_tiny_model-shard1",
+  "face_recognition_model-weights_manifest.json",
+  "face_recognition_model-shard1",
+];
 
 const IMAGE_MIME_PREFIX = "image/";
 const VIDEO_MIME_PREFIX = "video/";
@@ -303,6 +327,396 @@ function ensureDataStore() {
       "utf8"
     );
   }
+}
+
+function ensureFaceModelStore() {
+  ensureDataStore();
+  if (!fs.existsSync(FACE_MODEL_DIR)) {
+    fs.mkdirSync(FACE_MODEL_DIR, { recursive: true });
+  }
+}
+
+async function ensureFaceModelFiles() {
+  ensureFaceModelStore();
+  for (const fileName of FACE_MODEL_FILES) {
+    const targetPath = path.join(FACE_MODEL_DIR, fileName);
+    if (fs.existsSync(targetPath)) {
+      continue;
+    }
+    const modelUrl = `${FACE_MODEL_BASE_URL}/${fileName}`;
+    const response = await fetch(modelUrl);
+    if (!response.ok) {
+      throw new Error(`Face model download failed (${response.status}) for ${fileName}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(targetPath, buffer);
+  }
+}
+
+async function ensureFaceRuntime() {
+  if (faceModelsReady) {
+    return;
+  }
+  if (!faceapi || !tfjsNode || !canvasLib) {
+    ({ default: faceapi } = await import("@vladmandic/face-api"));
+    tfjsNode = require("@tensorflow/tfjs-node");
+    canvasLib = require("canvas");
+    const { Canvas, Image, ImageData } = canvasLib;
+    faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+    faceapi.tf = tfjsNode;
+  }
+  await ensureFaceModelFiles();
+  await faceapi.nets.tinyFaceDetector.loadFromDisk(FACE_MODEL_DIR);
+  await faceapi.nets.faceLandmark68TinyNet.loadFromDisk(FACE_MODEL_DIR);
+  await faceapi.nets.faceRecognitionNet.loadFromDisk(FACE_MODEL_DIR);
+  faceModelsReady = true;
+  faceDetectionRuntimeError = "";
+}
+
+function toDataUrlFromCanvas(canvas, mimeType = "image/jpeg", quality = 0.86) {
+  const buffer = canvas.toBuffer(mimeType, { quality });
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function euclideanDistance(left, right) {
+  let total = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const delta = left[index] - right[index];
+    total += delta * delta;
+  }
+  return Math.sqrt(total);
+}
+
+function averageDescriptor(samples) {
+  if (!samples.length) {
+    return [];
+  }
+  const length = samples[0].length;
+  const accumulator = new Float32Array(length);
+  for (const sample of samples) {
+    for (let i = 0; i < length; i += 1) {
+      accumulator[i] += sample[i];
+    }
+  }
+  for (let i = 0; i < length; i += 1) {
+    accumulator[i] /= samples.length;
+  }
+  return Array.from(accumulator);
+}
+
+function clusterFaceDescriptors(detections) {
+  const groups = [];
+  for (const detection of detections) {
+    const descriptor = detection.descriptor;
+    let bestGroup = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const group of groups) {
+      const distance = euclideanDistance(descriptor, group.center);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestGroup = group;
+      }
+    }
+    if (bestGroup && bestDistance <= FACE_DETECTION_DISTANCE_THRESHOLD) {
+      bestGroup.samples.push(descriptor);
+      bestGroup.photos.add(detection.photoId);
+      if (!bestGroup.previewDataUrl && detection.previewDataUrl) {
+        bestGroup.previewDataUrl = detection.previewDataUrl;
+      }
+      bestGroup.center = averageDescriptor(bestGroup.samples);
+      continue;
+    }
+    groups.push({
+      id: `face_${String(groups.length + 1).padStart(3, "0")}`,
+      center: descriptor.slice(),
+      samples: [descriptor],
+      photos: new Set([detection.photoId]),
+      previewDataUrl: detection.previewDataUrl || "",
+    });
+  }
+  return groups
+    .map((group) => ({
+      id: group.id,
+      count: group.samples.length,
+      photoIds: Array.from(group.photos),
+      previewDataUrl: group.previewDataUrl || "",
+      center: group.center,
+    }))
+    .sort((left, right) => right.count - left.count);
+}
+
+async function fetchImageBufferForFaceDetection(fileId) {
+  const candidates = [
+    `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w640`,
+    `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w640`,
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(API_KEY)}`,
+  ];
+  const result = await fetchMediaCandidateWithCache(candidates, null, "");
+  if (!Buffer.isBuffer(result.body)) {
+    const chunks = [];
+    for await (const chunk of result.body) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+  return result.body;
+}
+
+async function detectFacesInPhotoBuffer(photo, buffer) {
+  const image = await canvasLib.loadImage(buffer);
+  const sourceCanvas = canvasLib.createCanvas(image.width, image.height);
+  const sourceContext = sourceCanvas.getContext("2d");
+  sourceContext.drawImage(image, 0, 0, image.width, image.height);
+
+  const detections = await faceapi
+    .detectAllFaces(
+      sourceCanvas,
+      new faceapi.TinyFaceDetectorOptions({
+        inputSize: 320,
+        scoreThreshold: 0.5,
+      })
+    )
+    .withFaceLandmarks(true)
+    .withFaceDescriptors();
+
+  return detections.map((entry) => {
+    const box = entry?.detection?.box || { x: 0, y: 0, width: image.width, height: image.height };
+    const pad = Math.max(12, Math.round(Math.min(box.width, box.height) * 0.2));
+    const cropX = clamp(Math.floor(box.x - pad), 0, image.width - 1);
+    const cropY = clamp(Math.floor(box.y - pad), 0, image.height - 1);
+    const cropWidth = clamp(Math.ceil(box.width + pad * 2), 16, image.width - cropX);
+    const cropHeight = clamp(Math.ceil(box.height + pad * 2), 16, image.height - cropY);
+    const previewCanvas = canvasLib.createCanvas(128, 128);
+    const previewContext = previewCanvas.getContext("2d");
+    previewContext.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, 128, 128);
+    return {
+      photoId: photo.id,
+      descriptor: Array.from(entry.descriptor || []),
+      previewDataUrl: toDataUrlFromCanvas(previewCanvas, "image/jpeg", 0.82),
+    };
+  });
+}
+
+async function clearFaceDetectionSubcollections(publicPageRef) {
+  const groupsSnapshot = await publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).get();
+  const matchesSnapshot = await publicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).get();
+  const batch = firestoreDb.batch();
+  groupsSnapshot.docs.forEach((snapshotDoc) => batch.delete(snapshotDoc.ref));
+  matchesSnapshot.docs.forEach((snapshotDoc) => batch.delete(snapshotDoc.ref));
+  if (groupsSnapshot.size || matchesSnapshot.size) {
+    await batch.commit();
+  }
+}
+
+async function persistFaceDetectionResults(publicPageRef, groupedFaces, detectedPhotos) {
+  await clearFaceDetectionSubcollections(publicPageRef);
+  const batch = firestoreDb.batch();
+  const photoFaceMap = new Map();
+  for (const group of groupedFaces) {
+    const groupRef = publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id);
+    batch.set(groupRef, {
+      id: group.id,
+      count: group.count,
+      photoCount: group.photoIds.length,
+      photoIds: group.photoIds,
+      previewDataUrl: group.previewDataUrl || "",
+      updatedAt: new Date().toISOString(),
+    });
+    group.photoIds.forEach((photoId) => {
+      const current = photoFaceMap.get(photoId) || [];
+      current.push(group.id);
+      photoFaceMap.set(photoId, current);
+    });
+  }
+
+  detectedPhotos.forEach((photo) => {
+    const faceIds = photoFaceMap.get(photo.id) || [];
+    const photoRef = publicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photo.id);
+    batch.set(photoRef, {
+      photoId: photo.id,
+      faceIds,
+      hasFaces: faceIds.length > 0,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+  await batch.commit();
+}
+
+async function processFaceDetectionAlbum(queueDocRef, queueData) {
+  const pageId = String(queueData?.pageId || "").trim();
+  const ownerUid = String(queueData?.ownerUid || "").trim();
+  if (!pageId || !ownerUid) {
+    throw new Error("Invalid queue payload.");
+  }
+  const pageRef = firestoreDb.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
+  const pageSnapshot = await pageRef.get();
+  if (!pageSnapshot.exists) {
+    throw new Error("Album page not found.");
+  }
+
+  const page = pageSnapshot.data() || {};
+  const driveLink = String(page.driveLink || "").trim();
+  if (!driveLink) {
+    throw new Error("Album is missing Drive link.");
+  }
+
+  const folderId = extractFolderId(driveLink);
+  if (!folderId) {
+    throw new Error("Could not resolve Drive folder id.");
+  }
+
+  const folderResult = await fetchFolderResult(folderId, false);
+  const allImages = Array.isArray(folderResult?.images) ? folderResult.images : [];
+  const images = allImages.filter((file) => String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)).slice(0, FACE_DETECTION_MAX_IMAGES);
+
+  const detections = [];
+  for (const image of images) {
+    try {
+      const buffer = await fetchImageBufferForFaceDetection(image.id);
+      const photoDetections = await detectFacesInPhotoBuffer(image, buffer);
+      detections.push(...photoDetections);
+    } catch (error) {
+      console.warn(`Face detection skipped image ${image.id}: ${error.message}`);
+    }
+  }
+
+  const groupedFaces = clusterFaceDescriptors(detections);
+  const publicPageSnapshots = await firestoreDb
+    .collection(FIREBASE_COLLECTIONS.publicPages)
+    .where("pageId", "==", pageId)
+    .get();
+
+  const faceDetectionPayload = {
+    status: "completed",
+    source: String(queueData?.source || "").trim() || "manual",
+    requestedAt: queueData?.queuedAt || page.faceDetection?.requestedAt || new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    faceGroupCount: groupedFaces.length,
+    detectedPhotoCount: groupedFaces.reduce((total, group) => total + group.photoIds.length, 0),
+    scannedPhotoCount: images.length,
+  };
+
+  await pageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
+  for (const publicPageSnapshot of publicPageSnapshots.docs) {
+    const publicPageRef = publicPageSnapshot.ref;
+    await publicPageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
+    await persistFaceDetectionResults(publicPageRef, groupedFaces, images);
+  }
+
+  await queueDocRef.set(
+    {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      faceGroupCount: groupedFaces.length,
+      scannedPhotoCount: images.length,
+    },
+    { merge: true }
+  );
+}
+
+async function runFaceDetectionQueuePass() {
+  if (!firestoreDb || faceDetectionProcessingLoopActive) {
+    return;
+  }
+  faceDetectionProcessingLoopActive = true;
+  try {
+    await ensureFaceRuntime();
+    const queueSnapshot = await firestoreDb
+      .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
+      .where("status", "==", "queued")
+      .limit(1)
+      .get();
+    if (queueSnapshot.empty) {
+      return;
+    }
+    const queueDoc = queueSnapshot.docs[0];
+    const queueDocRef = queueDoc.ref;
+    const queueData = queueDoc.data() || {};
+
+    const lockAcquired = await firestoreDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(queueDocRef);
+      if (!snapshot.exists) {
+        return false;
+      }
+      const data = snapshot.data() || {};
+      if (String(data.status || "").trim() !== "queued") {
+        return false;
+      }
+      transaction.set(
+        queueDocRef,
+        {
+          status: "processing",
+          processingStartedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          runtimeError: "",
+        },
+        { merge: true }
+      );
+      return true;
+    });
+
+    if (!lockAcquired) {
+      return;
+    }
+
+    try {
+      await processFaceDetectionAlbum(queueDocRef, queueData);
+    } catch (error) {
+      const errorMessage = error?.message || "Face detection failed.";
+      await queueDocRef.set(
+        {
+          status: "failed",
+          updatedAt: new Date().toISOString(),
+          failedAt: new Date().toISOString(),
+          runtimeError: errorMessage,
+        },
+        { merge: true }
+      );
+
+      const pageId = String(queueData?.pageId || "").trim();
+      const ownerUid = String(queueData?.ownerUid || "").trim();
+      if (pageId && ownerUid) {
+        const pageRef = firestoreDb.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
+        await pageRef.set(
+          {
+            faceDetection: {
+              status: "failed",
+              source: String(queueData?.source || "").trim() || "manual",
+              requestedAt: queueData?.queuedAt || new Date().toISOString(),
+              completedAt: null,
+              updatedAt: new Date().toISOString(),
+              error: errorMessage,
+            },
+          },
+          { merge: true }
+        );
+      }
+    }
+  } catch (runtimeError) {
+    faceDetectionRuntimeError = runtimeError?.message || "Face detection runtime unavailable";
+    console.warn(`Face detection runtime unavailable: ${faceDetectionRuntimeError}`);
+  } finally {
+    faceDetectionProcessingLoopActive = false;
+  }
+}
+
+function startFaceDetectionQueueWorker() {
+  if (!firestoreDb) {
+    return;
+  }
+  const run = () => {
+    runFaceDetectionQueuePass().catch((error) => {
+      console.warn(`Face detection queue pass failed: ${error.message}`);
+    });
+  };
+  run();
+  setInterval(run, FACE_DETECTION_POLL_MS);
 }
 
 function readEventsStore() {
@@ -2001,6 +2415,83 @@ async function handlePublicPageLikes(req, res) {
   }
 
   sendJson(res, 200, { publicPageId, photoLikes: merged, source: "firestore" });
+}
+
+async function handlePublicPageFaceGroups(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
+  if (!publicPageId) {
+    sendJson(res, 400, { error: "Missing public page identifier." });
+    return;
+  }
+
+  const db = getFirestoreDb();
+  if (!db) {
+    sendJson(res, 200, {
+      publicPageId,
+      status: "unavailable",
+      faceDetection: null,
+      groups: [],
+      runtime: faceDetectionRuntimeError || "Face detection backend is unavailable.",
+    });
+    return;
+  }
+
+  const pageSnapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
+  if (!pageSnapshot.exists) {
+    sendJson(res, 404, { error: "This studio page does not exist." });
+    return;
+  }
+
+  const faceDetection = pageSnapshot.data()?.faceDetection || null;
+  const groupsSnapshot = await pageSnapshot.ref.collection(FACE_GROUPS_SUBCOLLECTION).get();
+  const groups = groupsSnapshot.docs
+    .map((docSnap) => docSnap.data() || {})
+    .map((entry) => ({
+      id: String(entry.id || "").trim() || String(entry.faceId || "").trim(),
+      count: Math.max(0, Number(entry.count) || 0),
+      photoCount: Math.max(0, Number(entry.photoCount) || 0),
+      previewDataUrl: String(entry.previewDataUrl || "").trim(),
+    }))
+    .filter((entry) => entry.id);
+
+  sendJson(res, 200, {
+    publicPageId,
+    status: String(faceDetection?.status || "idle").trim() || "idle",
+    faceDetection,
+    groups,
+  });
+}
+
+async function handlePublicPageFaceMatches(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
+  const faceId = String(requestUrl.searchParams.get("faceId") || "").trim();
+  if (!publicPageId || !faceId) {
+    sendJson(res, 400, { error: "Missing face filter parameters." });
+    return;
+  }
+
+  const db = getFirestoreDb();
+  if (!db) {
+    sendJson(res, 200, { publicPageId, faceId, photoIds: [] });
+    return;
+  }
+
+  const groupSnapshot = await db
+    .collection(FIREBASE_COLLECTIONS.publicPages)
+    .doc(publicPageId)
+    .collection(FACE_GROUPS_SUBCOLLECTION)
+    .doc(faceId)
+    .get();
+  if (!groupSnapshot.exists) {
+    sendJson(res, 200, { publicPageId, faceId, photoIds: [] });
+    return;
+  }
+
+  const group = groupSnapshot.data() || {};
+  const photoIds = Array.isArray(group.photoIds) ? group.photoIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+  sendJson(res, 200, { publicPageId, faceId, photoIds });
 }
 
 async function handleEventPhotoLike(req, res) {
@@ -3816,6 +4307,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if ((requestUrl.pathname === "/api/public-page/faces" || requestUrl.pathname === "/api/public-page/face-groups") && req.method === "GET") {
+    await handlePublicPageFaceGroups(req, res);
+    return;
+  }
+
+  if ((requestUrl.pathname === "/api/public-page/face-photos" || requestUrl.pathname === "/api/public-page/face-matches") && req.method === "GET") {
+    await handlePublicPageFaceMatches(req, res);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/events/photo-like" && req.method === "POST") {
     await handleEventPhotoLike(req, res);
     return;
@@ -3956,4 +4457,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Gallery slideshow running at http://${HOST}:${PORT}`);
+  startFaceDetectionQueueWorker();
 });
