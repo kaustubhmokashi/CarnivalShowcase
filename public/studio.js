@@ -2355,6 +2355,8 @@ function resetEventUploadPreview() {
   eventUploadForm?.classList.remove("is-uploading", "has-preview");
   eventUploadQueue?.classList.add("hidden");
   if (eventUploadQueue) {
+    eventUploadQueue.classList.remove("is-single");
+    eventUploadQueue.style.removeProperty("--upload-grid-cols");
     eventUploadQueue.innerHTML = "";
   }
   if (eventUploadPreview) {
@@ -2362,6 +2364,23 @@ function resetEventUploadPreview() {
     eventUploadPreview.removeAttribute("src");
     eventUploadPreview.alt = "";
   }
+}
+
+function updateEventUploadQueueLayout() {
+  if (!eventUploadQueue) {
+    return;
+  }
+  const count = currentEventUploadQueue.length;
+  if (!count) {
+    eventUploadQueue.classList.add("hidden");
+    eventUploadQueue.classList.remove("is-single");
+    eventUploadQueue.style.removeProperty("--upload-grid-cols");
+    return;
+  }
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+  eventUploadQueue.classList.remove("hidden");
+  eventUploadQueue.classList.toggle("is-single", count === 1);
+  eventUploadQueue.style.setProperty("--upload-grid-cols", String(columns));
 }
 
 function createEventUploadQueueItem(file) {
@@ -2404,13 +2423,21 @@ function createEventUploadQueueItem(file) {
     previewUrl,
     loaderAnimation,
     markDone() {
-      card.classList.remove("is-uploading");
-      card.classList.add("is-uploaded");
       loaderAnimation?.destroy?.();
       if (loaderEl) {
         loaderEl.innerHTML = "";
       }
+      card.classList.remove("is-uploading");
+      card.classList.add("is-uploaded", "is-removing");
       successEl?.classList.remove("hidden");
+      window.setTimeout(() => {
+        card.remove();
+        currentEventUploadQueue = currentEventUploadQueue.filter((queuedItem) => queuedItem !== item);
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        updateEventUploadQueueLayout();
+      }, 180);
     },
     markFailed() {
       card.classList.remove("is-uploading");
@@ -2422,6 +2449,7 @@ function createEventUploadQueueItem(file) {
     },
   };
   currentEventUploadQueue.push(item);
+  updateEventUploadQueueLayout();
   return item;
 }
 
