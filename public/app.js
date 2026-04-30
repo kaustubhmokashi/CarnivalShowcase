@@ -129,7 +129,7 @@ const slideshowMotionPresets = [
   { fromX: "110vw", fromY: "110vh", toX: "-110vw", toY: "-110vh" },
 ];
 const ALBUM_PRESENT_ENTER_MS = 900;
-const ALBUM_PRESENT_PUSH_DELAY_MS = 450;
+const ALBUM_PRESENT_PUSH_DELAY_MS = 0;
 const ALBUM_PRESENT_EXIT_MS = 900;
 let bootLoaderHidden = !window.CarnivalBootLoaderRoute;
 let bootLoaderAnimationInitialized = false;
@@ -2159,6 +2159,16 @@ function getNextSlideshowMotionPreset() {
   return preset;
 }
 
+function getNextSlideshowExitPreset() {
+  const presets = [
+    { toX: "-110vw", toY: "-110vh" },
+    { toX: "110vw", toY: "-110vh" },
+    { toX: "-110vw", toY: "110vh" },
+    { toX: "110vw", toY: "110vh" },
+  ];
+  return presets[Math.floor(Math.random() * presets.length)];
+}
+
 function applySlideCardMotion(card, motion, tilt) {
   card.style.setProperty("--slide-from-x", motion.fromX);
   card.style.setProperty("--slide-from-y", motion.fromY);
@@ -2245,6 +2255,7 @@ function showSlide(index) {
     const previousEntry = activeSlideCardIndex >= 0 ? entries[activeSlideCardIndex] : null;
     activeEntry = entries[nextEntryIndex];
     const motion = getNextSlideshowMotionPreset();
+    const exitMotion = getNextSlideshowExitPreset();
     const tilt = getRandomSlideTilt();
     const enterAt = performance.now();
     logPresentationDebug(
@@ -2263,8 +2274,8 @@ function showSlide(index) {
     });
     if (previousEntry?.card && previousEntry !== activeEntry) {
       const prevName = images[(currentSlideIndex - 1 + images.length) % images.length]?.name || "";
-      previousEntry.card.style.setProperty("--slide-to-x", motion.toX)
-      previousEntry.card.style.setProperty("--slide-to-y", motion.toY)
+      previousEntry.card.style.setProperty("--slide-to-x", exitMotion.toX)
+      previousEntry.card.style.setProperty("--slide-to-y", exitMotion.toY)
       previousEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
       previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
       previousEntry.card.style.setProperty("--slide-z", "3");
@@ -2285,7 +2296,10 @@ function showSlide(index) {
       };
       previousEntry.card.addEventListener("transitionstart", onPushStart);
       previousEntry.card.addEventListener("transitionend", onExitDone);
-      previousEntry.card.classList.add("is-leaving");
+      previousEntry.card.classList.remove("is-active");
+      window.requestAnimationFrame(() => {
+        previousEntry.card.classList.add("is-leaving");
+      });
       window.setTimeout(() => {
         if (previousEntry.card.classList.contains("is-leaving")) {
           previousEntry.card.removeEventListener("transitionstart", onPushStart);

@@ -202,7 +202,7 @@ let eventPresentLoaderAnimation = null;
 let currentEventPresentationLeaveStartTimer = null;
 let currentEventPresentationLeaveCleanupTimer = null;
 const EVENT_PRESENT_ENTER_MS = 900;
-const EVENT_PRESENT_PUSH_DELAY_MS = 450;
+const EVENT_PRESENT_PUSH_DELAY_MS = 0;
 const EVENT_PRESENT_EXIT_MS = 900;
 let manageEventRefreshTimer = null;
 const ADMIN_EMAIL = "carnivalshowcase@gmail.com";
@@ -253,6 +253,16 @@ function logPresentationDebug(source, message) {
 
 function isMobileStudioViewport() {
   return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function getNextEventExitPreset() {
+  const presets = [
+    { toX: "-110vw", toY: "-110vh" },
+    { toX: "110vw", toY: "-110vh" },
+    { toX: "-110vw", toY: "110vh" },
+    { toX: "110vw", toY: "110vh" },
+  ];
+  return presets[Math.floor(Math.random() * presets.length)];
 }
 
 function closeStudioSidebarDrawer({ restoreFocus = false } = {}) {
@@ -2839,6 +2849,7 @@ async function renderEventPresentationSlide() {
       { fromX: offsetX, fromY: offsetY, toX: -offsetX, toY: -offsetY },
     ];
     const motion = corners[Math.floor(Math.random() * corners.length)];
+    const exitMotion = getNextEventExitPreset();
     const tilt = ((Math.random() * 20) - 10).toFixed(2);
     const enterAt = performance.now();
     logPresentationDebug(
@@ -2865,8 +2876,8 @@ async function renderEventPresentationSlide() {
     if (activeCard.classList.contains("is-active")) {
       activeCard.style.setProperty("--event-from-x", "0px");
       activeCard.style.setProperty("--event-from-y", "0px");
-      activeCard.style.setProperty("--event-to-x", `${motion.toX}px`);
-      activeCard.style.setProperty("--event-to-y", `${motion.toY}px`);
+      activeCard.style.setProperty("--event-to-x", exitMotion.toX);
+      activeCard.style.setProperty("--event-to-y", exitMotion.toY);
       activeCard.style.setProperty("--event-tilt", `${tilt}deg`);
       activeCard.style.setProperty("--motion-duration", `${EVENT_PRESENT_EXIT_MS}ms`);
       activeCard.style.setProperty("--motion-delay", `${EVENT_PRESENT_PUSH_DELAY_MS}ms`);
@@ -2890,7 +2901,10 @@ async function renderEventPresentationSlide() {
       };
       activeCard.addEventListener("transitionstart", onPushStart);
       activeCard.addEventListener("transitionend", onExitDone);
-      activeCard.classList.add("is-leaving");
+      activeCard.classList.remove("is-active");
+      window.requestAnimationFrame(() => {
+        activeCard.classList.add("is-leaving");
+      });
       currentEventPresentationLeaveCleanupTimer = window.setTimeout(() => {
         if (activeCard.classList.contains("is-leaving")) {
           activeCard.removeEventListener("transitionstart", onPushStart);
