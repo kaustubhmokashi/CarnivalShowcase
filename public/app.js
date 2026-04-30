@@ -2290,7 +2290,8 @@ function showSlide(index) {
       previousEntry.card.style.setProperty("--slide-to-y", exitMotion.toY);
       previousEntry.card.style.setProperty("--motion-duration", `${ALBUM_PRESENT_EXIT_MS}ms`);
       previousEntry.card.style.setProperty("--motion-delay", `${ALBUM_PRESENT_PUSH_DELAY_MS}ms`);
-      previousEntry.card.style.setProperty("--slide-z", "1");
+      // Keep exiting card above the entering one so exit is always visible/clean.
+      previousEntry.card.style.setProperty("--slide-z", "3");
       previousEntry.card.classList.remove("is-leaving");
       previousEntry.card.classList.remove("is-active");
       logPresentationDebug("album", `push-start prev="${prevName}" at=${Math.round(performance.now() - enterAt)}ms`);
