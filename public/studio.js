@@ -30,6 +30,7 @@ const collections = {
   publicPages: firebaseSettings.collections?.publicPages || "publicPages",
   pairingCodes: firebaseSettings.collections?.pairingCodes || "pairingCodes",
   customDomains: firebaseSettings.collections?.customDomains || "customDomains",
+  faceDetectionQueue: firebaseSettings.collections?.faceDetectionQueue || "faceDetectionQueue",
 };
 const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
 const ALBUM_SNAPSHOT_VERSION = 1;
@@ -1204,6 +1205,9 @@ function renderSavedPagesTable() {
 
   savedPagesTable.innerHTML = "";
   savedPages.forEach((page) => {
+    const faceDetection = normalizeFaceDetectionState(page?.faceDetection);
+    const canUseFacePicker = faceDetection.status === "completed";
+    const isFaceDetectionRunning = faceDetection.status === "queued" || faceDetection.status === "processing";
     const card = document.createElement("article");
     card.className = "saved-page-card";
     card.tabIndex = 0;
@@ -1217,8 +1221,24 @@ function renderSavedPagesTable() {
       </a>
       <div class="saved-page-content">
         <h2>${escapeMarkup(page.tagline || page.pageName || "Untitled page")}</h2>
+        ${canUseFacePicker ? `
+          <span class="saved-page-face-tag" aria-label="Face detection completed">
+            <span class="saved-page-icon icon-mask icon-face-detection" aria-hidden="true"></span>
+            Face ready
+          </span>
+        ` : ""}
         <p class="saved-page-pairing">${escapeMarkup(page.pairingCode || "")}</p>
         <div class="saved-page-actions" aria-label="Page actions">
+          <button
+            type="button"
+            class="saved-page-icon-button ${isFaceDetectionRunning ? "is-disabled" : ""}"
+            data-action="face-detection"
+            aria-label="Face detection"
+            ${isFaceDetectionRunning ? "disabled" : ""}
+            title="${canUseFacePicker ? "Open face picker" : (isFaceDetectionRunning ? "Face detection in progress" : "Start face detection")}"
+          >
+            <span class="saved-page-icon icon-mask icon-face-detection" aria-hidden="true"></span>
+          </button>
           <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share page link">
             <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
           </button>
@@ -1287,6 +1307,19 @@ function renderSavedPagesTable() {
         showStudioToast("Could not share album");
       }
     });
+    card.querySelector('[data-action="face-detection"]')?.addEventListener("click", async () => {
+      if (canUseFacePicker) {
+        showStudioToast("Face picker popup will be enabled in the next phase.");
+        return;
+      }
+      try {
+        await enqueueFaceDetection(page, { manual: true });
+        showStudioToast("Face detection queued for this album.");
+        await loadSavedPages();
+      } catch (error) {
+        showStudioToast(error?.message || "Could not queue face detection.");
+      }
+    });
     card.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
       openEditWizard(page);
     });
@@ -1294,6 +1327,73 @@ function renderSavedPagesTable() {
       await deleteSavedPage(page);
     });
     savedPagesTable.appendChild(card);
+  });
+}
+
+function normalizeFaceDetectionState(faceDetection = null) {
+  const rawStatus = String(faceDetection?.status || "").trim().toLowerCase();
+  const status = ["queued", "processing", "completed", "failed"].includes(rawStatus) ? rawStatus : "idle";
+  return {
+    status,
+    requestedAt: faceDetection?.requestedAt || null,
+    completedAt: faceDetection?.completedAt || null,
+    updatedAt: faceDetection?.updatedAt || null,
+    source: String(faceDetection?.source || "").trim(),
+  };
+}
+
+async function enqueueFaceDetection(page, { manual = false } = {}) {
+  if (!page?.id || !currentUser?.uid) {
+    throw new Error("Album details are missing.");
+  }
+  const currentStatus = normalizeFaceDetectionState(page?.faceDetection).status;
+  if (currentStatus === "queued" || currentStatus === "processing") {
+    throw new Error("Face detection is already in progress for this album.");
+  }
+  if (currentStatus === "completed" && !manual) {
+    return;
+  }
+
+  const pageRef = doc(getPagesCollection(), page.id);
+  const primaryPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(page));
+  const customDomain = getPageCustomDomain(page);
+  const aliasPublicPageRef = customDomain
+    ? doc(db, collections.publicPages, getCustomDomainPublicPageId(customDomain, page.pageSlug))
+    : null;
+  const queueRef = doc(db, collections.faceDetectionQueue, page.id);
+
+  await runTransaction(db, async (transaction) => {
+    const queueSnapshot = await transaction.get(queueRef);
+    const queueStatus = String(queueSnapshot.data()?.status || "").trim().toLowerCase();
+    if (queueStatus === "queued" || queueStatus === "processing") {
+      throw new Error("Face detection is already in progress for this album.");
+    }
+
+    const faceDetectionPayload = {
+      status: "queued",
+      source: manual ? "manual" : "auto",
+      requestedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      completedAt: null,
+    };
+
+    transaction.set(pageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+    transaction.set(primaryPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+    if (aliasPublicPageRef) {
+      transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
+    }
+
+    transaction.set(queueRef, {
+      pageId: page.id,
+      ownerUid: currentUser.uid,
+      studioSlug: String(page.studioSlug || currentProfile?.studioSlug || "").trim(),
+      pageSlug: String(page.pageSlug || "").trim(),
+      pageName: String(page.pageName || "").trim(),
+      status: "queued",
+      source: manual ? "manual" : "auto",
+      queuedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
   });
 }
 
@@ -3920,6 +4020,17 @@ async function reservePairingCode(pageRef, pagePayload) {
           updatedAt: serverTimestamp(),
         });
       }
+      transaction.set(doc(db, collections.faceDetectionQueue, pageRef.id), {
+        pageId: pageRef.id,
+        ownerUid: currentUser.uid,
+        studioSlug: String(pagePayload.studioSlug || "").trim(),
+        pageSlug: String(pagePayload.pageSlug || "").trim(),
+        pageName: String(pagePayload.pageName || "").trim(),
+        status: "queued",
+        source: "auto",
+        queuedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
       return;
     }
 
@@ -3951,6 +4062,13 @@ async function createPageRecord() {
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
+    faceDetection: {
+      status: "queued",
+      source: "auto",
+      requestedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      completedAt: null,
+    },
   };
 
   await reservePairingCode(pageRef, payload);
@@ -3998,6 +4116,13 @@ async function updatePageRecord() {
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
+    faceDetection: existingPage.faceDetection || {
+      status: "queued",
+      source: "auto",
+      requestedAt: existingPage.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      completedAt: null,
+    },
     pairingCode: existingPage.pairingCode,
     updatedAt: serverTimestamp(),
   };
