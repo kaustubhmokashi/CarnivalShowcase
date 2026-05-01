@@ -1331,7 +1331,7 @@ function renderSavedPagesTable() {
     });
     card.querySelector('[data-action="face-detection"]')?.addEventListener("click", async () => {
       if (canUseFacePicker) {
-        showStudioToast("Face picker popup will be enabled in the next phase.");
+        await openStudioFaceMergePopup(page);
         return;
       }
       try {
@@ -1504,6 +1504,162 @@ async function enqueueFaceDetection(page, { manual = false } = {}) {
       updatedAt: serverTimestamp(),
     }, { merge: true });
   });
+}
+
+function closeFaceMergePopup() {
+  const popup = document.getElementById("studio-face-merge-popup");
+  if (popup) {
+    popup.remove();
+  }
+}
+
+function buildFaceMergePopup() {
+  const popup = document.createElement("div");
+  popup.id = "studio-face-merge-popup";
+  popup.className = "face-picker-popup-backdrop";
+  popup.innerHTML = `
+    <div class="face-picker-popup" role="dialog" aria-modal="true" aria-label="Merge detected faces">
+      <div class="face-picker-header">
+        <h3>Merge Faces</h3>
+        <button type="button" class="face-picker-close" aria-label="Close">Close</button>
+      </div>
+      <p class="face-picker-subtitle">Select two or more face groups to merge (deduplicate).</p>
+      <div class="face-picker-status">Loading faces…</div>
+      <div class="face-picker-grid hidden"></div>
+      <div class="face-picker-footer">
+        <button type="button" class="face-picker-clear" data-action="merge" disabled>Merge Selected</button>
+      </div>
+    </div>
+  `;
+  popup.querySelector(".face-picker-close")?.addEventListener("click", closeFaceMergePopup);
+  popup.addEventListener("click", (event) => {
+    if (event.target === popup) {
+      closeFaceMergePopup();
+    }
+  });
+  return popup;
+}
+
+async function fetchStudioFaceGroups(publicPageId) {
+  const response = await fetch(`/api/public-page/faces?publicPageId=${encodeURIComponent(publicPageId)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not load detected faces.");
+  }
+  return payload;
+}
+
+async function mergeStudioFaceGroups(page, selectedFaceIds = []) {
+  const uniqueFaceIds = Array.from(new Set((selectedFaceIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  if (uniqueFaceIds.length < 2) {
+    throw new Error("Select at least two face groups to merge.");
+  }
+  const publicPageIds = [
+    getPrimaryPublicPageId(page),
+    getCustomDomainPublicPageId(getPageCustomDomain(page), page.pageSlug),
+  ].filter(Boolean);
+  const response = await fetch("/api/public-page/merge-faces", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({
+      pageId: String(page?.id || "").trim(),
+      publicPageIds,
+      faceIds: uniqueFaceIds,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Could not merge selected faces.");
+  }
+  return payload;
+}
+
+async function openStudioFaceMergePopup(page) {
+  const primaryPublicPageId = getPrimaryPublicPageId(page);
+  if (!primaryPublicPageId) {
+    showStudioToast("This album does not have a public page reference.");
+    return;
+  }
+  closeFaceMergePopup();
+  const popup = buildFaceMergePopup();
+  document.body.appendChild(popup);
+
+  const statusEl = popup.querySelector(".face-picker-status");
+  const gridEl = popup.querySelector(".face-picker-grid");
+  const mergeButton = popup.querySelector('[data-action="merge"]');
+  const selected = new Set();
+  const updateMergeState = () => {
+    if (mergeButton) {
+      mergeButton.disabled = selected.size < 2;
+    }
+  };
+
+  try {
+    const payload = await fetchStudioFaceGroups(primaryPublicPageId);
+    const status = String(payload?.status || "").trim().toLowerCase();
+    const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+    if (status !== "completed" || !groups.length) {
+      statusEl.textContent = "No detected faces available yet for this album.";
+      updateMergeState();
+      return;
+    }
+
+    statusEl.classList.add("hidden");
+    gridEl.classList.remove("hidden");
+    gridEl.innerHTML = "";
+    groups.forEach((group) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "face-picker-item face-picker-item-multi";
+      item.dataset.faceId = String(group.id || "").trim();
+      item.innerHTML = `
+        <img src="${escapeMarkup(String(group.previewDataUrl || "").trim())}" alt="" />
+        <span>${Math.max(0, Number(group.photoCount || group.count) || 0)} photos</span>
+      `;
+      item.addEventListener("click", () => {
+        const faceId = String(item.dataset.faceId || "").trim();
+        if (!faceId) {
+          return;
+        }
+        if (selected.has(faceId)) {
+          selected.delete(faceId);
+          item.classList.remove("is-selected");
+        } else {
+          selected.add(faceId);
+          item.classList.add("is-selected");
+        }
+        updateMergeState();
+      });
+      gridEl.appendChild(item);
+    });
+
+    mergeButton?.addEventListener("click", async () => {
+      if (selected.size < 2) {
+        return;
+      }
+      try {
+        mergeButton.disabled = true;
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = "Merging selected face groups…";
+        await mergeStudioFaceGroups(page, Array.from(selected));
+        statusEl.textContent = "Faces merged successfully.";
+        await loadSavedPages();
+        closeFaceMergePopup();
+        showStudioToast("Face groups merged.");
+      } catch (error) {
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = error?.message || "Could not merge face groups.";
+        mergeButton.disabled = false;
+      }
+    });
+    updateMergeState();
+  } catch (error) {
+    statusEl.textContent = error?.message || "Could not load detected faces.";
+    updateMergeState();
+  }
 }
 
 function formatEventPhaseLabel(phase) {

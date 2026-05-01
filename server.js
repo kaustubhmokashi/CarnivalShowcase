@@ -2583,6 +2583,147 @@ async function handlePublicPageFaceMatches(req, res) {
   sendJson(res, 200, { publicPageId, faceId, photoIds });
 }
 
+async function handleMergePublicPageFaces(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const pageId = String(body?.pageId || "").trim();
+    const requestedPublicPageIds = Array.isArray(body?.publicPageIds)
+      ? body.publicPageIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    const faceIds = Array.from(
+      new Set(
+        (Array.isArray(body?.faceIds) ? body.faceIds : [])
+          .map((faceId) => String(faceId || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!pageId) {
+      sendJson(res, 400, { error: "Missing page identifier." });
+      return;
+    }
+    if (faceIds.length < 2) {
+      sendJson(res, 400, { error: "Select at least two face groups to merge." });
+      return;
+    }
+
+    const db = getFirestoreDb();
+    if (!db) {
+      sendJson(res, 503, { error: "Face detection backend is unavailable." });
+      return;
+    }
+
+    const pageRef = db.collection(FIREBASE_COLLECTIONS.users).doc(account.localId).collection("pages").doc(pageId);
+    const pageSnapshot = await pageRef.get();
+    if (!pageSnapshot.exists) {
+      sendJson(res, 404, { error: "Album not found." });
+      return;
+    }
+
+    const fallbackPublicPageIds = (
+      await db.collection(FIREBASE_COLLECTIONS.publicPages).where("pageId", "==", pageId).get()
+    ).docs.map((docSnap) => docSnap.id);
+    const publicPageIds = Array.from(new Set([...requestedPublicPageIds, ...fallbackPublicPageIds]));
+    if (!publicPageIds.length) {
+      sendJson(res, 404, { error: "Public page not found." });
+      return;
+    }
+
+    let mergedAcross = 0;
+    for (const publicPageId of publicPageIds) {
+      const publicPageRef = db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId);
+      const publicPageSnapshot = await publicPageRef.get();
+      if (!publicPageSnapshot.exists) {
+        continue;
+      }
+
+      const pageData = publicPageSnapshot.data() || {};
+      if (String(pageData.ownerUid || "").trim() && String(pageData.ownerUid || "").trim() !== account.localId) {
+        continue;
+      }
+
+      const groupSnapshots = await Promise.all(
+        faceIds.map((faceId) => publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(faceId).get())
+      );
+      const existingGroups = groupSnapshots
+        .filter((snapshotDoc) => snapshotDoc.exists)
+        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() || {}) }));
+
+      if (existingGroups.length < 2) {
+        continue;
+      }
+
+      const mergedFaceId = `face_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const mergedPhotoIds = Array.from(
+        new Set(
+          existingGroups.flatMap((group) =>
+            Array.isArray(group.photoIds) ? group.photoIds.map((photoId) => String(photoId || "").trim()).filter(Boolean) : []
+          )
+        )
+      );
+      const mergedCount = existingGroups.reduce((total, group) => total + Math.max(0, Number(group.count) || 0), 0);
+      const previewDataUrl = String(existingGroups.find((group) => String(group.previewDataUrl || "").trim())?.previewDataUrl || "").trim();
+
+      const batch = db.batch();
+      const mergedGroupRef = publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(mergedFaceId);
+      batch.set(
+        mergedGroupRef,
+        {
+          id: mergedFaceId,
+          count: mergedCount,
+          photoCount: mergedPhotoIds.length,
+          photoIds: mergedPhotoIds,
+          previewDataUrl,
+          mergedFrom: existingGroups.map((group) => group.id),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      existingGroups.forEach((group) => {
+        batch.delete(publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id));
+      });
+
+      for (const photoId of mergedPhotoIds) {
+        const photoRef = publicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photoId);
+        const photoSnapshot = await photoRef.get();
+        const existingFaceIds = Array.isArray(photoSnapshot.data()?.faceIds)
+          ? photoSnapshot.data().faceIds.map((faceId) => String(faceId || "").trim()).filter(Boolean)
+          : [];
+        const retainedFaceIds = existingFaceIds.filter((faceId) => !faceIds.includes(faceId));
+        const nextFaceIds = Array.from(new Set([...retainedFaceIds, mergedFaceId]));
+        batch.set(
+          photoRef,
+          {
+            photoId,
+            faceIds: nextFaceIds,
+            hasFaces: nextFaceIds.length > 0,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+      mergedAcross += 1;
+    }
+
+    if (!mergedAcross) {
+      sendJson(res, 400, { error: "No mergeable face groups were found." });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, mergedPublicPages: mergedAcross });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not merge face groups." });
+  }
+}
+
 async function handleEventPhotoLike(req, res) {
   try {
     const body = await readRequestBody(req);
@@ -4418,6 +4559,11 @@ const server = http.createServer(async (req, res) => {
 
   if ((requestUrl.pathname === "/api/public-page/face-photos" || requestUrl.pathname === "/api/public-page/face-matches") && req.method === "GET") {
     await handlePublicPageFaceMatches(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/merge-faces" && req.method === "POST") {
+    await handleMergePublicPageFaces(req, res);
     return;
   }
 

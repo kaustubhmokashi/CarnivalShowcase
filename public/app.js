@@ -156,6 +156,7 @@ let currentFaceFilter = {
   faceId: "",
   photoIds: new Set(),
   groupCount: 0,
+  previewDataUrl: "",
 };
 let galleryVisualReadyPromise = null;
 let resolveGalleryVisualReady = null;
@@ -1365,6 +1366,7 @@ function clearFaceFilter({ silent = false } = {}) {
     faceId: "",
     photoIds: new Set(),
     groupCount: 0,
+    previewDataUrl: "",
   };
   updateGalleryForSelectedFolder();
   if (!silent) {
@@ -1372,14 +1374,39 @@ function clearFaceFilter({ silent = false } = {}) {
   }
 }
 
-function applyFaceFilter(faceId, photoIds = [], groupCount = 0) {
+function applyFaceFilter(faceId, photoIds = [], groupCount = 0, previewDataUrl = "") {
   currentFaceFilter = {
     active: true,
     faceId: String(faceId || "").trim(),
     photoIds: new Set(photoIds.map((id) => String(id || "").trim()).filter(Boolean)),
     groupCount: Math.max(0, Number(groupCount) || 0),
+    previewDataUrl: String(previewDataUrl || "").trim(),
   };
   updateGalleryForSelectedFolder();
+}
+
+function renderFaceFilterChip() {
+  const existing = document.getElementById("face-filter-chip");
+  if (existing) {
+    existing.remove();
+  }
+  if (!galleryEl || !currentFaceFilter.active) {
+    return;
+  }
+  const chip = document.createElement("div");
+  chip.id = "face-filter-chip";
+  chip.className = "face-filter-chip";
+  chip.innerHTML = `
+    ${currentFaceFilter.previewDataUrl ? `<img class="face-filter-chip-thumb" src="${escapeMarkup(currentFaceFilter.previewDataUrl)}" alt="" />` : ""}
+    <span class="face-filter-chip-label">Face filter · ${currentFaceFilter.photoIds.size} photo${currentFaceFilter.photoIds.size === 1 ? "" : "s"}</span>
+    <button type="button" class="face-filter-chip-clear" aria-label="Clear face filter">
+      <span class="icon-mask icon-close" aria-hidden="true"></span>
+    </button>
+  `;
+  chip.querySelector(".face-filter-chip-clear")?.addEventListener("click", () => {
+    clearFaceFilter();
+  });
+  galleryEl.parentElement?.insertBefore(chip, galleryEl);
 }
 
 function closeFacePickerPopup() {
@@ -1482,7 +1509,7 @@ async function openFacePickerPopup() {
         try {
           const matches = await fetchFaceMatches(group.id);
           const photoIds = Array.isArray(matches?.photoIds) ? matches.photoIds : [];
-          applyFaceFilter(group.id, photoIds, photoIds.length);
+          applyFaceFilter(group.id, photoIds, photoIds.length, group.previewDataUrl || "");
           closeFacePickerPopup();
           setStatus(`Showing ${photoIds.length} photos for selected face.`);
         } catch (error) {
@@ -2089,6 +2116,7 @@ function updateGalleryForSelectedFolder() {
       selectedGridFolderEl.textContent = selectedFolder ? selectedFolder.name : "Nothing selected yet";
     }
   }
+  renderFaceFilterChip();
   renderGallery(filteredImages);
   if (selectedFolder && pendingSharedPhotoId && (!pendingSharedFolderId || pendingSharedFolderId === selectedFolder.id)) {
     const sharedPhotoIndex = images.findIndex((photo) => photo.id === pendingSharedPhotoId);
