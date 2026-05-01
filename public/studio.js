@@ -3722,6 +3722,7 @@ async function refreshStudioState(user) {
 
   googleLoginButton.disabled = false;
   const cachedProfile = getCachedStudioProfile(user.uid);
+  const hasCachedStudioIdentity = Boolean(cachedProfile?.studioName && cachedProfile?.studioSlug);
   if (cachedProfile?.studioName && cachedProfile?.studioSlug) {
     currentProfile = {
       ...(currentProfile || {}),
@@ -3747,7 +3748,17 @@ async function refreshStudioState(user) {
   setStudioStatus(studioAuthStatus, "Checking your studio...");
   setStudioStatus(studioNameStatus, "Preparing your studio...");
   await ensureUserShell(user);
-  currentProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
+  const resolvedProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
+  currentProfile = resolvedProfile;
+  if ((!currentProfile?.studioName || !currentProfile?.studioSlug) && hasCachedStudioIdentity) {
+    currentProfile = {
+      ...(currentProfile || {}),
+      ...cachedProfile,
+      email: user.email || currentProfile?.email || "",
+      displayName: user.displayName || currentProfile?.displayName || "",
+      photoURL: user.photoURL || currentProfile?.photoURL || "",
+    };
+  }
   setStudioStatus(studioAuthStatus, "");
   setStudioStatus(studioNameStatus, "");
 

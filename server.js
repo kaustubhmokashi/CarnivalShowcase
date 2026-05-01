@@ -974,12 +974,32 @@ async function runFaceDetectionQueuePass() {
       return;
     }
     await ensureFaceRuntime();
-    const queueSnapshot = await db
-      .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
-      .where("status", "==", "queued")
-      .orderBy("queuedAt", "asc")
-      .limit(1)
-      .get();
+    let queueSnapshot;
+    try {
+      queueSnapshot = await db
+        .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
+        .where("status", "==", "queued")
+        .orderBy("queuedAt", "asc")
+        .limit(1)
+        .get();
+    } catch (queryError) {
+      console.warn(`Face queue ordered query failed, using fallback scan: ${queryError.message}`);
+      const fallbackSnapshot = await db
+        .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
+        .where("status", "==", "queued")
+        .get();
+      const docs = fallbackSnapshot.docs
+        .slice()
+        .sort((left, right) => {
+          const leftMs = Date.parse(String(left.data()?.queuedAt || "")) || 0;
+          const rightMs = Date.parse(String(right.data()?.queuedAt || "")) || 0;
+          return leftMs - rightMs;
+        });
+      queueSnapshot = {
+        empty: docs.length === 0,
+        docs: docs.length ? [docs[0]] : [],
+      };
+    }
     if (queueSnapshot.empty) {
       return;
     }
