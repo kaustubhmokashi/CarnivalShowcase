@@ -108,6 +108,7 @@ const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES |
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
 const FACE_DETECTION_LOCK_LEASE_MS = Number(process.env.FACE_DETECTION_LOCK_LEASE_MS || 10 * 60 * 1000);
 const FACE_DETECTION_PER_IMAGE_TIMEOUT_MS = Number(process.env.FACE_DETECTION_PER_IMAGE_TIMEOUT_MS || 30000);
+const FACE_DETECTION_PER_PHOTO_BUDGET_MS = Number(process.env.FACE_DETECTION_PER_PHOTO_BUDGET_MS || 60000);
 const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.43);
 const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 72);
 const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.24);
@@ -791,7 +792,19 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   const allImages = Array.isArray(folderResult?.images) ? folderResult.images : [];
   const images = allImages.filter((file) => String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)).slice(0, FACE_DETECTION_MAX_IMAGES);
   const totalPhotoCount = images.length;
-  const updateProcessingProgress = async (processedPhotoCount) => {
+  let lastProgressWriteAtMs = 0;
+  const updateProcessingProgress = async (processedPhotoCount, { force = false } = {}) => {
+    const nowMs = Date.now();
+    const shouldWrite =
+      force ||
+      processedPhotoCount === 0 ||
+      processedPhotoCount >= totalPhotoCount ||
+      processedPhotoCount - (Number(queueData?.processedPhotoCount) || 0) >= 10 ||
+      nowMs - lastProgressWriteAtMs >= 12000;
+    if (!shouldWrite) {
+      return;
+    }
+
     const safeTotal = Math.max(1, totalPhotoCount);
     const clampedProcessed = Math.max(0, Math.min(processedPhotoCount, totalPhotoCount));
     let progressPercent = totalPhotoCount > 0 ? Math.max(0, Math.min(100, Math.floor((clampedProcessed / safeTotal) * 100))) : 100;
@@ -810,70 +823,98 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       totalPhotoCount,
     };
 
-    await queueDocRef.set(
-      {
-        status: "processing",
-        updatedAt: nowIso,
-        progressPercent,
-        processedPhotoCount: clampedProcessed,
-        totalPhotoCount,
-      },
-      { merge: true }
+    await withTimeout(
+      queueDocRef.set(
+        {
+          status: "processing",
+          updatedAt: nowIso,
+          progressPercent,
+          processedPhotoCount: clampedProcessed,
+          totalPhotoCount,
+        },
+        { merge: true }
+      ),
+      5000,
+      `queue progress write ${pageId}`
     );
-    await pageRef.set({ faceDetection: processingPayload }, { merge: true });
-    for (const publicPageRef of publicPageRefs) {
-      await publicPageRef.set({ faceDetection: processingPayload }, { merge: true });
+
+    // Reduce write pressure on Firestore: page/public progress is periodic only.
+    if (force || clampedProcessed === 0 || clampedProcessed >= totalPhotoCount || clampedProcessed % 25 === 0) {
+      await withTimeout(pageRef.set({ faceDetection: processingPayload }, { merge: true }), 5000, `page progress write ${pageId}`);
+      for (const publicPageRef of publicPageRefs) {
+        await withTimeout(
+          publicPageRef.set({ faceDetection: processingPayload }, { merge: true }),
+          5000,
+          `public page progress write ${publicPageRef.id}`
+        );
+      }
     }
+    lastProgressWriteAtMs = nowMs;
+    queueData.processedPhotoCount = clampedProcessed;
   };
-  await updateProcessingProgress(0);
+  await updateProcessingProgress(0, { force: true });
 
   const detections = [];
   const primaryPublicPageRef = publicPageRefs[0] || null;
   let processedPhotoCount = 0;
   for (const image of images) {
     try {
-      let photoDetections = null;
-      if (primaryPublicPageRef) {
-        try {
-          photoDetections = await withTimeout(
-            loadFaceDetectionsFromCache(primaryPublicPageRef, image),
-            5000,
-            `load face cache ${image.id}`
-          );
-        } catch (cacheReadError) {
-          console.warn(`Face cache read timeout for ${image.id}: ${cacheReadError.message}`);
-          photoDetections = null;
-        }
-      }
-      if (!photoDetections) {
-        const buffer = await withTimeout(
-          fetchImageBufferForFaceDetection(image.id),
-          FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
-          `fetch image ${image.id}`
-        );
-        photoDetections = await withTimeout(
-          detectFacesInPhotoBuffer(image, buffer),
-          FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
-          `detect faces ${image.id}`
-        );
-        if (primaryPublicPageRef) {
-          try {
-            await withTimeout(
-              saveFaceDetectionsToCache(primaryPublicPageRef, image, photoDetections),
-              5000,
-              `save face cache ${image.id}`
-            );
-          } catch (cacheWriteError) {
-            console.warn(`Face cache write timeout for ${image.id}: ${cacheWriteError.message}`);
+      const photoDetections = await withTimeout(
+        (async () => {
+          let cachedDetections = null;
+          if (primaryPublicPageRef) {
+            try {
+              cachedDetections = await withTimeout(
+                loadFaceDetectionsFromCache(primaryPublicPageRef, image),
+                5000,
+                `load face cache ${image.id}`
+              );
+            } catch (cacheReadError) {
+              console.warn(`Face cache read timeout for ${image.id}: ${cacheReadError.message}`);
+              cachedDetections = null;
+            }
           }
-        }
-      }
+          if (cachedDetections) {
+            return cachedDetections;
+          }
+
+          const buffer = await withTimeout(
+            fetchImageBufferForFaceDetection(image.id),
+            FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
+            `fetch image ${image.id}`
+          );
+          const detected = await withTimeout(
+            detectFacesInPhotoBuffer(image, buffer),
+            FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
+            `detect faces ${image.id}`
+          );
+          if (primaryPublicPageRef) {
+            try {
+              await withTimeout(
+                saveFaceDetectionsToCache(primaryPublicPageRef, image, detected),
+                5000,
+                `save face cache ${image.id}`
+              );
+            } catch (cacheWriteError) {
+              console.warn(`Face cache write timeout for ${image.id}: ${cacheWriteError.message}`);
+            }
+          }
+          return detected;
+        })(),
+        FACE_DETECTION_PER_PHOTO_BUDGET_MS,
+        `process photo ${image.id}`
+      );
+
       detections.push(...photoDetections);
     } catch (error) {
       console.warn(`Face detection skipped image ${image.id}: ${error.message}`);
     } finally {
       processedPhotoCount += 1;
-      await updateProcessingProgress(processedPhotoCount);
+      try {
+        await updateProcessingProgress(processedPhotoCount);
+      } catch (progressError) {
+        console.warn(`Face detection progress update failed at photo ${image.id}: ${progressError.message}`);
+      }
     }
   }
 
@@ -896,10 +937,18 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     totalPhotoCount,
   };
 
-  await pageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
+  await withTimeout(pageRef.set({ faceDetection: faceDetectionPayload }, { merge: true }), 5000, `page complete write ${pageId}`);
   for (const publicPageRef of publicPageRefs) {
-    await publicPageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
-    await persistFaceDetectionResults(publicPageRef, groupedFaces, images);
+    await withTimeout(
+      publicPageRef.set({ faceDetection: faceDetectionPayload }, { merge: true }),
+      5000,
+      `public page complete write ${publicPageRef.id}`
+    );
+    await withTimeout(
+      persistFaceDetectionResults(publicPageRef, groupedFaces, images),
+      30000,
+      `persist face groups ${publicPageRef.id}`
+    );
   }
 
   await queueDocRef.set(
@@ -978,6 +1027,20 @@ async function releaseFaceDetectionWorkerLock(db) {
   } catch (error) {
     console.warn(`Failed to release face detection lock: ${error.message}`);
   }
+}
+
+function isTransientFaceQueueError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (!message) {
+    return false;
+  }
+  return (
+    message.includes("resource_exhausted") ||
+    message.includes("quota exceeded") ||
+    message.includes("deadline exceeded") ||
+    message.includes("timeout") ||
+    message.includes("temporarily unavailable")
+  );
 }
 
 async function runFaceDetectionQueuePass() {
@@ -1074,11 +1137,25 @@ async function runFaceDetectionQueuePass() {
       await processFaceDetectionAlbum(queueDocRef, queueData);
     } catch (error) {
       const errorMessage = error?.message || "Face detection failed.";
+      const nowIso = new Date().toISOString();
+      if (isTransientFaceQueueError(error)) {
+        await queueDocRef.set(
+          {
+            status: "queued",
+            updatedAt: nowIso,
+            processingStartedAt: null,
+            runtimeError: `Transient retry: ${errorMessage}`,
+          },
+          { merge: true }
+        );
+        return;
+      }
+
       await queueDocRef.set(
         {
           status: "failed",
-          updatedAt: new Date().toISOString(),
-          failedAt: new Date().toISOString(),
+          updatedAt: nowIso,
+          failedAt: nowIso,
           runtimeError: errorMessage,
         },
         { merge: true }
