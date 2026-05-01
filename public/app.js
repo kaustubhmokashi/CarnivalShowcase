@@ -1848,7 +1848,7 @@ function updateFolderTabsVisibility(folders = currentFolders) {
     return;
   }
 
-  const shouldHide = (folders?.length || 0) <= 1;
+  const shouldHide = currentFaceFilter.active || (folders?.length || 0) <= 1;
   folderTabsShellEl.classList.toggle("hidden", shouldHide);
   folderTabsStickyShellEl?.classList.toggle("hidden", true);
   folderTabsStickyShellEl?.setAttribute("aria-hidden", "true");
@@ -2096,6 +2096,7 @@ function renderGallery(photoItems, options = {}) {
 }
 
 function updateGalleryForSelectedFolder() {
+  updateFolderTabsVisibility(currentFolders);
   const selectedFolder = getSelectedFolder();
   const baseImages = currentFaceFilter.active
     ? allMediaItems.filter((photo) => !isVideoMedia(photo))

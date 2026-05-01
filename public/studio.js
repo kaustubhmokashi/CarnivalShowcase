@@ -175,6 +175,7 @@ let savedPages = [];
 let savedEvents = [];
 let allAccounts = [];
 let allAdminLinks = [];
+let allAdminEvents = [];
 let pendingAccountStatuses = new Map();
 let activeAdminFilter = "active";
 let wizardState = createEmptyWizardState();
@@ -834,6 +835,22 @@ function showStudioDashboardSection(section) {
   studioAccountSection?.classList.toggle("active", activeSection === "account");
   if (isMobileStudioViewport()) {
     closeStudioSidebarDrawer();
+  }
+
+  if (activeSection === "events") {
+    void loadEvents().catch((error) => {
+      setStudioStatus(studioAccountStatus, error.message || "Could not load events.", true);
+      savedEvents = [];
+      renderSavedEventsTable();
+    });
+  }
+
+  if (activeSection === "pages") {
+    void loadSavedPages().catch((error) => {
+      setStudioStatus(studioAccountStatus, error.message || "Could not load albums.", true);
+      savedPages = [];
+      renderSavedPagesTable();
+    });
   }
 }
 
@@ -2275,8 +2292,9 @@ async function getFolderNameForAdminLink(url, fallback = "Google Drive folder") 
 
 function updateAdminPanelMode() {
   const isLinksView = activeAdminFilter === "links";
-  adminSaveAccountsButton?.classList.toggle("hidden", isLinksView);
-  adminAccountsList?.classList.toggle("links-mode", isLinksView);
+  const isEventsView = activeAdminFilter === "events";
+  adminSaveAccountsButton?.classList.toggle("hidden", isLinksView || isEventsView);
+  adminAccountsList?.classList.toggle("links-mode", isLinksView || isEventsView);
 }
 
 function renderAdminAccounts() {
@@ -2415,6 +2433,125 @@ function renderAdminLinks() {
   });
 }
 
+function formatEventWindow(startAt, endAt) {
+  const start = Date.parse(String(startAt || ""));
+  const end = Date.parse(String(endAt || ""));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return "—";
+  }
+  const formatDate = (value) =>
+    new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const formatTime = (value) =>
+    new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${formatDate(start)} ${formatTime(start)} - ${formatDate(end)} ${formatTime(end)}`;
+}
+
+function computeEventDurationLabel(startAt, endAt) {
+  const start = Date.parse(String(startAt || ""));
+  const end = Date.parse(String(endAt || ""));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return "—";
+  }
+  const totalMinutes = Math.round((end - start) / 60000);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes || !parts.length) parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
+
+function getEventAdminPhaseRank(phase) {
+  const normalized = String(phase || "").trim().toLowerCase();
+  if (normalized === "live") return 0;
+  if (normalized === "upcoming") return 1;
+  return 2;
+}
+
+function getEventAdminPhaseLabel(phase) {
+  const normalized = String(phase || "").trim().toLowerCase();
+  if (normalized === "live") return "Live";
+  if (normalized === "upcoming") return "Upcoming";
+  return "Closed";
+}
+
+async function deleteAdminEvent(event) {
+  if (!event?.id) {
+    throw new Error("Missing event id.");
+  }
+  const confirmed = window.confirm(`Delete ${event.name || "this event"}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setStudioStatus(adminAccountsStatus, "Deleting event...");
+    const response = await fetch("/api/admin/events/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await getAdminAuthHeaders()),
+      },
+      body: JSON.stringify({ id: event.id }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not delete event.");
+    }
+    allAdminEvents = allAdminEvents.filter((item) => item.id !== event.id);
+    renderAdminEvents();
+    setStudioStatus(adminAccountsStatus, "Event deleted.");
+  } catch (error) {
+    setStudioStatus(adminAccountsStatus, error.message || "Could not delete event.", true);
+  }
+}
+
+function renderAdminEvents() {
+  if (!adminAccountsList) {
+    return;
+  }
+
+  updateAdminPanelMode();
+  if (!allAdminEvents.length) {
+    adminAccountsList.innerHTML = '<p class="studio-empty">No events here.</p>';
+    return;
+  }
+
+  adminAccountsList.innerHTML = `
+    <div class="admin-link-row admin-account-head">
+      <span>Event name</span>
+      <span>Photos uploaded</span>
+      <span>Duration</span>
+      <span>Status</span>
+      <span>Event window</span>
+      <span>Delete</span>
+    </div>
+  `;
+
+  allAdminEvents.forEach((event) => {
+    const row = document.createElement("div");
+    row.className = "admin-link-row";
+    row.innerHTML = `
+      <span>${escapeMarkup(event.name || "Untitled event")}</span>
+      <span>${Math.max(0, Number(event.uploadedPhotoCount) || 0)}</span>
+      <span>${escapeMarkup(computeEventDurationLabel(event.startAt, event.endAt))}</span>
+      <span>${escapeMarkup(getEventAdminPhaseLabel(event.phase))}</span>
+      <span>${escapeMarkup(formatEventWindow(event.startAt, event.endAt))}</span>
+      <span>
+        <button type="button" class="saved-page-icon-button danger admin-event-delete" aria-label="Delete ${escapeMarkup(event.name || "event")}">
+          <span class="saved-page-icon icon-mask icon-delete" aria-hidden="true"></span>
+        </button>
+      </span>
+    `;
+    row.querySelector(".admin-event-delete")?.addEventListener("click", async () => {
+      await deleteAdminEvent(event);
+    });
+    adminAccountsList.appendChild(row);
+  });
+}
+
 async function loadAdminAccounts({ render = true } = {}) {
   const snapshot = await getDocs(collection(db, collections.users));
   allAccounts = snapshot.docs
@@ -2422,7 +2559,7 @@ async function loadAdminAccounts({ render = true } = {}) {
     .sort((a, b) => {
       return getDateValueMs(b.createdAt) - getDateValueMs(a.createdAt);
     });
-  if (render && activeAdminFilter !== "links") {
+  if (render && activeAdminFilter !== "links" && activeAdminFilter !== "events") {
     renderAdminAccounts();
   }
 }
@@ -2493,6 +2630,33 @@ async function loadAdminLinks({ force = false } = {}) {
     .sort((a, b) => getDateValueMs(b.createdAt) - getDateValueMs(a.createdAt));
 
   renderAdminLinks();
+  setStudioStatus(adminAccountsStatus, "");
+}
+
+async function loadAdminEvents({ force = false } = {}) {
+  if (!force && allAdminEvents.length) {
+    renderAdminEvents();
+    return;
+  }
+
+  setStudioStatus(adminAccountsStatus, "Loading events...");
+  const response = await fetch("/api/admin/events", { headers: await getAdminAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load events.");
+  }
+
+  allAdminEvents = (Array.isArray(payload.events) ? payload.events : [])
+    .slice()
+    .sort((left, right) => {
+      const phaseRank = getEventAdminPhaseRank(left.phase) - getEventAdminPhaseRank(right.phase);
+      if (phaseRank !== 0) {
+        return phaseRank;
+      }
+      return getDateValueMs(right.createdAt) - getDateValueMs(left.createdAt);
+    });
+
+  renderAdminEvents();
   setStudioStatus(adminAccountsStatus, "");
 }
 
@@ -4898,6 +5062,15 @@ adminTabs.forEach((tab) => {
       } catch (error) {
         adminAccountsList.innerHTML = '<p class="studio-empty">No links here.</p>';
         setStudioStatus(adminAccountsStatus, error.message || "Could not load links.", true);
+      }
+      return;
+    }
+    if (activeAdminFilter === "events") {
+      try {
+        await loadAdminEvents({ force: true });
+      } catch (error) {
+        adminAccountsList.innerHTML = '<p class="studio-empty">No events here.</p>';
+        setStudioStatus(adminAccountsStatus, error.message || "Could not load events.", true);
       }
       return;
     }
