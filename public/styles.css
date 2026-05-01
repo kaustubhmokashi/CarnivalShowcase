@@ -3309,6 +3309,9 @@ input[type="checkbox"]:checked {
   top: 12px;
   left: 12px;
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: #000000;
   color: #ffffff;
   font-size: 10px;
@@ -3319,6 +3322,11 @@ input[type="checkbox"]:checked {
   padding: 8px 10px;
   white-space: nowrap;
   pointer-events: auto;
+}
+
+.saved-page-face-status-badge .saved-page-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .saved-page-thumb img {
@@ -3356,20 +3364,6 @@ input[type="checkbox"]:checked {
   align-items: center;
   gap: var(--space-1);
   margin-top: 0;
-}
-
-.saved-page-face-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  padding: 4px 8px;
-  border: 1px solid rgba(0, 0, 0, 0.3);
-  border-radius: 999px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.78);
 }
 
 .saved-page-icon-button {

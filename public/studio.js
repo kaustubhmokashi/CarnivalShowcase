@@ -1272,18 +1272,15 @@ function renderSavedPagesTable() {
     card.innerHTML = `
       <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">
         ${faceStatusBadge ? `
-          <span class="saved-page-face-status-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">${escapeMarkup(faceStatusBadge.label)}</span>
+          <span class="saved-page-face-status-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">
+            ${faceStatusBadge.iconClass ? `<span class="saved-page-icon icon-mask ${escapeMarkup(faceStatusBadge.iconClass)}" aria-hidden="true"></span>` : ""}
+            <span>${escapeMarkup(faceStatusBadge.label)}</span>
+          </span>
         ` : ""}
         ${thumbnail ? `<img src="${escapeMarkup(thumbnail)}" alt="" loading="lazy" />` : ""}
       </a>
       <div class="saved-page-content">
         <h2>${escapeMarkup(page.tagline || page.pageName || "Untitled page")}</h2>
-        ${canUseFacePicker ? `
-          <span class="saved-page-face-tag" aria-label="Face detection completed">
-            <span class="saved-page-icon icon-mask icon-face-detection" aria-hidden="true"></span>
-            Face ready
-          </span>
-        ` : ""}
         <p class="saved-page-pairing">${escapeMarkup(page.pairingCode || "")}</p>
         <div class="saved-page-actions" aria-label="Page actions">
           <button
@@ -1403,6 +1400,7 @@ function normalizeFaceDetectionState(faceDetection = null) {
     progressPercent: Math.max(0, Math.min(100, Number(faceDetection?.progressPercent) || 0)),
     processedPhotoCount: Math.max(0, Number(faceDetection?.processedPhotoCount) || 0),
     totalPhotoCount: Math.max(0, Number(faceDetection?.totalPhotoCount) || 0),
+    queuePosition: Math.max(0, Number(faceDetection?.queuePosition) || 0),
   };
 }
 
@@ -1423,16 +1421,14 @@ function formatFaceStatusTime(value) {
 function getFaceStatusBadge(faceDetection) {
   const status = String(faceDetection?.status || "idle").trim();
   if (status === "idle") {
-    return {
-      label: "Face idle",
-      tooltip: "Face detection has not started for this album.",
-    };
+    return null;
   }
 
   if (status === "queued") {
     const queuedAt = formatFaceStatusTime(faceDetection?.requestedAt);
+    const queuePosition = Math.max(0, Number(faceDetection?.queuePosition) || 0);
     return {
-      label: "Face queued",
+      label: queuePosition > 0 ? `Queued at ${queuePosition}` : "Queued",
       tooltip: queuedAt ? `Queued at ${queuedAt}. Processing will begin shortly.` : "Queued. Processing will begin shortly.",
     };
   }
@@ -1455,7 +1451,8 @@ function getFaceStatusBadge(faceDetection) {
     const completedAt = formatFaceStatusTime(faceDetection?.completedAt || faceDetection?.updatedAt);
     if (groups > 0) {
       return {
-        label: "Face ready",
+        label: "Faces ready",
+        iconClass: "icon-face-detection",
         tooltip: `Completed${completedAt ? ` at ${completedAt}` : ""}. ${groups} face group${groups === 1 ? "" : "s"} detected across ${photos} photo${photos === 1 ? "" : "s"}.`,
       };
     }
@@ -2563,10 +2560,51 @@ async function loadSavedPages({ includeQueueRecovery = true } = {}) {
   const pagesQuery = query(getPagesCollection(), orderBy("createdAt", "desc"));
   const snapshot = await getDocs(pagesQuery);
   savedPages = snapshot.docs.map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }));
+  await attachFaceQueuePositions();
   if (includeQueueRecovery) {
     await resetMissingFaceQueueStates();
   }
   renderSavedPagesTable();
+}
+
+async function attachFaceQueuePositions() {
+  if (!savedPages.length) {
+    return;
+  }
+  const hasQueued = savedPages.some((page) => normalizeFaceDetectionState(page?.faceDetection).status === "queued");
+  if (!hasQueued) {
+    return;
+  }
+  const queueSnapshot = await getDocs(
+    query(
+      collection(db, collections.faceDetectionQueue),
+      where("status", "in", ["queued", "processing"]),
+      orderBy("queuedAt", "asc")
+    )
+  );
+  const queuePositionByPageId = new Map();
+  let queuedOrder = 0;
+  queueSnapshot.docs.forEach((queueDoc) => {
+    const status = String(queueDoc.data()?.status || "").trim().toLowerCase();
+    if (status !== "queued") {
+      return;
+    }
+    queuedOrder += 1;
+    queuePositionByPageId.set(queueDoc.id, queuedOrder);
+  });
+  savedPages = savedPages.map((page) => {
+    const faceDetection = normalizeFaceDetectionState(page?.faceDetection);
+    if (faceDetection.status !== "queued") {
+      return page;
+    }
+    return {
+      ...page,
+      faceDetection: {
+        ...(page.faceDetection || {}),
+        queuePosition: queuePositionByPageId.get(page.id) || 0,
+      },
+    };
+  });
 }
 
 async function resetMissingFaceQueueStates() {
