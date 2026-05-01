@@ -1534,6 +1534,13 @@ async function enqueueFaceDetection(page, { manual = false } = {}) {
       source: manual ? "manual" : "auto",
       queuedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      completedAt: null,
+      failedAt: null,
+      processingStartedAt: null,
+      runtimeError: "",
+      progressPercent: 0,
+      processedPhotoCount: 0,
+      totalPhotoCount: 0,
     }, { merge: true });
   });
 }

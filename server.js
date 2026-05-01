@@ -107,6 +107,7 @@ const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
 const FACE_DETECTION_LOCK_LEASE_MS = Number(process.env.FACE_DETECTION_LOCK_LEASE_MS || 10 * 60 * 1000);
+const FACE_DETECTION_PER_IMAGE_TIMEOUT_MS = Number(process.env.FACE_DETECTION_PER_IMAGE_TIMEOUT_MS || 30000);
 const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.43);
 const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 72);
 const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.24);
@@ -431,6 +432,20 @@ function toDataUrlFromCanvas(canvas, mimeType = "image/jpeg", quality = 0.86) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+async function withTimeout(promise, timeoutMs, label = "operation") {
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 function euclideanDistance(left, right) {
@@ -778,7 +793,10 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   const updateProcessingProgress = async (processedPhotoCount) => {
     const safeTotal = Math.max(1, totalPhotoCount);
     const clampedProcessed = Math.max(0, Math.min(processedPhotoCount, totalPhotoCount));
-    const progressPercent = totalPhotoCount > 0 ? Math.max(0, Math.min(100, Math.round((clampedProcessed / safeTotal) * 100))) : 100;
+    let progressPercent = totalPhotoCount > 0 ? Math.max(0, Math.min(100, Math.floor((clampedProcessed / safeTotal) * 100))) : 100;
+    if (totalPhotoCount > 0 && clampedProcessed < totalPhotoCount) {
+      progressPercent = Math.min(progressPercent, 99);
+    }
     const nowIso = new Date().toISOString();
     const processingPayload = {
       status: "processing",
@@ -818,8 +836,16 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
         photoDetections = await loadFaceDetectionsFromCache(primaryPublicPageRef, image);
       }
       if (!photoDetections) {
-        const buffer = await fetchImageBufferForFaceDetection(image.id);
-        photoDetections = await detectFacesInPhotoBuffer(image, buffer);
+        const buffer = await withTimeout(
+          fetchImageBufferForFaceDetection(image.id),
+          FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
+          `fetch image ${image.id}`
+        );
+        photoDetections = await withTimeout(
+          detectFacesInPhotoBuffer(image, buffer),
+          FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
+          `detect faces ${image.id}`
+        );
         if (primaryPublicPageRef) {
           await saveFaceDetectionsToCache(primaryPublicPageRef, image, photoDetections);
         }
