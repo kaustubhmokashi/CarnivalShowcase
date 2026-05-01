@@ -1554,6 +1554,10 @@ function getEventManageUrl(event) {
 }
 
 function getEventPresentUrl(event) {
+  const explicitDisplayUrl = String(event?.displayUrl || "").trim();
+  if (explicitDisplayUrl) {
+    return explicitDisplayUrl;
+  }
   return `${window.location.origin}/event/${encodeURIComponent(event.slug || "")}/present`;
 }
 
@@ -2466,6 +2470,7 @@ async function createEvent(payload) {
       template: createdEvent.template || "template-1",
       logoLink: createdEvent.logoLink || "",
       homepageLink: createdEvent.homepageLink || "",
+      customDomain: createdEvent.customDomain || "",
       qrPngDataUrl,
     });
   }
@@ -4867,6 +4872,7 @@ createEventForm?.addEventListener("submit", async (event) => {
       studioSlug: currentProfile?.studioSlug || "",
       logoLink: currentProfile?.branding?.logoLink || "",
       homepageLink: currentProfile?.branding?.homepageLink || "",
+      customDomain: currentProfile?.branding?.customDomain || "",
       tagline: "",
     };
     const savedEvent = currentEditingEventId

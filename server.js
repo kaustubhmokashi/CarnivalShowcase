@@ -3709,12 +3709,17 @@ async function resolveStudioCustomDomainOrigin(studioSlug) {
   }
 }
 
-async function resolveEventOrigin(req, { homepageLink = "", studioSlug = "" } = {}) {
-  const fromHomepage = extractOriginFromHomepageLink(homepageLink);
-  if (fromHomepage) return fromHomepage;
+async function resolveEventOrigin(req, { homepageLink = "", studioSlug = "", customDomain = "" } = {}) {
+  const normalizedCustomDomain = normalizeHostname(customDomain);
+  if (normalizedCustomDomain) {
+    return `https://${normalizedCustomDomain}`;
+  }
 
   const fromCustomDomain = await resolveStudioCustomDomainOrigin(studioSlug);
   if (fromCustomDomain) return fromCustomDomain;
+
+  const fromHomepage = extractOriginFromHomepageLink(homepageLink);
+  if (fromHomepage) return fromHomepage;
 
   return buildOriginFromRequest(req);
 }
@@ -3844,6 +3849,7 @@ async function handleCreateEvent(req, res) {
       ownerEmail: account.email || "",
       studioName,
       studioSlug,
+      customDomain: String(body.customDomain || "").trim(),
       logoLink,
       homepageLink,
       qrPngDataUrl,
@@ -3866,7 +3872,11 @@ async function handleCreateEvent(req, res) {
       rejectedPhotos: [],
     });
 
-    const origin = await resolveEventOrigin(req, { homepageLink, studioSlug });
+    const origin = await resolveEventOrigin(req, {
+      homepageLink,
+      studioSlug,
+      customDomain: String(body.customDomain || "").trim(),
+    });
     event.uploadUrl = `${origin}/e/${event.slug}`;
     event.displayUrl = `${origin}/event/${event.slug}/present`;
     event.moderationUrl = `${origin}/event-moderate/${event.moderationToken}`;
@@ -4005,6 +4015,7 @@ async function handleUpdateEvent(req, res) {
     event.tagline = String(body.tagline || "").trim();
     event.logoLink = String(body.logoLink || event.logoLink || "").trim();
     event.homepageLink = String(body.homepageLink || event.homepageLink || "").trim();
+    event.customDomain = String(body.customDomain || event.customDomain || "").trim();
     event.qrPngDataUrl = String(body.qrPngDataUrl || event.qrPngDataUrl || "").trim();
     event.startAt = combineEventDateTime(body.startDate, body.startTime) || event.startAt;
     event.endAt = combineEventDateTime(body.endDate, body.endTime) || event.endAt;
@@ -4012,6 +4023,7 @@ async function handleUpdateEvent(req, res) {
     const origin = await resolveEventOrigin(req, {
       homepageLink: event.homepageLink,
       studioSlug: event.studioSlug,
+      customDomain: event.customDomain,
     });
     event.uploadUrl = `${origin}/e/${event.slug}`;
     event.displayUrl = `${origin}/event/${event.slug}/present`;
