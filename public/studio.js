@@ -2324,7 +2324,68 @@ async function loadSavedPages() {
   const pagesQuery = query(getPagesCollection(), orderBy("createdAt", "desc"));
   const snapshot = await getDocs(pagesQuery);
   savedPages = snapshot.docs.map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }));
+  await resetMissingFaceQueueStates();
   renderSavedPagesTable();
+}
+
+async function resetMissingFaceQueueStates() {
+  if (!savedPages.length) {
+    return;
+  }
+
+  const candidates = savedPages.filter((page) => {
+    const status = normalizeFaceDetectionState(page?.faceDetection).status;
+    return status === "queued" || status === "processing";
+  });
+  if (!candidates.length) {
+    return;
+  }
+
+  for (const page of candidates) {
+    const queueRef = doc(db, collections.faceDetectionQueue, page.id);
+    const queueSnapshot = await getDoc(queueRef);
+    if (queueSnapshot.exists()) {
+      continue;
+    }
+
+    const idlePayload = {
+      status: "idle",
+      source: String(page?.faceDetection?.source || "").trim(),
+      requestedAt: null,
+      completedAt: null,
+      updatedAt: serverTimestamp(),
+      error: "Queue entry was missing. Status auto-reset to idle.",
+      progressPercent: 0,
+      processedPhotoCount: 0,
+      totalPhotoCount: 0,
+      faceGroupCount: 0,
+      detectedPhotoCount: 0,
+      scannedPhotoCount: 0,
+    };
+
+    const pageRef = doc(getPagesCollection(), page.id);
+    const primaryPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(page));
+    const customDomain = getPageCustomDomain(page);
+    const aliasPublicPageRef = customDomain
+      ? doc(db, collections.publicPages, getCustomDomainPublicPageId(customDomain, page.pageSlug))
+      : null;
+
+    const writes = [setDoc(pageRef, { faceDetection: idlePayload }, { merge: true })];
+
+    const primaryPublicSnapshot = await getDoc(primaryPublicPageRef);
+    if (primaryPublicSnapshot.exists()) {
+      writes.push(setDoc(primaryPublicPageRef, { faceDetection: idlePayload }, { merge: true }));
+    }
+    if (aliasPublicPageRef) {
+      const aliasPublicSnapshot = await getDoc(aliasPublicPageRef);
+      if (aliasPublicSnapshot.exists()) {
+        writes.push(setDoc(aliasPublicPageRef, { faceDetection: idlePayload }, { merge: true }));
+      }
+    }
+
+    await Promise.all(writes);
+    Object.assign(page, { faceDetection: { ...idlePayload, updatedAt: new Date().toISOString() } });
+  }
 }
 
 async function loadEvents() {
