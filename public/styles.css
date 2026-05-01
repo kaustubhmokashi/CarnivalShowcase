@@ -1325,6 +1325,16 @@ label:focus-within {
   height: 12px;
 }
 
+.gallery-inline-empty {
+  margin: 0;
+  padding: 4px 0 0;
+  color: rgba(0, 0, 0, 0.72);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
 .cover-date-range,
 .cover-tagline {
   margin: 0;

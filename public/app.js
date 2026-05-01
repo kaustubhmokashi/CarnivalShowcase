@@ -1923,7 +1923,8 @@ function renderFolderTabs(folders) {
   updateStickyFolderTabsVisibility();
 }
 
-function renderGallery(photoItems) {
+function renderGallery(photoItems, options = {}) {
+  const { suppressGlobalError = false, emptyMessage = "This folder doesn't have any photos yet." } = options;
   const renderToken = ++activeGalleryRenderToken;
   cancelBackgroundFolderPreload();
   clearGalleryRowObserver();
@@ -1966,7 +1967,14 @@ function renderGallery(photoItems) {
 
   if (!photoItems.length) {
     pendingGalleryThumbnailLoads = 0;
-    setGalleryErrorState("This folder doesn't have any photos yet.");
+    if (suppressGlobalError) {
+      clearGalleryErrorState();
+      galleryEl.style.height = "auto";
+      galleryEl.innerHTML = `<p class="gallery-inline-empty">${escapeMarkup(emptyMessage)}</p>`;
+      markGalleryVisualReady();
+    } else {
+      setGalleryErrorState("This folder doesn't have any photos yet.");
+    }
     return;
   }
 
@@ -2089,7 +2097,9 @@ function renderGallery(photoItems) {
 
 function updateGalleryForSelectedFolder() {
   const selectedFolder = getSelectedFolder();
-  const baseImages = selectedFolder ? selectedFolder.images : [];
+  const baseImages = currentFaceFilter.active
+    ? allMediaItems.filter((photo) => !isVideoMedia(photo))
+    : (selectedFolder ? selectedFolder.images : []);
   const filteredImages = currentFaceFilter.active
     ? baseImages.filter((photo) => currentFaceFilter.photoIds.has(String(photo?.id || "").trim()))
     : baseImages;
@@ -2117,7 +2127,12 @@ function updateGalleryForSelectedFolder() {
     }
   }
   renderFaceFilterChip();
-  renderGallery(filteredImages);
+  renderGallery(filteredImages, currentFaceFilter.active
+    ? {
+        suppressGlobalError: true,
+        emptyMessage: "No photos were found for this face in this album.",
+      }
+    : undefined);
   if (selectedFolder && pendingSharedPhotoId && (!pendingSharedFolderId || pendingSharedFolderId === selectedFolder.id)) {
     const sharedPhotoIndex = images.findIndex((photo) => photo.id === pendingSharedPhotoId);
     if (sharedPhotoIndex >= 0) {
