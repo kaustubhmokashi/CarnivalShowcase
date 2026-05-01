@@ -109,13 +109,10 @@ const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
   process.env.FACE_MODEL_BASE_URL ||
   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
-const FACE_MODEL_FILES = [
+const FACE_MODEL_MANIFESTS = [
   "tiny_face_detector_model-weights_manifest.json",
-  "tiny_face_detector_model.bin",
   "face_landmark_68_tiny_model-weights_manifest.json",
-  "face_landmark_68_tiny_model.bin",
   "face_recognition_model-weights_manifest.json",
-  "face_recognition_model.bin",
 ];
 
 const IMAGE_MIME_PREFIX = "image/";
@@ -351,12 +348,11 @@ async function ensureFaceModelFiles() {
     )
   );
 
-  for (const fileName of FACE_MODEL_FILES) {
+  const downloadModelFile = async (fileName) => {
     const targetPath = path.join(FACE_MODEL_DIR, fileName);
     if (fs.existsSync(targetPath)) {
-      continue;
+      return targetPath;
     }
-
     let downloaded = false;
     let lastStatus = "";
     for (const baseUrl of fallbackBaseUrls) {
@@ -375,9 +371,27 @@ async function ensureFaceModelFiles() {
         lastStatus = error?.message || String(error);
       }
     }
-
     if (!downloaded) {
       throw new Error(`Face model download failed for ${fileName}${lastStatus ? ` (${lastStatus})` : ""}`);
+    }
+    return targetPath;
+  };
+
+  for (const manifestName of FACE_MODEL_MANIFESTS) {
+    const manifestPath = await downloadModelFile(manifestName);
+    let manifestEntries = [];
+    try {
+      manifestEntries = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } catch (error) {
+      throw new Error(`Face model manifest parse failed for ${manifestName}: ${error.message}`);
+    }
+    for (const entry of Array.isArray(manifestEntries) ? manifestEntries : []) {
+      const paths = Array.isArray(entry?.paths) ? entry.paths : [];
+      for (const shardFile of paths) {
+        if (typeof shardFile === "string" && shardFile.trim()) {
+          await downloadModelFile(shardFile.trim());
+        }
+      }
     }
   }
 }
