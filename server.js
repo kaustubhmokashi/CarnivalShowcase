@@ -105,6 +105,9 @@ const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
 const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.47);
+const FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD = Number(
+  process.env.FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD || Math.min(0.56, FACE_DETECTION_DISTANCE_THRESHOLD + 0.08)
+);
 const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
   process.env.FACE_MODEL_BASE_URL ||
@@ -492,6 +495,79 @@ function clusterFaceDescriptors(detections) {
     .sort((left, right) => right.count - left.count);
 }
 
+function dedupeFaceGroupsByThumbnailSimilarity(groups) {
+  const working = Array.isArray(groups)
+    ? groups.map((group) => ({
+        id: String(group.id || "").trim(),
+        center: Array.isArray(group.center) ? group.center.slice() : [],
+        count: Math.max(0, Number(group.count) || 0),
+        photoIds: Array.isArray(group.photoIds) ? group.photoIds.map((photoId) => String(photoId || "").trim()).filter(Boolean) : [],
+        previewDataUrl: String(group.previewDataUrl || "").trim(),
+      }))
+    : [];
+
+  let mergedGroupsCount = 0;
+  let mergedInPass = true;
+
+  while (mergedInPass) {
+    mergedInPass = false;
+    for (let i = 0; i < working.length; i += 1) {
+      const left = working[i];
+      if (!left?.center?.length) {
+        continue;
+      }
+      for (let j = i + 1; j < working.length; j += 1) {
+        const right = working[j];
+        if (!right?.center?.length) {
+          continue;
+        }
+        const distance = euclideanDistance(left.center, right.center);
+        if (distance > FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD) {
+          continue;
+        }
+
+        const leftWeight = Math.max(1, left.count);
+        const rightWeight = Math.max(1, right.count);
+        const totalWeight = leftWeight + rightWeight;
+        const mergedCenter = left.center.map((value, index) => (
+          ((value * leftWeight) + ((right.center[index] || 0) * rightWeight)) / totalWeight
+        ));
+        const mergedPhotoIds = Array.from(new Set([...(left.photoIds || []), ...(right.photoIds || [])]));
+
+        left.center = mergedCenter;
+        left.count = Math.max(0, Number(left.count) || 0) + Math.max(0, Number(right.count) || 0);
+        left.photoIds = mergedPhotoIds;
+        if (!left.previewDataUrl && right.previewDataUrl) {
+          left.previewDataUrl = right.previewDataUrl;
+        }
+
+        working.splice(j, 1);
+        mergedGroupsCount += 1;
+        mergedInPass = true;
+        break;
+      }
+      if (mergedInPass) {
+        break;
+      }
+    }
+  }
+
+  const dedupedGroups = working
+    .map((group, index) => ({
+      id: `face_${String(index + 1).padStart(3, "0")}`,
+      count: Math.max(0, Number(group.count) || 0),
+      photoIds: Array.from(new Set(group.photoIds || [])),
+      previewDataUrl: String(group.previewDataUrl || "").trim(),
+      center: Array.isArray(group.center) ? group.center.slice() : [],
+    }))
+    .sort((left, right) => right.count - left.count);
+
+  return {
+    groups: dedupedGroups,
+    mergedGroupsCount,
+  };
+}
+
 async function fetchImageBufferForFaceDetection(fileId) {
   const candidates = [
     `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w640`,
@@ -670,7 +746,9 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     }
   }
 
-  const groupedFaces = clusterFaceDescriptors(detections);
+  const groupedFacesInitial = clusterFaceDescriptors(detections);
+  const dedupeResult = dedupeFaceGroupsByThumbnailSimilarity(groupedFacesInitial);
+  const groupedFaces = dedupeResult.groups;
 
   const faceDetectionPayload = {
     status: "completed",
@@ -681,6 +759,7 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     faceGroupCount: groupedFaces.length,
     detectedPhotoCount: groupedFaces.reduce((total, group) => total + group.photoIds.length, 0),
     scannedPhotoCount: images.length,
+    dedupeMergedGroups: dedupeResult.mergedGroupsCount,
     progressPercent: 100,
     processedPhotoCount: images.length,
     totalPhotoCount,
@@ -699,6 +778,7 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       updatedAt: new Date().toISOString(),
       faceGroupCount: groupedFaces.length,
       scannedPhotoCount: images.length,
+      dedupeMergedGroups: dedupeResult.mergedGroupsCount,
       progressPercent: 100,
       processedPhotoCount: images.length,
       totalPhotoCount,
