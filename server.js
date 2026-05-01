@@ -105,11 +105,11 @@ const EVENT_UPLOAD_MAX_BYTES = Number(process.env.EVENT_UPLOAD_MAX_BYTES || 20 *
 const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
-const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.47);
-const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 54);
-const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.16);
+const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.43);
+const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 72);
+const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.24);
 const FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD = Number(
-  process.env.FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD || Math.max(0.45, FACE_DETECTION_DISTANCE_THRESHOLD - 0.01)
+  process.env.FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD || 0.42
 );
 const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
@@ -611,6 +611,19 @@ async function detectFacesInPhotoBuffer(photo, buffer) {
 
   return detections.map((entry) => {
     const box = entry?.detection?.box || { x: 0, y: 0, width: image.width, height: image.height };
+    const detectionScore = Number(entry?.detection?.score) || 0;
+    const minSide = Math.max(0, Math.min(Number(box.width) || 0, Number(box.height) || 0));
+    if (minSide < FACE_DETECTION_MIN_FACE_PIXELS) {
+      return null;
+    }
+    if (detectionScore < FACE_DETECTION_MIN_QUALITY_SCORE) {
+      return null;
+    }
+    const leftEyePoints = entry?.landmarks?.getLeftEye?.() || [];
+    const rightEyePoints = entry?.landmarks?.getRightEye?.() || [];
+    if (leftEyePoints.length < 4 || rightEyePoints.length < 4) {
+      return null;
+    }
     const pad = Math.max(12, Math.round(Math.min(box.width, box.height) * 0.2));
     const cropX = clamp(Math.floor(box.x - pad), 0, image.width - 1);
     const cropY = clamp(Math.floor(box.y - pad), 0, image.height - 1);
@@ -624,7 +637,7 @@ async function detectFacesInPhotoBuffer(photo, buffer) {
       descriptor: Array.from(entry.descriptor || []),
       previewDataUrl: toDataUrlFromCanvas(previewCanvas, "image/jpeg", 0.82),
     };
-  });
+  }).filter(Boolean);
 }
 
 function buildFaceDescriptorSignature(photo) {
@@ -633,7 +646,7 @@ function buildFaceDescriptorSignature(photo) {
   const mimeType = String(photo?.mimeType || "").trim().toLowerCase();
   const width = Number(photo?.width) || 0;
   const height = Number(photo?.height) || 0;
-  return `${id}:${name}:${mimeType}:${width}x${height}`;
+  return `${id}:${name}:${mimeType}:${width}x${height}:d${FACE_DETECTION_DISTANCE_THRESHOLD}:a${FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD}:m${FACE_DETECTION_MIN_FACE_PIXELS}:q${FACE_DETECTION_MIN_QUALITY_SCORE}`;
 }
 
 async function loadFaceDetectionsFromCache(publicPageRef, photo) {
