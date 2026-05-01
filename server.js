@@ -665,13 +665,14 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
 }
 
 async function runFaceDetectionQueuePass() {
-  if (!firestoreDb || faceDetectionProcessingLoopActive) {
+  const db = getFirestoreDb();
+  if (!db || faceDetectionProcessingLoopActive) {
     return;
   }
   faceDetectionProcessingLoopActive = true;
   try {
     await ensureFaceRuntime();
-    const queueSnapshot = await firestoreDb
+    const queueSnapshot = await db
       .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
       .where("status", "==", "queued")
       .limit(1)
@@ -683,7 +684,7 @@ async function runFaceDetectionQueuePass() {
     const queueDocRef = queueDoc.ref;
     const queueData = queueDoc.data() || {};
 
-    const lockAcquired = await firestoreDb.runTransaction(async (transaction) => {
+    const lockAcquired = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(queueDocRef);
       if (!snapshot.exists) {
         return false;
@@ -726,7 +727,7 @@ async function runFaceDetectionQueuePass() {
       const pageId = String(queueData?.pageId || "").trim();
       const ownerUid = String(queueData?.ownerUid || "").trim();
       if (pageId && ownerUid) {
-        const pageRef = firestoreDb.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
+        const pageRef = db.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
         await pageRef.set(
           {
             faceDetection: {
@@ -751,8 +752,8 @@ async function runFaceDetectionQueuePass() {
 }
 
 function startFaceDetectionQueueWorker() {
-  if (!firestoreDb) {
-    return;
+  if (!getFirestoreDb()) {
+    console.warn("Face detection queue worker is waiting for Firestore Admin configuration.");
   }
   const run = () => {
     runFaceDetectionQueuePass().catch((error) => {
