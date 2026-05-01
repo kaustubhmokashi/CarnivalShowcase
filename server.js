@@ -903,6 +903,7 @@ function sanitizeEventForClient(event) {
     displayUrl: normalized.displayUrl || "",
     moderationUrl: normalized.moderationUrl || "",
     logoLink: normalized.logoLink || "",
+    faviconLink: normalized.faviconLink || "",
     homepageLink: normalized.homepageLink || "",
     qrPngDataUrl: normalized.qrPngDataUrl || "",
     parentFolderUrl: normalized.parentFolderUrl || "",
@@ -3865,6 +3866,7 @@ async function handleCreateEvent(req, res) {
     const studioName = String(body.studioName || "").trim();
     const studioSlug = String(body.studioSlug || "").trim();
     const logoLink = String(body.logoLink || "").trim();
+    const faviconLink = String(body.faviconLink || "").trim();
     const homepageLink = String(body.homepageLink || "").trim();
     const qrPngDataUrl = String(body.qrPngDataUrl || "").trim();
     const tagline = String(body.tagline || "").trim();
@@ -3895,6 +3897,7 @@ async function handleCreateEvent(req, res) {
       studioSlug,
       customDomain: String(body.customDomain || "").trim(),
       logoLink,
+      faviconLink,
       homepageLink,
       qrPngDataUrl,
       name,
@@ -4058,6 +4061,7 @@ async function handleUpdateEvent(req, res) {
     event.name = String(body.name || event.name || "").trim() || event.name;
     event.tagline = String(body.tagline || "").trim();
     event.logoLink = String(body.logoLink || event.logoLink || "").trim();
+    event.faviconLink = String(body.faviconLink || event.faviconLink || "").trim();
     event.homepageLink = String(body.homepageLink || event.homepageLink || "").trim();
     event.customDomain = String(body.customDomain || event.customDomain || "").trim();
     event.qrPngDataUrl = String(body.qrPngDataUrl || event.qrPngDataUrl || "").trim();

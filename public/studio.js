@@ -418,6 +418,24 @@ function resolveStudioLogoSource(logoLink) {
   return String(logoLink || "").trim();
 }
 
+function resolveStudioFaviconSource(faviconLink) {
+  const fileId = extractDriveFileId(faviconLink);
+  if (fileId) {
+    return `/api/image?id=${encodeURIComponent(fileId)}&mode=screen`;
+  }
+  return String(faviconLink || "").trim();
+}
+
+function setDocumentFavicon(faviconLink) {
+  const faviconSource =
+    resolveStudioFaviconSource(faviconLink) ||
+    window.CarnivalDefaultFavicon ||
+    "/favicon.svg?v=20260423";
+  document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
+    link.href = faviconSource;
+  });
+}
+
 function setColorInputs(hexInput, pickerInput, value) {
   const normalized = normalizeHexColor(value, pickerInput?.value || "#000000");
   if (hexInput) {
@@ -2469,6 +2487,7 @@ async function createEvent(payload) {
       endTime: createdEvent.endAt ? new Date(createdEvent.endAt).toISOString().slice(11, 16) : "",
       template: createdEvent.template || "template-1",
       logoLink: createdEvent.logoLink || "",
+      faviconLink: createdEvent.faviconLink || "",
       homepageLink: createdEvent.homepageLink || "",
       customDomain: createdEvent.customDomain || "",
       qrPngDataUrl,
@@ -2580,6 +2599,7 @@ async function downloadEventQr(event) {
       endTime: event.endAt ? new Date(event.endAt).toISOString().slice(11, 16) : "",
       template: event.template || "template-1",
       logoLink: event.logoLink || "",
+      faviconLink: event.faviconLink || "",
       homepageLink: event.homepageLink || "",
       qrPngDataUrl,
     });
@@ -2893,6 +2913,7 @@ async function loadModerationEventFromToken(token) {
   }
   setStudioScreen(true);
   showStudioView("dashboard");
+  setDocumentFavicon(payload.event?.faviconLink || "");
   openManageEventPanel(payload.event, { skipHistory: true, token });
 }
 
@@ -2905,6 +2926,7 @@ async function loadPublicEvent(slug) {
 
   const event = payload.event || {};
   currentPublicEvent = event;
+  setDocumentFavicon(event.faviconLink || "");
   screenDirectLink.classList.remove("active");
   screenGallery.classList.remove("active");
   screenStudio.classList.remove("active");
@@ -3304,6 +3326,7 @@ async function loadEventPresentation(slug) {
   }
 
   const event = payload.event || {};
+  setDocumentFavicon(event.faviconLink || "");
   currentEventPresentationSlug = event.slug || slug;
   currentEventPresentationPhotos = Array.isArray(event.livePhotos) ? event.livePhotos : [];
   currentEventPresentationIndex = 0;
@@ -4871,6 +4894,7 @@ createEventForm?.addEventListener("submit", async (event) => {
       studioName: currentProfile?.studioName || "",
       studioSlug: currentProfile?.studioSlug || "",
       logoLink: currentProfile?.branding?.logoLink || "",
+      faviconLink: currentProfile?.branding?.faviconLink || "",
       homepageLink: currentProfile?.branding?.homepageLink || "",
       customDomain: currentProfile?.branding?.customDomain || "",
       tagline: "",
