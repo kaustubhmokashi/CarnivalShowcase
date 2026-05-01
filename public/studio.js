@@ -2564,10 +2564,22 @@ function updateLinkCreationGate() {
 }
 
 async function loadSavedPages({ includeQueueRecovery = true } = {}) {
-  const pagesQuery = query(getPagesCollection(), orderBy("createdAt", "desc"));
-  const snapshot = await getDocs(pagesQuery);
-  savedPages = snapshot.docs.map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }));
-  await attachFaceQueuePositions();
+  let snapshot = null;
+  try {
+    const pagesQuery = query(getPagesCollection(), orderBy("createdAt", "desc"));
+    snapshot = await getDocs(pagesQuery);
+  } catch (error) {
+    console.warn("Primary pages query failed, using fallback:", error);
+    snapshot = await getDocs(getPagesCollection());
+  }
+  savedPages = snapshot.docs
+    .map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }))
+    .sort((left, right) => getDateValueMs(right.createdAt) - getDateValueMs(left.createdAt));
+  try {
+    await attachFaceQueuePositions();
+  } catch (error) {
+    console.warn("Queue position attach failed, continuing without positions:", error);
+  }
   if (includeQueueRecovery) {
     await resetMissingFaceQueueStates();
   }
