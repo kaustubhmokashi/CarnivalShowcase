@@ -71,6 +71,7 @@ const DATA_DIR = path.join(__dirname, "data");
 const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
 const PUBLIC_PAGE_LIKES_FILE = path.join(DATA_DIR, "public-page-likes.json");
+const FACE_MERGE_OVERRIDES_FILE = path.join(DATA_DIR, "face-merge-overrides.json");
 const EVENTS_STORE_FILE = path.join(DATA_DIR, "events.json");
 const DRIVE_CONNECTIONS_FILE = path.join(DATA_DIR, "drive-connections.json");
 const CODE_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -135,6 +136,7 @@ const mediaResponseCache = new Map();
 const mediaInflightRequests = new Map();
 let mediaCacheSizeBytes = 0;
 let eventsStoreMutationChain = Promise.resolve();
+let faceMergeStoreMutationChain = Promise.resolve();
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
@@ -1417,6 +1419,104 @@ function readPublicPageLikesStore() {
 function writePublicPageLikesStore(store) {
   ensureDataStore();
   fs.writeFileSync(PUBLIC_PAGE_LIKES_FILE, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+function readFaceMergeOverridesStore() {
+  ensureDataStore();
+  try {
+    const content = fs.readFileSync(FACE_MERGE_OVERRIDES_FILE, "utf8").trim();
+    if (!content) {
+      return { pages: {} };
+    }
+    const parsed = JSON.parse(content);
+    return {
+      pages: parsed?.pages && typeof parsed.pages === "object" ? parsed.pages : {},
+    };
+  } catch (_error) {
+    return { pages: {} };
+  }
+}
+
+function writeFaceMergeOverridesStore(store) {
+  ensureDataStore();
+  const normalized = {
+    pages: store?.pages && typeof store.pages === "object" ? store.pages : {},
+  };
+  fs.writeFileSync(FACE_MERGE_OVERRIDES_FILE, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+}
+
+async function withFaceMergeStoreMutation(handler) {
+  const run = faceMergeStoreMutationChain.then(() => handler());
+  faceMergeStoreMutationChain = run.catch(() => {});
+  return run;
+}
+
+function normalizeFaceGroupEntry(entry = {}) {
+  return {
+    id: String(entry.id || "").trim() || String(entry.faceId || "").trim(),
+    count: Math.max(0, Number(entry.count) || 0),
+    photoCount: Math.max(0, Number(entry.photoCount) || 0),
+    photoIds: Array.isArray(entry.photoIds)
+      ? entry.photoIds.map((photoId) => String(photoId || "").trim()).filter(Boolean)
+      : [],
+    previewDataUrl: String(entry.previewDataUrl || "").trim(),
+    mergedFrom: Array.isArray(entry.mergedFrom)
+      ? entry.mergedFrom.map((faceId) => String(faceId || "").trim()).filter(Boolean)
+      : [],
+  };
+}
+
+async function getEffectiveFaceGroupsForPublicPage(db, publicPageId) {
+  const pageSnapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
+  if (!pageSnapshot.exists) {
+    return null;
+  }
+
+  const pageData = pageSnapshot.data() || {};
+  const faceDetection = pageData.faceDetection || null;
+  const pageId = String(pageData.pageId || "").trim();
+  const groupsSnapshot = await pageSnapshot.ref.collection(FACE_GROUPS_SUBCOLLECTION).get();
+  const groupMap = new Map();
+  groupsSnapshot.docs.forEach((docSnap) => {
+    const normalized = normalizeFaceGroupEntry(docSnap.data() || {});
+    normalized.id = normalized.id || docSnap.id;
+    if (normalized.id) {
+      groupMap.set(normalized.id, normalized);
+    }
+  });
+
+  if (pageId) {
+    const store = readFaceMergeOverridesStore();
+    const pageOverrides = Array.isArray(store?.pages?.[pageId]?.groups) ? store.pages[pageId].groups : [];
+    for (const overrideRaw of pageOverrides) {
+      const override = normalizeFaceGroupEntry(overrideRaw);
+      if (!override.id) {
+        continue;
+      }
+      const sourceIds = Array.isArray(overrideRaw?.sourceFaceIds)
+        ? overrideRaw.sourceFaceIds.map((faceId) => String(faceId || "").trim()).filter(Boolean)
+        : [];
+      const mergedPhotoIds = new Set(override.photoIds);
+      sourceIds.forEach((sourceId) => {
+        const sourceGroup = groupMap.get(sourceId);
+        if (sourceGroup) {
+          sourceGroup.photoIds.forEach((photoId) => mergedPhotoIds.add(photoId));
+          if (!override.previewDataUrl && sourceGroup.previewDataUrl) {
+            override.previewDataUrl = sourceGroup.previewDataUrl;
+          }
+          groupMap.delete(sourceId);
+        }
+      });
+      override.photoIds = Array.from(mergedPhotoIds);
+      override.photoCount = override.photoIds.length;
+      override.count = Math.max(override.count, override.photoCount);
+      override.mergedFrom = sourceIds;
+      groupMap.set(override.id, override);
+    }
+  }
+
+  const groups = Array.from(groupMap.values()).filter((entry) => entry.id);
+  return { pageSnapshot, faceDetection, pageId, groups };
 }
 
 function getStoredPublicPageLikes(publicPageId) {
@@ -2927,23 +3027,18 @@ async function handlePublicPageFaceGroups(req, res) {
     return;
   }
 
-  const pageSnapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
-  if (!pageSnapshot.exists) {
+  const effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
+  if (!effective?.pageSnapshot?.exists) {
     sendJson(res, 404, { error: "This studio page does not exist." });
     return;
   }
-
-  const faceDetection = pageSnapshot.data()?.faceDetection || null;
-  const groupsSnapshot = await pageSnapshot.ref.collection(FACE_GROUPS_SUBCOLLECTION).get();
-  const groups = groupsSnapshot.docs
-    .map((docSnap) => docSnap.data() || {})
-    .map((entry) => ({
-      id: String(entry.id || "").trim() || String(entry.faceId || "").trim(),
-      count: Math.max(0, Number(entry.count) || 0),
-      photoCount: Math.max(0, Number(entry.photoCount) || 0),
-      previewDataUrl: String(entry.previewDataUrl || "").trim(),
-    }))
-    .filter((entry) => entry.id);
+  const faceDetection = effective.faceDetection || null;
+  const groups = effective.groups.map((entry) => ({
+    id: entry.id,
+    count: Math.max(0, Number(entry.count) || 0),
+    photoCount: Math.max(0, Number(entry.photoCount) || 0),
+    previewDataUrl: String(entry.previewDataUrl || "").trim(),
+  }));
 
   sendJson(res, 200, {
     publicPageId,
@@ -2968,19 +3063,13 @@ async function handlePublicPageFaceMatches(req, res) {
     return;
   }
 
-  const groupSnapshot = await db
-    .collection(FIREBASE_COLLECTIONS.publicPages)
-    .doc(publicPageId)
-    .collection(FACE_GROUPS_SUBCOLLECTION)
-    .doc(faceId)
-    .get();
-  if (!groupSnapshot.exists) {
+  const effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
+  if (!effective?.groups?.length) {
     sendJson(res, 200, { publicPageId, faceId, photoIds: [] });
     return;
   }
-
-  const group = groupSnapshot.data() || {};
-  const photoIds = Array.isArray(group.photoIds) ? group.photoIds.map((id) => String(id || "").trim()).filter(Boolean) : [];
+  const group = effective.groups.find((entry) => String(entry.id || "").trim() === faceId) || null;
+  const photoIds = group?.photoIds || [];
   sendJson(res, 200, { publicPageId, faceId, photoIds });
 }
 
@@ -3039,12 +3128,9 @@ async function handleMergePublicPageFaces(req, res) {
 
     const preferredSource = siblingPublicPages.find((docSnap) => requestedPublicPageIds.includes(docSnap.id)) || siblingPublicPages[0];
     const sourcePublicPageRef = preferredSource.ref;
-    const groupSnapshots = await Promise.all(
-      faceIds.map((faceId) => sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(faceId).get())
-    );
-    const existingGroups = groupSnapshots
-      .filter((snapshotDoc) => snapshotDoc.exists)
-      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() || {}) }));
+    const sourcePublicPageId = String(preferredSource.id || "").trim();
+    const effective = await getEffectiveFaceGroupsForPublicPage(db, sourcePublicPageId);
+    const existingGroups = (effective?.groups || []).filter((group) => faceIds.includes(String(group.id || "").trim()));
 
     if (existingGroups.length < 2) {
       sendJson(res, 400, { error: "No mergeable face groups were found." });
@@ -3062,74 +3148,47 @@ async function handleMergePublicPageFaces(req, res) {
     const mergedCount = existingGroups.reduce((total, group) => total + Math.max(0, Number(group.count) || 0), 0);
     const previewDataUrl = String(existingGroups.find((group) => String(group.previewDataUrl || "").trim())?.previewDataUrl || "").trim();
 
-    const batch = db.batch();
-    const mergedGroupRef = sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(mergedFaceId);
-    batch.set(
-      mergedGroupRef,
-      {
+    await withFaceMergeStoreMutation(async () => {
+      const store = readFaceMergeOverridesStore();
+      const pageOverrides = store.pages?.[pageId] && typeof store.pages[pageId] === "object" ? store.pages[pageId] : {};
+      const groups = Array.isArray(pageOverrides.groups) ? pageOverrides.groups : [];
+      const mergedFrom = existingGroups.map((group) => String(group.id || "").trim()).filter(Boolean);
+      const mergedGroup = {
         id: mergedFaceId,
+        sourceFaceIds: mergedFrom,
+        mergedFrom,
         count: mergedCount,
         photoCount: mergedPhotoIds.length,
         photoIds: mergedPhotoIds,
         previewDataUrl,
-        mergedFrom: existingGroups.map((group) => group.id),
         updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-    existingGroups.forEach((group) => {
-      batch.delete(sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id));
+      };
+      const nextGroups = groups.filter((group) => {
+        const groupId = String(group?.id || "").trim();
+        if (!groupId) {
+          return false;
+        }
+        if (groupId === mergedFaceId) {
+          return false;
+        }
+        const sourceIds = Array.isArray(group?.sourceFaceIds)
+          ? group.sourceFaceIds.map((id) => String(id || "").trim()).filter(Boolean)
+          : [];
+        if (sourceIds.some((id) => mergedFrom.includes(id))) {
+          return false;
+        }
+        return true;
+      });
+      nextGroups.push(mergedGroup);
+      store.pages = store.pages && typeof store.pages === "object" ? store.pages : {};
+      store.pages[pageId] = {
+        groups: nextGroups,
+        updatedAt: new Date().toISOString(),
+      };
+      writeFaceMergeOverridesStore(store);
     });
-    for (const photoId of mergedPhotoIds) {
-      const photoRef = sourcePublicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photoId);
-      const photoSnapshot = await photoRef.get();
-      const existingFaceIds = Array.isArray(photoSnapshot.data()?.faceIds)
-        ? photoSnapshot.data().faceIds.map((faceId) => String(faceId || "").trim()).filter(Boolean)
-        : [];
-      const retainedFaceIds = existingFaceIds.filter((faceId) => !faceIds.includes(faceId));
-      const nextFaceIds = Array.from(new Set([...retainedFaceIds, mergedFaceId]));
-      batch.set(
-        photoRef,
-        {
-          photoId,
-          faceIds: nextFaceIds,
-          hasFaces: nextFaceIds.length > 0,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    }
-    await batch.commit();
 
-    const sourceGroupsSnapshot = await sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).get();
-    const sourceMatchesSnapshot = await sourcePublicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).get();
-    const sourceGroups = sourceGroupsSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() || {}) }));
-    const sourceMatches = sourceMatchesSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() || {}) }));
-
-    let syncedPublicPages = 1;
-    for (const siblingDoc of siblingPublicPages) {
-      if (siblingDoc.ref.path === sourcePublicPageRef.path) {
-        continue;
-      }
-      await clearFaceDetectionSubcollections(siblingDoc.ref);
-      const syncBatch = db.batch();
-      sourceGroups.forEach((group) => {
-        syncBatch.set(siblingDoc.ref.collection(FACE_GROUPS_SUBCOLLECTION).doc(String(group.id || "").trim()), {
-          ...group,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      });
-      sourceMatches.forEach((match) => {
-        syncBatch.set(siblingDoc.ref.collection(FACE_MATCHES_SUBCOLLECTION).doc(String(match.id || "").trim()), {
-          ...match,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      });
-      await syncBatch.commit();
-      syncedPublicPages += 1;
-    }
-
-    sendJson(res, 200, { ok: true, mergedPublicPages: syncedPublicPages });
+    sendJson(res, 200, { ok: true, mergedPublicPages: siblingPublicPages.length });
   } catch (error) {
     sendJson(res, 400, { error: error.message || "Could not merge face groups." });
   }
