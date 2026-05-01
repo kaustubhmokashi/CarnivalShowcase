@@ -2886,100 +2886,110 @@ async function handleMergePublicPageFaces(req, res) {
       return;
     }
 
-    const fallbackPublicPageIds = (
-      await db.collection(FIREBASE_COLLECTIONS.publicPages).where("pageId", "==", pageId).get()
-    ).docs.map((docSnap) => docSnap.id);
-    const publicPageIds = Array.from(new Set([...requestedPublicPageIds, ...fallbackPublicPageIds]));
-    if (!publicPageIds.length) {
+    const siblingPublicPageSnapshots = await db.collection(FIREBASE_COLLECTIONS.publicPages).where("pageId", "==", pageId).get();
+    const siblingPublicPages = siblingPublicPageSnapshots.docs.filter((docSnap) => {
+      const data = docSnap.data() || {};
+      const ownerUid = String(data.ownerUid || "").trim();
+      return !ownerUid || ownerUid === account.localId;
+    });
+    if (!siblingPublicPages.length) {
       sendJson(res, 404, { error: "Public page not found." });
       return;
     }
 
-    let mergedAcross = 0;
-    for (const publicPageId of publicPageIds) {
-      const publicPageRef = db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId);
-      const publicPageSnapshot = await publicPageRef.get();
-      if (!publicPageSnapshot.exists) {
-        continue;
-      }
+    const preferredSource = siblingPublicPages.find((docSnap) => requestedPublicPageIds.includes(docSnap.id)) || siblingPublicPages[0];
+    const sourcePublicPageRef = preferredSource.ref;
+    const groupSnapshots = await Promise.all(
+      faceIds.map((faceId) => sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(faceId).get())
+    );
+    const existingGroups = groupSnapshots
+      .filter((snapshotDoc) => snapshotDoc.exists)
+      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() || {}) }));
 
-      const pageData = publicPageSnapshot.data() || {};
-      if (String(pageData.ownerUid || "").trim() && String(pageData.ownerUid || "").trim() !== account.localId) {
-        continue;
-      }
-
-      const groupSnapshots = await Promise.all(
-        faceIds.map((faceId) => publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(faceId).get())
-      );
-      const existingGroups = groupSnapshots
-        .filter((snapshotDoc) => snapshotDoc.exists)
-        .map((snapshotDoc) => ({ id: snapshotDoc.id, ...(snapshotDoc.data() || {}) }));
-
-      if (existingGroups.length < 2) {
-        continue;
-      }
-
-      const mergedFaceId = `face_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-      const mergedPhotoIds = Array.from(
-        new Set(
-          existingGroups.flatMap((group) =>
-            Array.isArray(group.photoIds) ? group.photoIds.map((photoId) => String(photoId || "").trim()).filter(Boolean) : []
-          )
-        )
-      );
-      const mergedCount = existingGroups.reduce((total, group) => total + Math.max(0, Number(group.count) || 0), 0);
-      const previewDataUrl = String(existingGroups.find((group) => String(group.previewDataUrl || "").trim())?.previewDataUrl || "").trim();
-
-      const batch = db.batch();
-      const mergedGroupRef = publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(mergedFaceId);
-      batch.set(
-        mergedGroupRef,
-        {
-          id: mergedFaceId,
-          count: mergedCount,
-          photoCount: mergedPhotoIds.length,
-          photoIds: mergedPhotoIds,
-          previewDataUrl,
-          mergedFrom: existingGroups.map((group) => group.id),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-      existingGroups.forEach((group) => {
-        batch.delete(publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id));
-      });
-
-      for (const photoId of mergedPhotoIds) {
-        const photoRef = publicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photoId);
-        const photoSnapshot = await photoRef.get();
-        const existingFaceIds = Array.isArray(photoSnapshot.data()?.faceIds)
-          ? photoSnapshot.data().faceIds.map((faceId) => String(faceId || "").trim()).filter(Boolean)
-          : [];
-        const retainedFaceIds = existingFaceIds.filter((faceId) => !faceIds.includes(faceId));
-        const nextFaceIds = Array.from(new Set([...retainedFaceIds, mergedFaceId]));
-        batch.set(
-          photoRef,
-          {
-            photoId,
-            faceIds: nextFaceIds,
-            hasFaces: nextFaceIds.length > 0,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      }
-
-      await batch.commit();
-      mergedAcross += 1;
-    }
-
-    if (!mergedAcross) {
+    if (existingGroups.length < 2) {
       sendJson(res, 400, { error: "No mergeable face groups were found." });
       return;
     }
 
-    sendJson(res, 200, { ok: true, mergedPublicPages: mergedAcross });
+    const mergedFaceId = `face_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const mergedPhotoIds = Array.from(
+      new Set(
+        existingGroups.flatMap((group) =>
+          Array.isArray(group.photoIds) ? group.photoIds.map((photoId) => String(photoId || "").trim()).filter(Boolean) : []
+        )
+      )
+    );
+    const mergedCount = existingGroups.reduce((total, group) => total + Math.max(0, Number(group.count) || 0), 0);
+    const previewDataUrl = String(existingGroups.find((group) => String(group.previewDataUrl || "").trim())?.previewDataUrl || "").trim();
+
+    const batch = db.batch();
+    const mergedGroupRef = sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(mergedFaceId);
+    batch.set(
+      mergedGroupRef,
+      {
+        id: mergedFaceId,
+        count: mergedCount,
+        photoCount: mergedPhotoIds.length,
+        photoIds: mergedPhotoIds,
+        previewDataUrl,
+        mergedFrom: existingGroups.map((group) => group.id),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    existingGroups.forEach((group) => {
+      batch.delete(sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id));
+    });
+    for (const photoId of mergedPhotoIds) {
+      const photoRef = sourcePublicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photoId);
+      const photoSnapshot = await photoRef.get();
+      const existingFaceIds = Array.isArray(photoSnapshot.data()?.faceIds)
+        ? photoSnapshot.data().faceIds.map((faceId) => String(faceId || "").trim()).filter(Boolean)
+        : [];
+      const retainedFaceIds = existingFaceIds.filter((faceId) => !faceIds.includes(faceId));
+      const nextFaceIds = Array.from(new Set([...retainedFaceIds, mergedFaceId]));
+      batch.set(
+        photoRef,
+        {
+          photoId,
+          faceIds: nextFaceIds,
+          hasFaces: nextFaceIds.length > 0,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+
+    const sourceGroupsSnapshot = await sourcePublicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).get();
+    const sourceMatchesSnapshot = await sourcePublicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).get();
+    const sourceGroups = sourceGroupsSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() || {}) }));
+    const sourceMatches = sourceMatchesSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() || {}) }));
+
+    let syncedPublicPages = 1;
+    for (const siblingDoc of siblingPublicPages) {
+      if (siblingDoc.ref.path === sourcePublicPageRef.path) {
+        continue;
+      }
+      await clearFaceDetectionSubcollections(siblingDoc.ref);
+      const syncBatch = db.batch();
+      sourceGroups.forEach((group) => {
+        syncBatch.set(siblingDoc.ref.collection(FACE_GROUPS_SUBCOLLECTION).doc(String(group.id || "").trim()), {
+          ...group,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      });
+      sourceMatches.forEach((match) => {
+        syncBatch.set(siblingDoc.ref.collection(FACE_MATCHES_SUBCOLLECTION).doc(String(match.id || "").trim()), {
+          ...match,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      });
+      await syncBatch.commit();
+      syncedPublicPages += 1;
+    }
+
+    sendJson(res, 200, { ok: true, mergedPublicPages: syncedPublicPages });
   } catch (error) {
     sendJson(res, 400, { error: error.message || "Could not merge face groups." });
   }
