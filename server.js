@@ -108,7 +108,7 @@ const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DIST
 const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
   process.env.FACE_MODEL_BASE_URL ||
-  "https://raw.githubusercontent.com/vladmandic/face-api/master/model";
+  "https://raw.githubusercontent.com/vladmandic/face-api/main/model";
 const FACE_MODEL_FILES = [
   "tiny_face_detector_model-weights_manifest.json",
   "tiny_face_detector_model-shard1",
@@ -338,18 +338,46 @@ function ensureFaceModelStore() {
 
 async function ensureFaceModelFiles() {
   ensureFaceModelStore();
+  const fallbackBaseUrls = Array.from(
+    new Set(
+      [
+        FACE_MODEL_BASE_URL,
+        "https://raw.githubusercontent.com/vladmandic/face-api/main/model",
+        "https://raw.githubusercontent.com/vladmandic/face-api/master/model",
+      ]
+        .map((value) => String(value || "").trim().replace(/\/+$/, ""))
+        .filter(Boolean)
+    )
+  );
+
   for (const fileName of FACE_MODEL_FILES) {
     const targetPath = path.join(FACE_MODEL_DIR, fileName);
     if (fs.existsSync(targetPath)) {
       continue;
     }
-    const modelUrl = `${FACE_MODEL_BASE_URL}/${fileName}`;
-    const response = await fetch(modelUrl);
-    if (!response.ok) {
-      throw new Error(`Face model download failed (${response.status}) for ${fileName}`);
+
+    let downloaded = false;
+    let lastStatus = "";
+    for (const baseUrl of fallbackBaseUrls) {
+      const modelUrl = `${baseUrl}/${fileName}`;
+      try {
+        const response = await fetch(modelUrl);
+        if (!response.ok) {
+          lastStatus = `${response.status} from ${modelUrl}`;
+          continue;
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(targetPath, buffer);
+        downloaded = true;
+        break;
+      } catch (error) {
+        lastStatus = error?.message || String(error);
+      }
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(targetPath, buffer);
+
+    if (!downloaded) {
+      throw new Error(`Face model download failed for ${fileName}${lastStatus ? ` (${lastStatus})` : ""}`);
+    }
   }
 }
 
