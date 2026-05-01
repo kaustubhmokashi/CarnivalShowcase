@@ -12,6 +12,7 @@ let canvasLib = null;
 let faceModelsReady = false;
 let faceDetectionRuntimeError = "";
 let faceDetectionProcessingLoopActive = false;
+const FACE_DETECTION_WORKER_ID = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 
 loadEnvFile(path.join(__dirname, ".env"));
 
@@ -105,6 +106,7 @@ const EVENT_UPLOAD_MAX_BYTES = Number(process.env.EVENT_UPLOAD_MAX_BYTES || 20 *
 const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
+const FACE_DETECTION_LOCK_LEASE_MS = Number(process.env.FACE_DETECTION_LOCK_LEASE_MS || 10 * 60 * 1000);
 const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.43);
 const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 72);
 const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.24);
@@ -872,6 +874,68 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   );
 }
 
+function getFaceDetectionWorkerLockRef(db) {
+  return db.collection("_system").doc("faceDetectionWorkerLock");
+}
+
+async function acquireFaceDetectionWorkerLock(db) {
+  const lockRef = getFaceDetectionWorkerLockRef(db);
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const expiresAtIso = new Date(nowMs + FACE_DETECTION_LOCK_LEASE_MS).toISOString();
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(lockRef);
+    const data = snapshot.exists ? (snapshot.data() || {}) : {};
+    const lockedBy = String(data.lockedBy || "").trim();
+    const expiresAtMs = Date.parse(String(data.expiresAt || ""));
+    const isExpired = !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
+    const canAcquire = !lockedBy || isExpired || lockedBy === FACE_DETECTION_WORKER_ID;
+    if (!canAcquire) {
+      return false;
+    }
+    transaction.set(
+      lockRef,
+      {
+        lockedBy: FACE_DETECTION_WORKER_ID,
+        acquiredAt: nowIso,
+        updatedAt: nowIso,
+        expiresAt: expiresAtIso,
+      },
+      { merge: true }
+    );
+    return true;
+  });
+}
+
+async function releaseFaceDetectionWorkerLock(db) {
+  const lockRef = getFaceDetectionWorkerLockRef(db);
+  try {
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(lockRef);
+      if (!snapshot.exists) {
+        return;
+      }
+      const data = snapshot.data() || {};
+      const lockedBy = String(data.lockedBy || "").trim();
+      if (lockedBy && lockedBy !== FACE_DETECTION_WORKER_ID) {
+        return;
+      }
+      transaction.set(
+        lockRef,
+        {
+          lockedBy: "",
+          releasedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          expiresAt: "",
+        },
+        { merge: true }
+      );
+    });
+  } catch (error) {
+    console.warn(`Failed to release face detection lock: ${error.message}`);
+  }
+}
+
 async function runFaceDetectionQueuePass() {
   const db = getFirestoreDb();
   if (!db || faceDetectionProcessingLoopActive) {
@@ -879,10 +943,15 @@ async function runFaceDetectionQueuePass() {
   }
   faceDetectionProcessingLoopActive = true;
   try {
+    const globalLockAcquired = await acquireFaceDetectionWorkerLock(db);
+    if (!globalLockAcquired) {
+      return;
+    }
     await ensureFaceRuntime();
     const queueSnapshot = await db
       .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
       .where("status", "==", "queued")
+      .orderBy("queuedAt", "asc")
       .limit(1)
       .get();
     if (queueSnapshot.empty) {
@@ -955,6 +1024,7 @@ async function runFaceDetectionQueuePass() {
     faceDetectionRuntimeError = runtimeError?.message || "Face detection runtime unavailable";
     console.warn(`Face detection runtime unavailable: ${faceDetectionRuntimeError}`);
   } finally {
+    await releaseFaceDetectionWorkerLock(db);
     faceDetectionProcessingLoopActive = false;
   }
 }
