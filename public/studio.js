@@ -1208,6 +1208,7 @@ function renderSavedPagesTable() {
     const faceDetection = normalizeFaceDetectionState(page?.faceDetection);
     const canUseFacePicker = faceDetection.status === "completed";
     const isFaceDetectionRunning = faceDetection.status === "queued" || faceDetection.status === "processing";
+    const faceStatusBadge = getFaceStatusBadge(faceDetection);
     const card = document.createElement("article");
     card.className = "saved-page-card";
     card.tabIndex = 0;
@@ -1217,6 +1218,9 @@ function renderSavedPagesTable() {
     const thumbnail = page.coverThumbnailUrl || page.coverImageUrl || "";
     card.innerHTML = `
       <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">
+        ${faceStatusBadge ? `
+          <span class="saved-page-face-status-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">${escapeMarkup(faceStatusBadge.label)}</span>
+        ` : ""}
         ${thumbnail ? `<img src="${escapeMarkup(thumbnail)}" alt="" loading="lazy" />` : ""}
       </a>
       <div class="saved-page-content">
@@ -1339,6 +1343,79 @@ function normalizeFaceDetectionState(faceDetection = null) {
     completedAt: faceDetection?.completedAt || null,
     updatedAt: faceDetection?.updatedAt || null,
     source: String(faceDetection?.source || "").trim(),
+    error: String(faceDetection?.error || faceDetection?.runtimeError || "").trim(),
+    faceGroupCount: Math.max(0, Number(faceDetection?.faceGroupCount) || 0),
+    detectedPhotoCount: Math.max(0, Number(faceDetection?.detectedPhotoCount) || 0),
+    scannedPhotoCount: Math.max(0, Number(faceDetection?.scannedPhotoCount) || 0),
+    progressPercent: Math.max(0, Math.min(100, Number(faceDetection?.progressPercent) || 0)),
+    processedPhotoCount: Math.max(0, Number(faceDetection?.processedPhotoCount) || 0),
+    totalPhotoCount: Math.max(0, Number(faceDetection?.totalPhotoCount) || 0),
+  };
+}
+
+function formatFaceStatusTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getFaceStatusBadge(faceDetection) {
+  const status = String(faceDetection?.status || "idle").trim();
+  if (status === "idle") {
+    return {
+      label: "Face idle",
+      tooltip: "Face detection has not started for this album.",
+    };
+  }
+
+  if (status === "queued") {
+    const queuedAt = formatFaceStatusTime(faceDetection?.requestedAt);
+    return {
+      label: "Face queued",
+      tooltip: queuedAt ? `Queued at ${queuedAt}. Processing will begin shortly.` : "Queued. Processing will begin shortly.",
+    };
+  }
+
+  if (status === "processing") {
+    const progressPercent = Math.max(0, Math.min(100, Number(faceDetection?.progressPercent) || 0));
+    const processedPhotoCount = Math.max(0, Number(faceDetection?.processedPhotoCount) || 0);
+    const totalPhotoCount = Math.max(0, Number(faceDetection?.totalPhotoCount) || 0);
+    const updatedAt = formatFaceStatusTime(faceDetection?.updatedAt);
+    return {
+      label: `Processing ${progressPercent}%`,
+      tooltip: `${totalPhotoCount > 0 ? `${processedPhotoCount}/${totalPhotoCount} photos processed.` : "Processing photos..."}${updatedAt ? ` Last update: ${updatedAt}.` : ""}`,
+    };
+  }
+
+  if (status === "completed") {
+    const groups = Math.max(0, Number(faceDetection?.faceGroupCount) || 0);
+    const photos = Math.max(0, Number(faceDetection?.detectedPhotoCount) || 0);
+    const scanned = Math.max(0, Number(faceDetection?.scannedPhotoCount) || 0);
+    const completedAt = formatFaceStatusTime(faceDetection?.completedAt || faceDetection?.updatedAt);
+    if (groups > 0) {
+      return {
+        label: "Face ready",
+        tooltip: `Completed${completedAt ? ` at ${completedAt}` : ""}. ${groups} face group${groups === 1 ? "" : "s"} detected across ${photos} photo${photos === 1 ? "" : "s"}.`,
+      };
+    }
+    return {
+      label: "No faces",
+      tooltip: `Completed${completedAt ? ` at ${completedAt}` : ""}. No detectable faces found${scanned > 0 ? ` in ${scanned} scanned photo${scanned === 1 ? "" : "s"}` : ""}.`,
+    };
+  }
+
+  const errorMessage = String(faceDetection?.error || "").trim();
+  return {
+    label: "Face failed",
+    tooltip: errorMessage || "Face detection failed. Retry from the face icon.",
   };
 }
 

@@ -569,11 +569,51 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     throw new Error("Could not resolve Drive folder id.");
   }
 
+  const publicPageSnapshots = await firestoreDb
+    .collection(FIREBASE_COLLECTIONS.publicPages)
+    .where("pageId", "==", pageId)
+    .get();
+  const publicPageRefs = publicPageSnapshots.docs.map((docSnap) => docSnap.ref);
+
   const folderResult = await fetchFolderResult(folderId, false);
   const allImages = Array.isArray(folderResult?.images) ? folderResult.images : [];
   const images = allImages.filter((file) => String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)).slice(0, FACE_DETECTION_MAX_IMAGES);
+  const totalPhotoCount = images.length;
+  const updateProcessingProgress = async (processedPhotoCount) => {
+    const safeTotal = Math.max(1, totalPhotoCount);
+    const clampedProcessed = Math.max(0, Math.min(processedPhotoCount, totalPhotoCount));
+    const progressPercent = totalPhotoCount > 0 ? Math.max(0, Math.min(100, Math.round((clampedProcessed / safeTotal) * 100))) : 100;
+    const nowIso = new Date().toISOString();
+    const processingPayload = {
+      status: "processing",
+      source: String(queueData?.source || "").trim() || "manual",
+      requestedAt: queueData?.queuedAt || page.faceDetection?.requestedAt || nowIso,
+      completedAt: null,
+      updatedAt: nowIso,
+      progressPercent,
+      processedPhotoCount: clampedProcessed,
+      totalPhotoCount,
+    };
+
+    await queueDocRef.set(
+      {
+        status: "processing",
+        updatedAt: nowIso,
+        progressPercent,
+        processedPhotoCount: clampedProcessed,
+        totalPhotoCount,
+      },
+      { merge: true }
+    );
+    await pageRef.set({ faceDetection: processingPayload }, { merge: true });
+    for (const publicPageRef of publicPageRefs) {
+      await publicPageRef.set({ faceDetection: processingPayload }, { merge: true });
+    }
+  };
+  await updateProcessingProgress(0);
 
   const detections = [];
+  let processedPhotoCount = 0;
   for (const image of images) {
     try {
       const buffer = await fetchImageBufferForFaceDetection(image.id);
@@ -581,14 +621,13 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       detections.push(...photoDetections);
     } catch (error) {
       console.warn(`Face detection skipped image ${image.id}: ${error.message}`);
+    } finally {
+      processedPhotoCount += 1;
+      await updateProcessingProgress(processedPhotoCount);
     }
   }
 
   const groupedFaces = clusterFaceDescriptors(detections);
-  const publicPageSnapshots = await firestoreDb
-    .collection(FIREBASE_COLLECTIONS.publicPages)
-    .where("pageId", "==", pageId)
-    .get();
 
   const faceDetectionPayload = {
     status: "completed",
@@ -599,11 +638,13 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     faceGroupCount: groupedFaces.length,
     detectedPhotoCount: groupedFaces.reduce((total, group) => total + group.photoIds.length, 0),
     scannedPhotoCount: images.length,
+    progressPercent: 100,
+    processedPhotoCount: images.length,
+    totalPhotoCount,
   };
 
   await pageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
-  for (const publicPageSnapshot of publicPageSnapshots.docs) {
-    const publicPageRef = publicPageSnapshot.ref;
+  for (const publicPageRef of publicPageRefs) {
     await publicPageRef.set({ faceDetection: faceDetectionPayload }, { merge: true });
     await persistFaceDetectionResults(publicPageRef, groupedFaces, images);
   }
@@ -615,6 +656,9 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       updatedAt: new Date().toISOString(),
       faceGroupCount: groupedFaces.length,
       scannedPhotoCount: images.length,
+      progressPercent: 100,
+      processedPhotoCount: images.length,
+      totalPhotoCount,
     },
     { merge: true }
   );
