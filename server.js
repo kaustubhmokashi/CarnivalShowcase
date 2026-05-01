@@ -133,6 +133,7 @@ const folderTreeCache = new Map();
 const mediaResponseCache = new Map();
 const mediaInflightRequests = new Map();
 let mediaCacheSizeBytes = 0;
+let eventsStoreMutationChain = Promise.resolve();
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
@@ -974,32 +975,18 @@ async function runFaceDetectionQueuePass() {
       return;
     }
     await ensureFaceRuntime();
-    let queueSnapshot;
-    try {
-      queueSnapshot = await db
-        .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
-        .where("status", "==", "queued")
-        .orderBy("queuedAt", "asc")
-        .limit(1)
-        .get();
-    } catch (queryError) {
-      console.warn(`Face queue ordered query failed, using fallback scan: ${queryError.message}`);
-      const fallbackSnapshot = await db
-        .collection(FIREBASE_COLLECTIONS.faceDetectionQueue)
-        .where("status", "==", "queued")
-        .get();
-      const docs = fallbackSnapshot.docs
-        .slice()
-        .sort((left, right) => {
-          const leftMs = Date.parse(String(left.data()?.queuedAt || "")) || 0;
-          const rightMs = Date.parse(String(right.data()?.queuedAt || "")) || 0;
-          return leftMs - rightMs;
-        });
-      queueSnapshot = {
-        empty: docs.length === 0,
-        docs: docs.length ? [docs[0]] : [],
-      };
-    }
+    const queueSnapshotRaw = await db.collection(FIREBASE_COLLECTIONS.faceDetectionQueue).get();
+    const queueDocs = queueSnapshotRaw.docs
+      .filter((doc) => String(doc.data()?.status || "").trim() === "queued")
+      .sort((left, right) => {
+        const leftMs = Date.parse(String(left.data()?.queuedAt || "")) || 0;
+        const rightMs = Date.parse(String(right.data()?.queuedAt || "")) || 0;
+        return leftMs - rightMs;
+      });
+    const queueSnapshot = {
+      empty: queueDocs.length === 0,
+      docs: queueDocs.length ? [queueDocs[0]] : [],
+    };
     if (queueSnapshot.empty) {
       return;
     }
@@ -1112,6 +1099,12 @@ function writeEventsStore(store) {
     events: Array.isArray(store?.events) ? store.events : [],
   };
   fs.writeFileSync(EVENTS_STORE_FILE, JSON.stringify(normalized, null, 2) + "\n", "utf8");
+}
+
+async function withEventsStoreMutation(handler) {
+  const run = eventsStoreMutationChain.then(() => handler());
+  eventsStoreMutationChain = run.catch(() => {});
+  return run;
 }
 
 function readDriveConnectionsStore() {
@@ -4029,6 +4022,61 @@ async function handleAdminDeleteLink(req, res) {
   }
 }
 
+async function handleAdminListEvents(req, res) {
+  const admin = await requireAdminRequest(req, res);
+  if (!admin) {
+    return;
+  }
+
+  try {
+    const events = readAllEvents().map((event) => {
+      const queued = Array.isArray(event.queuedPhotos) ? event.queuedPhotos.length : 0;
+      const live = Array.isArray(event.livePhotos) ? event.livePhotos.length : 0;
+      const rejected = Array.isArray(event.rejectedPhotos) ? event.rejectedPhotos.length : 0;
+      return {
+        id: String(event.id || "").trim(),
+        ownerUid: String(event.ownerUid || "").trim(),
+        name: String(event.name || "").trim(),
+        phase: String(event.phase || "upcoming").trim(),
+        createdAt: String(event.createdAt || "").trim(),
+        startAt: String(event.startAt || "").trim(),
+        endAt: String(event.endAt || "").trim(),
+        uploadedPhotoCount: queued + live + rejected,
+      };
+    });
+    sendJson(res, 200, { events });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "Could not load events." });
+  }
+}
+
+async function handleAdminDeleteEvent(req, res) {
+  const admin = await requireAdminRequest(req, res);
+  if (!admin) {
+    return;
+  }
+
+  try {
+    const body = await readRequestBody(req);
+    const eventId = String(body.id || "").trim();
+    if (!eventId) {
+      sendJson(res, 400, { error: "Event id is required." });
+      return;
+    }
+    await withEventsStoreMutation(async () => {
+      const store = readEventsStore();
+      const nextEvents = store.events.filter((event) => String(event?.id || "").trim() !== eventId);
+      if (nextEvents.length === store.events.length) {
+        throw new Error("Event not found.");
+      }
+      writeEventsStore({ events: nextEvents });
+    });
+    sendJson(res, 200, { success: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not delete event." });
+  }
+}
+
 async function handlePairingOrigin(req, res) {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const hostHeader = req.headers.host || "";
@@ -4875,6 +4923,16 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/admin/links/delete" && req.method === "POST") {
     await handleAdminDeleteLink(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/events" && req.method === "GET") {
+    await handleAdminListEvents(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin/events/delete" && req.method === "POST") {
+    await handleAdminDeleteEvent(req, res);
     return;
   }
 
