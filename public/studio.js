@@ -1527,6 +1527,7 @@ function buildFaceMergePopup() {
       <div class="face-picker-status">Loading faces…</div>
       <div class="face-picker-grid hidden"></div>
       <div class="face-picker-footer">
+        <button type="button" class="face-picker-clear" data-action="redo">Redo Face Detection</button>
         <button type="button" class="face-picker-clear" data-action="merge" disabled>Merge Selected</button>
       </div>
     </div>
@@ -1590,6 +1591,7 @@ async function openStudioFaceMergePopup(page) {
   const statusEl = popup.querySelector(".face-picker-status");
   const gridEl = popup.querySelector(".face-picker-grid");
   const mergeButton = popup.querySelector('[data-action="merge"]');
+  const redoButton = popup.querySelector('[data-action="redo"]');
   const selected = new Set();
   const updateMergeState = () => {
     if (mergeButton) {
@@ -1653,6 +1655,30 @@ async function openStudioFaceMergePopup(page) {
         statusEl.classList.remove("hidden");
         statusEl.textContent = error?.message || "Could not merge face groups.";
         mergeButton.disabled = false;
+      }
+    });
+
+    redoButton?.addEventListener("click", async () => {
+      try {
+        if (redoButton) {
+          redoButton.disabled = true;
+        }
+        if (mergeButton) {
+          mergeButton.disabled = true;
+        }
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = "Re-queuing face detection…";
+        await enqueueFaceDetection(page, { manual: true });
+        await loadSavedPages();
+        closeFaceMergePopup();
+        showStudioToast("Face detection queued again.");
+      } catch (error) {
+        statusEl.classList.remove("hidden");
+        statusEl.textContent = error?.message || "Could not queue face detection.";
+        if (redoButton) {
+          redoButton.disabled = false;
+        }
+        updateMergeState();
       }
     });
     updateMergeState();

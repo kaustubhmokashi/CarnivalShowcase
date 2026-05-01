@@ -570,8 +570,10 @@ function dedupeFaceGroupsByThumbnailSimilarity(groups) {
 
 async function fetchImageBufferForFaceDetection(fileId) {
   const candidates = [
-    `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w640`,
-    `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w640`,
+    `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1600`,
+    `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w1600`,
+    `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w960`,
+    `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w960`,
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${encodeURIComponent(API_KEY)}`,
   ];
   const result = await fetchMediaCandidateWithCache(candidates, null, "");
@@ -591,16 +593,26 @@ async function detectFacesInPhotoBuffer(photo, buffer) {
   const sourceContext = sourceCanvas.getContext("2d");
   sourceContext.drawImage(image, 0, 0, image.width, image.height);
 
-  const detections = await faceapi
-    .detectAllFaces(
-      sourceCanvas,
-      new faceapi.TinyFaceDetectorOptions({
-        inputSize: 320,
-        scoreThreshold: 0.5,
-      })
-    )
-    .withFaceLandmarks(true)
-    .withFaceDescriptors();
+  const candidateOptions = [
+    { inputSize: 512, scoreThreshold: 0.35 },
+    { inputSize: 416, scoreThreshold: 0.35 },
+    { inputSize: 320, scoreThreshold: 0.35 },
+    { inputSize: 320, scoreThreshold: 0.28 },
+  ];
+
+  let detections = [];
+  for (const options of candidateOptions) {
+    const passDetections = await faceapi
+      .detectAllFaces(sourceCanvas, new faceapi.TinyFaceDetectorOptions(options))
+      .withFaceLandmarks(true)
+      .withFaceDescriptors();
+    if (passDetections.length > detections.length) {
+      detections = passDetections;
+    }
+    if (detections.length > 0 && options.inputSize >= 416) {
+      break;
+    }
+  }
 
   return detections.map((entry) => {
     const box = entry?.detection?.box || { x: 0, y: 0, width: image.width, height: image.height };

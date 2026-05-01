@@ -1274,7 +1274,8 @@ label:focus-within {
 .face-picker-footer {
   margin-top: 14px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .cover-action-image {
