@@ -108,7 +108,7 @@ const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DIST
 const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
   process.env.FACE_MODEL_BASE_URL ||
-  "https://raw.githubusercontent.com/vladmandic/face-api/main/model";
+  "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
 const FACE_MODEL_FILES = [
   "tiny_face_detector_model-weights_manifest.json",
   "tiny_face_detector_model-shard1",
@@ -342,6 +342,7 @@ async function ensureFaceModelFiles() {
     new Set(
       [
         FACE_MODEL_BASE_URL,
+        "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights",
         "https://raw.githubusercontent.com/vladmandic/face-api/main/model",
         "https://raw.githubusercontent.com/vladmandic/face-api/master/model",
       ]
