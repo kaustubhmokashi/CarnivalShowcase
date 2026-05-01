@@ -202,6 +202,8 @@ let currentEventPresentationHasFirstPaint = false;
 let eventPresentLoaderAnimation = null;
 let currentEventPresentationLeaveStartTimer = null;
 let currentEventPresentationLeaveCleanupTimer = null;
+let studioCardRefreshTimer = null;
+let studioCardRefreshInFlight = false;
 const EVENT_PRESENT_ENTER_MS = 900;
 const EVENT_PRESENT_PUSH_DELAY_MS = 0;
 const EVENT_PRESENT_EXIT_MS = 900;
@@ -896,6 +898,7 @@ function showStudioView(view) {
   studioAdminPanel?.classList.toggle("hidden", !isAdmin);
   studioDashboardPanel.classList.toggle("hidden", !isDashboard);
   stopManageEventRefreshLoop();
+  stopStudioCardRefreshLoop();
   createPagePanel.classList.add("hidden");
   createEventPanel?.classList.add("hidden");
   manageEventPanel?.classList.add("hidden");
@@ -904,7 +907,39 @@ function showStudioView(view) {
   closeStudioSidebarDrawer();
   if (isDashboard) {
     showStudioDashboardSection("pages");
+    startStudioCardRefreshLoop();
   }
+}
+
+function stopStudioCardRefreshLoop() {
+  if (studioCardRefreshTimer) {
+    window.clearTimeout(studioCardRefreshTimer);
+    studioCardRefreshTimer = null;
+  }
+}
+
+function startStudioCardRefreshLoop() {
+  stopStudioCardRefreshLoop();
+  if (!studioDashboardPanel || studioDashboardPanel.classList.contains("hidden")) {
+    return;
+  }
+  studioCardRefreshTimer = window.setTimeout(async () => {
+    if (!currentUser || studioCardRefreshInFlight) {
+      startStudioCardRefreshLoop();
+      return;
+    }
+    studioCardRefreshInFlight = true;
+    try {
+      await loadSavedPages({ includeQueueRecovery: false });
+    } catch (error) {
+      console.warn("Studio card auto-refresh failed:", error);
+    } finally {
+      studioCardRefreshInFlight = false;
+      if (studioDashboardPanel && !studioDashboardPanel.classList.contains("hidden")) {
+        startStudioCardRefreshLoop();
+      }
+    }
+  }, 3000);
 }
 
 function openCreateEventPanel({ skipHistory = false, eventToEdit = null } = {}) {
@@ -2524,11 +2559,13 @@ function updateLinkCreationGate() {
   }
 }
 
-async function loadSavedPages() {
+async function loadSavedPages({ includeQueueRecovery = true } = {}) {
   const pagesQuery = query(getPagesCollection(), orderBy("createdAt", "desc"));
   const snapshot = await getDocs(pagesQuery);
   savedPages = snapshot.docs.map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }));
-  await resetMissingFaceQueueStates();
+  if (includeQueueRecovery) {
+    await resetMissingFaceQueueStates();
+  }
   renderSavedPagesTable();
 }
 
