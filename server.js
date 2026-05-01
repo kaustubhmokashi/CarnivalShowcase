@@ -94,6 +94,7 @@ const FIREBASE_COLLECTIONS = {
 const ALBUM_SNAPSHOT_SUBCOLLECTION = "albumSnapshotChunks";
 const FACE_GROUPS_SUBCOLLECTION = "faceDetectionGroups";
 const FACE_MATCHES_SUBCOLLECTION = "faceDetectionPhotoMatches";
+const FACE_DESCRIPTOR_CACHE_SUBCOLLECTION = "faceDetectionDescriptors";
 const CUSTOM_DOMAIN_CNAME_TARGET = process.env.CUSTOM_DOMAIN_CNAME_TARGET || process.env.RENDER_EXTERNAL_HOSTNAME || "";
 const FOLDER_CACHE_FRESH_MS = Number(process.env.FOLDER_CACHE_FRESH_MS || 5 * 60 * 1000);
 const FOLDER_CACHE_STALE_MS = Number(process.env.FOLDER_CACHE_STALE_MS || 30 * 60 * 1000);
@@ -105,8 +106,10 @@ const DRIVE_OAUTH_SCOPE = "https://www.googleapis.com/auth/drive";
 const FACE_DETECTION_MAX_IMAGES = Number(process.env.FACE_DETECTION_MAX_IMAGES || 350);
 const FACE_DETECTION_POLL_MS = Number(process.env.FACE_DETECTION_POLL_MS || 12000);
 const FACE_DETECTION_DISTANCE_THRESHOLD = Number(process.env.FACE_DETECTION_DISTANCE_THRESHOLD || 0.47);
-const FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD = Number(
-  process.env.FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD || Math.min(0.56, FACE_DETECTION_DISTANCE_THRESHOLD + 0.08)
+const FACE_DETECTION_MIN_FACE_PIXELS = Number(process.env.FACE_DETECTION_MIN_FACE_PIXELS || 54);
+const FACE_DETECTION_MIN_QUALITY_SCORE = Number(process.env.FACE_DETECTION_MIN_QUALITY_SCORE || 0.16);
+const FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD = Number(
+  process.env.FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD || Math.max(0.45, FACE_DETECTION_DISTANCE_THRESHOLD - 0.01)
 );
 const FACE_MODEL_DIR = path.join(DATA_DIR, "face-models");
 const FACE_MODEL_BASE_URL =
@@ -495,7 +498,7 @@ function clusterFaceDescriptors(detections) {
     .sort((left, right) => right.count - left.count);
 }
 
-function dedupeFaceGroupsByThumbnailSimilarity(groups) {
+function absorbSmallFaceGroups(groups) {
   const working = Array.isArray(groups)
     ? groups.map((group) => ({
         id: String(group.id || "").trim(),
@@ -505,66 +508,58 @@ function dedupeFaceGroupsByThumbnailSimilarity(groups) {
         previewDataUrl: String(group.previewDataUrl || "").trim(),
       }))
     : [];
-
-  let mergedGroupsCount = 0;
-  let mergedInPass = true;
-
-  while (mergedInPass) {
-    mergedInPass = false;
-    for (let i = 0; i < working.length; i += 1) {
-      const left = working[i];
-      if (!left?.center?.length) {
+  let absorbedGroupCount = 0;
+  for (let i = 0; i < working.length; i += 1) {
+    const group = working[i];
+    if (!group?.center?.length || group.count > 1) {
+      continue;
+    }
+    let bestGroupIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let j = 0; j < working.length; j += 1) {
+      if (i === j) {
         continue;
       }
-      for (let j = i + 1; j < working.length; j += 1) {
-        const right = working[j];
-        if (!right?.center?.length) {
-          continue;
-        }
-        const distance = euclideanDistance(left.center, right.center);
-        if (distance > FACE_DETECTION_DEDUPE_DISTANCE_THRESHOLD) {
-          continue;
-        }
-
-        const leftWeight = Math.max(1, left.count);
-        const rightWeight = Math.max(1, right.count);
-        const totalWeight = leftWeight + rightWeight;
-        const mergedCenter = left.center.map((value, index) => (
-          ((value * leftWeight) + ((right.center[index] || 0) * rightWeight)) / totalWeight
-        ));
-        const mergedPhotoIds = Array.from(new Set([...(left.photoIds || []), ...(right.photoIds || [])]));
-
-        left.center = mergedCenter;
-        left.count = Math.max(0, Number(left.count) || 0) + Math.max(0, Number(right.count) || 0);
-        left.photoIds = mergedPhotoIds;
-        if (!left.previewDataUrl && right.previewDataUrl) {
-          left.previewDataUrl = right.previewDataUrl;
-        }
-
-        working.splice(j, 1);
-        mergedGroupsCount += 1;
-        mergedInPass = true;
-        break;
+      const candidate = working[j];
+      if (!candidate?.center?.length) {
+        continue;
       }
-      if (mergedInPass) {
-        break;
+      const distance = euclideanDistance(group.center, candidate.center);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestGroupIndex = j;
       }
     }
+    if (bestGroupIndex < 0 || bestDistance > FACE_DETECTION_SMALL_CLUSTER_ABSORB_THRESHOLD) {
+      continue;
+    }
+    const destination = working[bestGroupIndex];
+    const destinationWeight = Math.max(1, destination.count);
+    const sourceWeight = Math.max(1, group.count);
+    const totalWeight = destinationWeight + sourceWeight;
+    destination.center = destination.center.map((value, index) => (
+      ((value * destinationWeight) + ((group.center[index] || 0) * sourceWeight)) / totalWeight
+    ));
+    destination.count += group.count;
+    destination.photoIds = Array.from(new Set([...(destination.photoIds || []), ...(group.photoIds || [])]));
+    if (!destination.previewDataUrl && group.previewDataUrl) {
+      destination.previewDataUrl = group.previewDataUrl;
+    }
+    working.splice(i, 1);
+    absorbedGroupCount += 1;
+    i -= 1;
   }
-
-  const dedupedGroups = working
-    .map((group, index) => ({
-      id: `face_${String(index + 1).padStart(3, "0")}`,
-      count: Math.max(0, Number(group.count) || 0),
-      photoIds: Array.from(new Set(group.photoIds || [])),
-      previewDataUrl: String(group.previewDataUrl || "").trim(),
-      center: Array.isArray(group.center) ? group.center.slice() : [],
-    }))
-    .sort((left, right) => right.count - left.count);
-
   return {
-    groups: dedupedGroups,
-    mergedGroupsCount,
+    groups: working
+      .map((group, index) => ({
+        id: `face_${String(index + 1).padStart(3, "0")}`,
+        count: Math.max(0, Number(group.count) || 0),
+        photoIds: Array.from(new Set(group.photoIds || [])),
+        previewDataUrl: String(group.previewDataUrl || "").trim(),
+        center: Array.isArray(group.center) ? group.center.slice() : [],
+      }))
+      .sort((left, right) => right.count - left.count),
+    absorbedGroupCount,
   };
 }
 
@@ -630,6 +625,61 @@ async function detectFacesInPhotoBuffer(photo, buffer) {
       previewDataUrl: toDataUrlFromCanvas(previewCanvas, "image/jpeg", 0.82),
     };
   });
+}
+
+function buildFaceDescriptorSignature(photo) {
+  const id = String(photo?.id || "").trim();
+  const name = String(photo?.name || "").trim().toLowerCase();
+  const mimeType = String(photo?.mimeType || "").trim().toLowerCase();
+  const width = Number(photo?.width) || 0;
+  const height = Number(photo?.height) || 0;
+  return `${id}:${name}:${mimeType}:${width}x${height}`;
+}
+
+async function loadFaceDetectionsFromCache(publicPageRef, photo) {
+  const photoId = String(photo?.id || "").trim();
+  if (!photoId) {
+    return null;
+  }
+  const cacheRef = publicPageRef.collection(FACE_DESCRIPTOR_CACHE_SUBCOLLECTION).doc(photoId);
+  const snapshot = await cacheRef.get();
+  if (!snapshot.exists) {
+    return null;
+  }
+  const data = snapshot.data() || {};
+  if (String(data.signature || "") !== buildFaceDescriptorSignature(photo)) {
+    return null;
+  }
+  const detections = Array.isArray(data.detections) ? data.detections : [];
+  return detections
+    .map((entry) => ({
+      photoId,
+      descriptor: Array.isArray(entry?.descriptor) ? entry.descriptor : [],
+      previewDataUrl: String(entry?.previewDataUrl || "").trim(),
+    }))
+    .filter((entry) => entry.descriptor.length > 0);
+}
+
+async function saveFaceDetectionsToCache(publicPageRef, photo, detections) {
+  const photoId = String(photo?.id || "").trim();
+  if (!photoId) {
+    return;
+  }
+  const cacheRef = publicPageRef.collection(FACE_DESCRIPTOR_CACHE_SUBCOLLECTION).doc(photoId);
+  await cacheRef.set(
+    {
+      signature: buildFaceDescriptorSignature(photo),
+      photoId,
+      detections: Array.isArray(detections)
+        ? detections.map((entry) => ({
+            descriptor: Array.isArray(entry?.descriptor) ? entry.descriptor : [],
+            previewDataUrl: String(entry?.previewDataUrl || "").trim(),
+          }))
+        : [],
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
 }
 
 async function clearFaceDetectionSubcollections(publicPageRef) {
@@ -744,11 +794,21 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   await updateProcessingProgress(0);
 
   const detections = [];
+  const primaryPublicPageRef = publicPageRefs[0] || null;
   let processedPhotoCount = 0;
   for (const image of images) {
     try {
-      const buffer = await fetchImageBufferForFaceDetection(image.id);
-      const photoDetections = await detectFacesInPhotoBuffer(image, buffer);
+      let photoDetections = null;
+      if (primaryPublicPageRef) {
+        photoDetections = await loadFaceDetectionsFromCache(primaryPublicPageRef, image);
+      }
+      if (!photoDetections) {
+        const buffer = await fetchImageBufferForFaceDetection(image.id);
+        photoDetections = await detectFacesInPhotoBuffer(image, buffer);
+        if (primaryPublicPageRef) {
+          await saveFaceDetectionsToCache(primaryPublicPageRef, image, photoDetections);
+        }
+      }
       detections.push(...photoDetections);
     } catch (error) {
       console.warn(`Face detection skipped image ${image.id}: ${error.message}`);
@@ -759,8 +819,8 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   }
 
   const groupedFacesInitial = clusterFaceDescriptors(detections);
-  const dedupeResult = dedupeFaceGroupsByThumbnailSimilarity(groupedFacesInitial);
-  const groupedFaces = dedupeResult.groups;
+  const absorbResult = absorbSmallFaceGroups(groupedFacesInitial);
+  const groupedFaces = absorbResult.groups;
 
   const faceDetectionPayload = {
     status: "completed",
@@ -771,7 +831,7 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     faceGroupCount: groupedFaces.length,
     detectedPhotoCount: groupedFaces.reduce((total, group) => total + group.photoIds.length, 0),
     scannedPhotoCount: images.length,
-    dedupeMergedGroups: dedupeResult.mergedGroupsCount,
+    absorbedSmallGroups: absorbResult.absorbedGroupCount,
     progressPercent: 100,
     processedPhotoCount: images.length,
     totalPhotoCount,
@@ -790,7 +850,7 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       updatedAt: new Date().toISOString(),
       faceGroupCount: groupedFaces.length,
       scannedPhotoCount: images.length,
-      dedupeMergedGroups: dedupeResult.mergedGroupsCount,
+      absorbedSmallGroups: absorbResult.absorbedGroupCount,
       progressPercent: 100,
       processedPhotoCount: images.length,
       totalPhotoCount,
