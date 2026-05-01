@@ -1460,17 +1460,18 @@ async function enqueueFaceDetection(page, { manual = false } = {}) {
     }
 
     const primaryPublicSnapshot = await transaction.get(primaryPublicPageRef);
+    let aliasPublicSnapshot = null;
+    if (aliasPublicPageRef) {
+      aliasPublicSnapshot = await transaction.get(aliasPublicPageRef);
+    }
 
     transaction.set(pageRef, { faceDetection: faceDetectionPayload }, { merge: true });
     if (primaryPublicSnapshot.exists()) {
       transaction.set(primaryPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
     }
 
-    if (aliasPublicPageRef) {
-      const aliasPublicSnapshot = await transaction.get(aliasPublicPageRef);
-      if (aliasPublicSnapshot.exists()) {
-        transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
-      }
+    if (aliasPublicSnapshot?.exists()) {
+      transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
     }
 
     transaction.set(queueRef, {
