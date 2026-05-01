@@ -834,7 +834,16 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     try {
       let photoDetections = null;
       if (primaryPublicPageRef) {
-        photoDetections = await loadFaceDetectionsFromCache(primaryPublicPageRef, image);
+        try {
+          photoDetections = await withTimeout(
+            loadFaceDetectionsFromCache(primaryPublicPageRef, image),
+            5000,
+            `load face cache ${image.id}`
+          );
+        } catch (cacheReadError) {
+          console.warn(`Face cache read timeout for ${image.id}: ${cacheReadError.message}`);
+          photoDetections = null;
+        }
       }
       if (!photoDetections) {
         const buffer = await withTimeout(
@@ -848,7 +857,15 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
           `detect faces ${image.id}`
         );
         if (primaryPublicPageRef) {
-          await saveFaceDetectionsToCache(primaryPublicPageRef, image, photoDetections);
+          try {
+            await withTimeout(
+              saveFaceDetectionsToCache(primaryPublicPageRef, image, photoDetections),
+              5000,
+              `save face cache ${image.id}`
+            );
+          } catch (cacheWriteError) {
+            console.warn(`Face cache write timeout for ${image.id}: ${cacheWriteError.message}`);
+          }
         }
       }
       detections.push(...photoDetections);
@@ -976,6 +993,39 @@ async function runFaceDetectionQueuePass() {
     }
     await ensureFaceRuntime();
     const queueSnapshotRaw = await db.collection(FIREBASE_COLLECTIONS.faceDetectionQueue).get();
+    const nowMs = Date.now();
+    const staleProcessingCutoffMs = nowMs - Math.max(FACE_DETECTION_LOCK_LEASE_MS * 2, 10 * 60 * 1000);
+    const staleProcessingDocs = queueSnapshotRaw.docs.filter((doc) => {
+      const data = doc.data() || {};
+      if (String(data.status || "").trim() !== "processing") {
+        return false;
+      }
+      const startedMs =
+        Date.parse(String(data.processingStartedAt || "")) ||
+        Date.parse(String(data.updatedAt || "")) ||
+        Date.parse(String(data.queuedAt || "")) ||
+        0;
+      return startedMs > 0 && startedMs < staleProcessingCutoffMs;
+    });
+
+    if (staleProcessingDocs.length) {
+      const staleBatch = db.batch();
+      const staleNowIso = new Date().toISOString();
+      for (const staleDoc of staleProcessingDocs) {
+        staleBatch.set(
+          staleDoc.ref,
+          {
+            status: "queued",
+            processingStartedAt: null,
+            updatedAt: staleNowIso,
+            runtimeError: "Recovered stale processing job.",
+          },
+          { merge: true }
+        );
+      }
+      await staleBatch.commit();
+    }
+
     const queueDocs = queueSnapshotRaw.docs
       .filter((doc) => String(doc.data()?.status || "").trim() === "queued")
       .sort((left, right) => {
