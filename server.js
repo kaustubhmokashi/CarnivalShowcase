@@ -111,11 +111,11 @@ const FACE_MODEL_BASE_URL =
   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
 const FACE_MODEL_FILES = [
   "tiny_face_detector_model-weights_manifest.json",
-  "tiny_face_detector_model-shard1",
+  "tiny_face_detector_model.bin",
   "face_landmark_68_tiny_model-weights_manifest.json",
-  "face_landmark_68_tiny_model-shard1",
+  "face_landmark_68_tiny_model.bin",
   "face_recognition_model-weights_manifest.json",
-  "face_recognition_model-shard1",
+  "face_recognition_model.bin",
 ];
 
 const IMAGE_MIME_PREFIX = "image/";
