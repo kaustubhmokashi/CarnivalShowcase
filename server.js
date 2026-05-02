@@ -72,6 +72,8 @@ const FIREBASE_CONFIG_FILE = path.join(PUBLIC_DIR, "firebase-config.js");
 const REMOTE_CODES_FILE = path.join(DATA_DIR, "remote-links.txt");
 const PUBLIC_PAGE_LIKES_FILE = path.join(DATA_DIR, "public-page-likes.json");
 const FACE_MERGE_OVERRIDES_FILE = path.join(DATA_DIR, "face-merge-overrides.json");
+const FACE_DETECTION_QUEUE_FILE = path.join(DATA_DIR, "face-detection-queue.json");
+const FACE_DETECTION_RESULTS_FILE = path.join(DATA_DIR, "face-detection-results.json");
 const EVENTS_STORE_FILE = path.join(DATA_DIR, "events.json");
 const DRIVE_CONNECTIONS_FILE = path.join(DATA_DIR, "drive-connections.json");
 const CODE_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -137,6 +139,8 @@ const mediaInflightRequests = new Map();
 let mediaCacheSizeBytes = 0;
 let eventsStoreMutationChain = Promise.resolve();
 let faceMergeStoreMutationChain = Promise.resolve();
+let faceQueueStoreMutationChain = Promise.resolve();
+let faceResultsStoreMutationChain = Promise.resolve();
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
@@ -324,6 +328,12 @@ function ensureDataStore() {
 
   if (!fs.existsSync(PUBLIC_PAGE_LIKES_FILE)) {
     fs.writeFileSync(PUBLIC_PAGE_LIKES_FILE, "{}\n", "utf8");
+  }
+  if (!fs.existsSync(FACE_DETECTION_QUEUE_FILE)) {
+    fs.writeFileSync(FACE_DETECTION_QUEUE_FILE, JSON.stringify({ jobs: {} }, null, 2) + "\n", "utf8");
+  }
+  if (!fs.existsSync(FACE_DETECTION_RESULTS_FILE)) {
+    fs.writeFileSync(FACE_DETECTION_RESULTS_FILE, JSON.stringify({ pages: {} }, null, 2) + "\n", "utf8");
   }
 
   if (!fs.existsSync(EVENTS_STORE_FILE)) {
@@ -727,47 +737,54 @@ async function clearFaceDetectionSubcollections(publicPageRef) {
   }
 }
 
-async function persistFaceDetectionResults(publicPageRef, groupedFaces, detectedPhotos) {
-  await clearFaceDetectionSubcollections(publicPageRef);
-  const batch = firestoreDb.batch();
-  const photoFaceMap = new Map();
-  for (const group of groupedFaces) {
-    const groupRef = publicPageRef.collection(FACE_GROUPS_SUBCOLLECTION).doc(group.id);
-    batch.set(groupRef, {
-      id: group.id,
-      count: group.count,
-      photoCount: group.photoIds.length,
-      photoIds: group.photoIds,
-      previewDataUrl: group.previewDataUrl || "",
+async function persistFaceDetectionResultsLocal(pageId, groupedFaces, detectedPhotos, publicPageIds = []) {
+  await withFaceResultsStoreMutation(async () => {
+    const store = readFaceDetectionResultsStore();
+    const photoFaceMap = {};
+    for (const group of groupedFaces) {
+      for (const photoId of group.photoIds || []) {
+        if (!photoFaceMap[photoId]) {
+          photoFaceMap[photoId] = [];
+        }
+        photoFaceMap[photoId].push(group.id);
+      }
+    }
+    const matches = {};
+    for (const photo of detectedPhotos) {
+      const photoId = String(photo?.id || "").trim();
+      if (!photoId) {
+        continue;
+      }
+      matches[photoId] = Array.isArray(photoFaceMap[photoId]) ? photoFaceMap[photoId] : [];
+    }
+    store.pages[pageId] = {
+      pageId,
+      publicPageIds: Array.isArray(publicPageIds) ? publicPageIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
       updatedAt: new Date().toISOString(),
-    });
-    group.photoIds.forEach((photoId) => {
-      const current = photoFaceMap.get(photoId) || [];
-      current.push(group.id);
-      photoFaceMap.set(photoId, current);
-    });
-  }
-
-  detectedPhotos.forEach((photo) => {
-    const faceIds = photoFaceMap.get(photo.id) || [];
-    const photoRef = publicPageRef.collection(FACE_MATCHES_SUBCOLLECTION).doc(photo.id);
-    batch.set(photoRef, {
-      photoId: photo.id,
-      faceIds,
-      hasFaces: faceIds.length > 0,
-      updatedAt: new Date().toISOString(),
-    });
+      groups: groupedFaces.map((group) => ({
+        id: String(group?.id || "").trim(),
+        count: Math.max(0, Number(group?.count) || 0),
+        photoCount: Array.isArray(group?.photoIds) ? group.photoIds.length : 0,
+        photoIds: Array.isArray(group?.photoIds) ? group.photoIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
+        previewDataUrl: String(group?.previewDataUrl || "").trim(),
+      })),
+      matches,
+    };
+    writeFaceDetectionResultsStore(store);
   });
-  await batch.commit();
 }
 
-async function processFaceDetectionAlbum(queueDocRef, queueData) {
+async function processFaceDetectionAlbum(queueData, updateJobProgress) {
   const pageId = String(queueData?.pageId || "").trim();
   const ownerUid = String(queueData?.ownerUid || "").trim();
   if (!pageId || !ownerUid) {
     throw new Error("Invalid queue payload.");
   }
-  const pageRef = firestoreDb.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
+  const db = getFirestoreDb();
+  if (!db) {
+    throw new Error("Firestore read backend unavailable.");
+  }
+  const pageRef = db.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
   const pageSnapshot = await pageRef.get();
   if (!pageSnapshot.exists) {
     throw new Error("Album page not found.");
@@ -784,102 +801,24 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
     throw new Error("Could not resolve Drive folder id.");
   }
 
-  const publicPageSnapshots = await firestoreDb
+  const publicPageSnapshots = await db
     .collection(FIREBASE_COLLECTIONS.publicPages)
     .where("pageId", "==", pageId)
     .get();
-  const publicPageRefs = publicPageSnapshots.docs.map((docSnap) => docSnap.ref);
+  const publicPageIds = publicPageSnapshots.docs.map((docSnap) => docSnap.id);
 
   const folderResult = await fetchFolderResult(folderId, false);
   const allImages = Array.isArray(folderResult?.images) ? folderResult.images : [];
   const images = allImages.filter((file) => String(file.mimeType || "").startsWith(IMAGE_MIME_PREFIX)).slice(0, FACE_DETECTION_MAX_IMAGES);
   const totalPhotoCount = images.length;
-  let lastProgressWriteAtMs = 0;
-  const updateProcessingProgress = async (processedPhotoCount, { force = false } = {}) => {
-    const nowMs = Date.now();
-    const shouldWrite =
-      force ||
-      processedPhotoCount === 0 ||
-      processedPhotoCount >= totalPhotoCount ||
-      processedPhotoCount - (Number(queueData?.processedPhotoCount) || 0) >= 10 ||
-      nowMs - lastProgressWriteAtMs >= 12000;
-    if (!shouldWrite) {
-      return;
-    }
-
-    const safeTotal = Math.max(1, totalPhotoCount);
-    const clampedProcessed = Math.max(0, Math.min(processedPhotoCount, totalPhotoCount));
-    let progressPercent = totalPhotoCount > 0 ? Math.max(0, Math.min(100, Math.floor((clampedProcessed / safeTotal) * 100))) : 100;
-    if (totalPhotoCount > 0 && clampedProcessed < totalPhotoCount) {
-      progressPercent = Math.min(progressPercent, 99);
-    }
-    const nowIso = new Date().toISOString();
-    const processingPayload = {
-      status: "processing",
-      source: String(queueData?.source || "").trim() || "manual",
-      requestedAt: queueData?.queuedAt || page.faceDetection?.requestedAt || nowIso,
-      completedAt: null,
-      updatedAt: nowIso,
-      progressPercent,
-      processedPhotoCount: clampedProcessed,
-      totalPhotoCount,
-    };
-
-    await withTimeout(
-      queueDocRef.set(
-        {
-          status: "processing",
-          updatedAt: nowIso,
-          progressPercent,
-          processedPhotoCount: clampedProcessed,
-          totalPhotoCount,
-        },
-        { merge: true }
-      ),
-      5000,
-      `queue progress write ${pageId}`
-    );
-
-    // Reduce write pressure on Firestore: page/public progress is periodic only.
-    if (force || clampedProcessed === 0 || clampedProcessed >= totalPhotoCount || clampedProcessed % 25 === 0) {
-      await withTimeout(pageRef.set({ faceDetection: processingPayload }, { merge: true }), 5000, `page progress write ${pageId}`);
-      for (const publicPageRef of publicPageRefs) {
-        await withTimeout(
-          publicPageRef.set({ faceDetection: processingPayload }, { merge: true }),
-          5000,
-          `public page progress write ${publicPageRef.id}`
-        );
-      }
-    }
-    lastProgressWriteAtMs = nowMs;
-    queueData.processedPhotoCount = clampedProcessed;
-  };
-  await updateProcessingProgress(0, { force: true });
+  await updateJobProgress(0, totalPhotoCount);
 
   const detections = [];
-  const primaryPublicPageRef = publicPageRefs[0] || null;
   let processedPhotoCount = 0;
   for (const image of images) {
     try {
       const photoDetections = await withTimeout(
         (async () => {
-          let cachedDetections = null;
-          if (primaryPublicPageRef) {
-            try {
-              cachedDetections = await withTimeout(
-                loadFaceDetectionsFromCache(primaryPublicPageRef, image),
-                5000,
-                `load face cache ${image.id}`
-              );
-            } catch (cacheReadError) {
-              console.warn(`Face cache read timeout for ${image.id}: ${cacheReadError.message}`);
-              cachedDetections = null;
-            }
-          }
-          if (cachedDetections) {
-            return cachedDetections;
-          }
-
           const buffer = await withTimeout(
             fetchImageBufferForFaceDetection(image.id),
             FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
@@ -890,17 +829,6 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
             FACE_DETECTION_PER_IMAGE_TIMEOUT_MS,
             `detect faces ${image.id}`
           );
-          if (primaryPublicPageRef) {
-            try {
-              await withTimeout(
-                saveFaceDetectionsToCache(primaryPublicPageRef, image, detected),
-                5000,
-                `save face cache ${image.id}`
-              );
-            } catch (cacheWriteError) {
-              console.warn(`Face cache write timeout for ${image.id}: ${cacheWriteError.message}`);
-            }
-          }
           return detected;
         })(),
         FACE_DETECTION_PER_PHOTO_BUDGET_MS,
@@ -912,11 +840,7 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
       console.warn(`Face detection skipped image ${image.id}: ${error.message}`);
     } finally {
       processedPhotoCount += 1;
-      try {
-        await updateProcessingProgress(processedPhotoCount);
-      } catch (progressError) {
-        console.warn(`Face detection progress update failed at photo ${image.id}: ${progressError.message}`);
-      }
+      await updateJobProgress(processedPhotoCount, totalPhotoCount);
     }
   }
 
@@ -924,49 +848,33 @@ async function processFaceDetectionAlbum(queueDocRef, queueData) {
   const absorbResult = absorbSmallFaceGroups(groupedFacesInitial);
   const groupedFaces = absorbResult.groups;
 
-  const faceDetectionPayload = {
+  const faceDetectionPayload = normalizeFaceDetectionJob({
     status: "completed",
     source: String(queueData?.source || "").trim() || "manual",
-    requestedAt: queueData?.queuedAt || page.faceDetection?.requestedAt || new Date().toISOString(),
+    queuedAt: queueData?.queuedAt || new Date().toISOString(),
     completedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     faceGroupCount: groupedFaces.length,
     detectedPhotoCount: groupedFaces.reduce((total, group) => total + group.photoIds.length, 0),
     scannedPhotoCount: images.length,
-    absorbedSmallGroups: absorbResult.absorbedGroupCount,
+    runtimeError: "",
     progressPercent: 100,
     processedPhotoCount: images.length,
     totalPhotoCount,
-  };
+    pageId,
+    ownerUid,
+    pageSlug: queueData?.pageSlug,
+    pageName: queueData?.pageName,
+    studioSlug: queueData?.studioSlug,
+    publicPageIds,
+  });
 
-  await withTimeout(pageRef.set({ faceDetection: faceDetectionPayload }, { merge: true }), 5000, `page complete write ${pageId}`);
-  for (const publicPageRef of publicPageRefs) {
-    await withTimeout(
-      publicPageRef.set({ faceDetection: faceDetectionPayload }, { merge: true }),
-      5000,
-      `public page complete write ${publicPageRef.id}`
-    );
-    await withTimeout(
-      persistFaceDetectionResults(publicPageRef, groupedFaces, images),
-      30000,
-      `persist face groups ${publicPageRef.id}`
-    );
-  }
-
-  await queueDocRef.set(
-    {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      faceGroupCount: groupedFaces.length,
-      scannedPhotoCount: images.length,
-      absorbedSmallGroups: absorbResult.absorbedGroupCount,
-      progressPercent: 100,
-      processedPhotoCount: images.length,
-      totalPhotoCount,
-    },
-    { merge: true }
-  );
+  await persistFaceDetectionResultsLocal(pageId, groupedFaces, images, publicPageIds);
+  await withFaceQueueStoreMutation(async () => {
+    const store = readFaceDetectionQueueStore();
+    store.jobs[pageId] = { ...faceDetectionPayload };
+    writeFaceDetectionQueueStore(store);
+  });
 }
 
 function getFaceDetectionWorkerLockRef(db) {
@@ -1046,147 +954,131 @@ function isTransientFaceQueueError(error) {
 }
 
 async function runFaceDetectionQueuePass() {
-  const db = getFirestoreDb();
-  if (!db || faceDetectionProcessingLoopActive) {
+  if (faceDetectionProcessingLoopActive) {
     return;
   }
   faceDetectionProcessingLoopActive = true;
   try {
-    const globalLockAcquired = await acquireFaceDetectionWorkerLock(db);
-    if (!globalLockAcquired) {
-      return;
-    }
-    await ensureFaceRuntime();
-    const queueSnapshotRaw = await db.collection(FIREBASE_COLLECTIONS.faceDetectionQueue).get();
     const nowMs = Date.now();
     const staleProcessingCutoffMs = nowMs - Math.max(FACE_DETECTION_LOCK_LEASE_MS * 2, 10 * 60 * 1000);
-    const staleProcessingDocs = queueSnapshotRaw.docs.filter((doc) => {
-      const data = doc.data() || {};
-      if (String(data.status || "").trim() !== "processing") {
-        return false;
-      }
-      const startedMs =
-        Date.parse(String(data.processingStartedAt || "")) ||
-        Date.parse(String(data.updatedAt || "")) ||
-        Date.parse(String(data.queuedAt || "")) ||
-        0;
-      return startedMs > 0 && startedMs < staleProcessingCutoffMs;
-    });
-
-    if (staleProcessingDocs.length) {
-      const staleBatch = db.batch();
-      const staleNowIso = new Date().toISOString();
-      for (const staleDoc of staleProcessingDocs) {
-        staleBatch.set(
-          staleDoc.ref,
-          {
-            status: "queued",
-            processingStartedAt: null,
-            updatedAt: staleNowIso,
-            runtimeError: "Recovered stale processing job.",
-          },
-          { merge: true }
-        );
-      }
-      await staleBatch.commit();
-    }
-
-    const queueDocs = queueSnapshotRaw.docs
-      .filter((doc) => String(doc.data()?.status || "").trim() === "queued")
-      .sort((left, right) => {
-        const leftMs = Date.parse(String(left.data()?.queuedAt || "")) || 0;
-        const rightMs = Date.parse(String(right.data()?.queuedAt || "")) || 0;
-        return leftMs - rightMs;
-      });
-    const queueSnapshot = {
-      empty: queueDocs.length === 0,
-      docs: queueDocs.length ? [queueDocs[0]] : [],
-    };
-    if (queueSnapshot.empty) {
-      return;
-    }
-    const queueDoc = queueSnapshot.docs[0];
-    const queueDocRef = queueDoc.ref;
-    const queueData = queueDoc.data() || {};
-
-    const lockAcquired = await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(queueDocRef);
-      if (!snapshot.exists) {
-        return false;
-      }
-      const data = snapshot.data() || {};
-      if (String(data.status || "").trim() !== "queued") {
-        return false;
-      }
-      transaction.set(
-        queueDocRef,
-        {
-          status: "processing",
-          processingStartedAt: new Date().toISOString(),
+    await withFaceQueueStoreMutation(async () => {
+      const store = readFaceDetectionQueueStore();
+      for (const [pageId, rawJob] of Object.entries(store.jobs || {})) {
+        const job = normalizeFaceDetectionJob(rawJob || {});
+        if (job.status !== "processing") {
+          continue;
+        }
+        const startedMs =
+          Date.parse(String(job.processingStartedAt || "")) ||
+          Date.parse(String(job.updatedAt || "")) ||
+          Date.parse(String(job.queuedAt || "")) ||
+          0;
+        if (!(startedMs > 0 && startedMs < staleProcessingCutoffMs)) {
+          continue;
+        }
+        store.jobs[pageId] = {
+          ...job,
+          status: "queued",
+          processingStartedAt: "",
           updatedAt: new Date().toISOString(),
-          runtimeError: "",
-        },
-        { merge: true }
-      );
-      return true;
+          runtimeError: "Recovered stale processing job.",
+        };
+      }
+      writeFaceDetectionQueueStore(store);
     });
 
-    if (!lockAcquired) {
+    const queueStore = readFaceDetectionQueueStore();
+    const queuedJobs = Object.values(queueStore.jobs || {})
+      .map((job) => normalizeFaceDetectionJob(job || {}))
+      .filter((job) => job.status === "queued" && job.pageId);
+    if (!queuedJobs.length) {
       return;
     }
+    queuedJobs.sort((left, right) => {
+      const leftMs = Date.parse(String(left.queuedAt || "")) || 0;
+      const rightMs = Date.parse(String(right.queuedAt || "")) || 0;
+      return leftMs - rightMs;
+    });
+    const job = queuedJobs[0];
+
+    await withFaceQueueStoreMutation(async () => {
+      const store = readFaceDetectionQueueStore();
+      const fresh = normalizeFaceDetectionJob(store.jobs[job.pageId] || {});
+      if (fresh.status !== "queued") {
+        return false;
+      }
+      const nowIso = new Date().toISOString();
+      store.jobs[job.pageId] = {
+        ...fresh,
+        status: "processing",
+        processingStartedAt: nowIso,
+        updatedAt: nowIso,
+        runtimeError: "",
+      };
+      writeFaceDetectionQueueStore(store);
+    });
 
     try {
-      await processFaceDetectionAlbum(queueDocRef, queueData);
+      await ensureFaceRuntime();
+      await processFaceDetectionAlbum(job, async (processedPhotoCount, totalPhotoCount) => {
+        await withFaceQueueStoreMutation(async () => {
+          const store = readFaceDetectionQueueStore();
+          const current = normalizeFaceDetectionJob(store.jobs[job.pageId] || {});
+          if (!current.pageId || current.status !== "processing") {
+            return;
+          }
+          const safeTotal = Math.max(1, Number(totalPhotoCount) || 0);
+          const clampedProcessed = Math.max(0, Math.min(Number(processedPhotoCount) || 0, Number(totalPhotoCount) || 0));
+          let progressPercent = (Number(totalPhotoCount) || 0) > 0 ? Math.max(0, Math.min(100, Math.floor((clampedProcessed / safeTotal) * 100))) : 100;
+          if ((Number(totalPhotoCount) || 0) > 0 && clampedProcessed < (Number(totalPhotoCount) || 0)) {
+            progressPercent = Math.min(progressPercent, 99);
+          }
+          store.jobs[job.pageId] = {
+            ...current,
+            status: "processing",
+            updatedAt: new Date().toISOString(),
+            progressPercent,
+            processedPhotoCount: clampedProcessed,
+            totalPhotoCount: Math.max(0, Number(totalPhotoCount) || 0),
+          };
+          writeFaceDetectionQueueStore(store);
+        });
+      });
     } catch (error) {
       const errorMessage = error?.message || "Face detection failed.";
-      const nowIso = new Date().toISOString();
       if (isTransientFaceQueueError(error)) {
-        await queueDocRef.set(
-          {
+        await withFaceQueueStoreMutation(async () => {
+          const store = readFaceDetectionQueueStore();
+          const current = normalizeFaceDetectionJob(store.jobs[job.pageId] || {});
+          store.jobs[job.pageId] = {
+            ...current,
             status: "queued",
-            updatedAt: nowIso,
-            processingStartedAt: null,
+            processingStartedAt: "",
+            updatedAt: new Date().toISOString(),
             runtimeError: `Transient retry: ${errorMessage}`,
-          },
-          { merge: true }
-        );
+          };
+          writeFaceDetectionQueueStore(store);
+        });
         return;
       }
-
-      await queueDocRef.set(
-        {
+      await withFaceQueueStoreMutation(async () => {
+        const store = readFaceDetectionQueueStore();
+        const current = normalizeFaceDetectionJob(store.jobs[job.pageId] || {});
+        const nowIso = new Date().toISOString();
+        store.jobs[job.pageId] = {
+          ...current,
           status: "failed",
           updatedAt: nowIso,
           failedAt: nowIso,
           runtimeError: errorMessage,
-        },
-        { merge: true }
-      );
-
-      const pageId = String(queueData?.pageId || "").trim();
-      const ownerUid = String(queueData?.ownerUid || "").trim();
-      if (pageId && ownerUid) {
-        const pageRef = db.collection(FIREBASE_COLLECTIONS.users).doc(ownerUid).collection("pages").doc(pageId);
-        await pageRef.set(
-          {
-            faceDetection: {
-              status: "failed",
-              source: String(queueData?.source || "").trim() || "manual",
-              requestedAt: queueData?.queuedAt || new Date().toISOString(),
-              completedAt: null,
-              updatedAt: new Date().toISOString(),
-              error: errorMessage,
-            },
-          },
-          { merge: true }
-        );
-      }
+        };
+        writeFaceDetectionQueueStore(store);
+      });
     }
   } catch (runtimeError) {
     faceDetectionRuntimeError = runtimeError?.message || "Face detection runtime unavailable";
     console.warn(`Face detection runtime unavailable: ${faceDetectionRuntimeError}`);
   } finally {
-    await releaseFaceDetectionWorkerLock(db);
     faceDetectionProcessingLoopActive = false;
   }
 }
@@ -1451,6 +1343,95 @@ async function withFaceMergeStoreMutation(handler) {
   return run;
 }
 
+function readFaceDetectionQueueStore() {
+  ensureDataStore();
+  try {
+    const content = fs.readFileSync(FACE_DETECTION_QUEUE_FILE, "utf8").trim();
+    if (!content) {
+      return { jobs: {} };
+    }
+    const parsed = JSON.parse(content);
+    return {
+      jobs: parsed?.jobs && typeof parsed.jobs === "object" ? parsed.jobs : {},
+    };
+  } catch (_error) {
+    return { jobs: {} };
+  }
+}
+
+function writeFaceDetectionQueueStore(store) {
+  ensureDataStore();
+  const normalized = {
+    jobs: store?.jobs && typeof store.jobs === "object" ? store.jobs : {},
+  };
+  fs.writeFileSync(FACE_DETECTION_QUEUE_FILE, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+}
+
+async function withFaceQueueStoreMutation(handler) {
+  const run = faceQueueStoreMutationChain.then(() => handler());
+  faceQueueStoreMutationChain = run.catch(() => {});
+  return run;
+}
+
+function readFaceDetectionResultsStore() {
+  ensureDataStore();
+  try {
+    const content = fs.readFileSync(FACE_DETECTION_RESULTS_FILE, "utf8").trim();
+    if (!content) {
+      return { pages: {} };
+    }
+    const parsed = JSON.parse(content);
+    return {
+      pages: parsed?.pages && typeof parsed.pages === "object" ? parsed.pages : {},
+    };
+  } catch (_error) {
+    return { pages: {} };
+  }
+}
+
+function writeFaceDetectionResultsStore(store) {
+  ensureDataStore();
+  const normalized = {
+    pages: store?.pages && typeof store.pages === "object" ? store.pages : {},
+  };
+  fs.writeFileSync(FACE_DETECTION_RESULTS_FILE, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+}
+
+async function withFaceResultsStoreMutation(handler) {
+  const run = faceResultsStoreMutationChain.then(() => handler());
+  faceResultsStoreMutationChain = run.catch(() => {});
+  return run;
+}
+
+function normalizeFaceDetectionJob(job = {}) {
+  return {
+    pageId: String(job.pageId || "").trim(),
+    ownerUid: String(job.ownerUid || "").trim(),
+    studioSlug: String(job.studioSlug || "").trim(),
+    pageSlug: String(job.pageSlug || "").trim(),
+    pageName: String(job.pageName || "").trim(),
+    source: String(job.source || "manual").trim() || "manual",
+    status: ["queued", "processing", "completed", "failed", "idle"].includes(String(job.status || "").trim())
+      ? String(job.status || "").trim()
+      : "idle",
+    queuedAt: String(job.queuedAt || "").trim(),
+    updatedAt: String(job.updatedAt || "").trim(),
+    completedAt: String(job.completedAt || "").trim(),
+    failedAt: String(job.failedAt || "").trim(),
+    processingStartedAt: String(job.processingStartedAt || "").trim(),
+    runtimeError: String(job.runtimeError || "").trim(),
+    progressPercent: Math.max(0, Math.min(100, Number(job.progressPercent) || 0)),
+    processedPhotoCount: Math.max(0, Number(job.processedPhotoCount) || 0),
+    totalPhotoCount: Math.max(0, Number(job.totalPhotoCount) || 0),
+    faceGroupCount: Math.max(0, Number(job.faceGroupCount) || 0),
+    detectedPhotoCount: Math.max(0, Number(job.detectedPhotoCount) || 0),
+    scannedPhotoCount: Math.max(0, Number(job.scannedPhotoCount) || 0),
+    publicPageIds: Array.isArray(job.publicPageIds)
+      ? job.publicPageIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [],
+  };
+}
+
 function normalizeFaceGroupEntry(entry = {}) {
   return {
     id: String(entry.id || "").trim() || String(entry.faceId || "").trim(),
@@ -1473,13 +1454,17 @@ async function getEffectiveFaceGroupsForPublicPage(db, publicPageId) {
   }
 
   const pageData = pageSnapshot.data() || {};
-  const faceDetection = pageData.faceDetection || null;
   const pageId = String(pageData.pageId || "").trim();
-  const groupsSnapshot = await pageSnapshot.ref.collection(FACE_GROUPS_SUBCOLLECTION).get();
+  const queueStore = readFaceDetectionQueueStore();
+  const localJob = normalizeFaceDetectionJob(queueStore.jobs?.[pageId] || {});
+  const faceDetection = localJob.pageId ? localJob : pageData.faceDetection || null;
+  const resultsStore = readFaceDetectionResultsStore();
+  const localPage = resultsStore.pages?.[pageId] && typeof resultsStore.pages[pageId] === "object" ? resultsStore.pages[pageId] : null;
+  const localGroups = Array.isArray(localPage?.groups) ? localPage.groups : [];
+
   const groupMap = new Map();
-  groupsSnapshot.docs.forEach((docSnap) => {
-    const normalized = normalizeFaceGroupEntry(docSnap.data() || {});
-    normalized.id = normalized.id || docSnap.id;
+  localGroups.forEach((entry) => {
+    const normalized = normalizeFaceGroupEntry(entry || {});
     if (normalized.id) {
       groupMap.set(normalized.id, normalized);
     }
@@ -3016,18 +3001,25 @@ async function handlePublicPageFaceGroups(req, res) {
   }
 
   const db = getFirestoreDb();
-  if (!db) {
-    sendJson(res, 200, {
-      publicPageId,
-      status: "unavailable",
-      faceDetection: null,
-      groups: [],
-      runtime: faceDetectionRuntimeError || "Face detection backend is unavailable.",
-    });
-    return;
+  let effective = null;
+  if (db) {
+    effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
+  } else {
+    const resultsStore = readFaceDetectionResultsStore();
+    const queueStore = readFaceDetectionQueueStore();
+    const localEntry = Object.values(resultsStore.pages || {}).find((entry) =>
+      Array.isArray(entry?.publicPageIds) && entry.publicPageIds.includes(publicPageId)
+    );
+    if (localEntry) {
+      const pageId = String(localEntry.pageId || "").trim();
+      effective = {
+        pageSnapshot: { exists: true },
+        faceDetection: normalizeFaceDetectionJob(queueStore.jobs?.[pageId] || { status: "completed" }),
+        pageId,
+        groups: Array.isArray(localEntry.groups) ? localEntry.groups.map((entry) => normalizeFaceGroupEntry(entry)) : [],
+      };
+    }
   }
-
-  const effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
   if (!effective?.pageSnapshot?.exists) {
     sendJson(res, 404, { error: "This studio page does not exist." });
     return;
@@ -3058,12 +3050,20 @@ async function handlePublicPageFaceMatches(req, res) {
   }
 
   const db = getFirestoreDb();
-  if (!db) {
-    sendJson(res, 200, { publicPageId, faceId, photoIds: [] });
-    return;
+  let effective = null;
+  if (db) {
+    effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
+  } else {
+    const resultsStore = readFaceDetectionResultsStore();
+    const localEntry = Object.values(resultsStore.pages || {}).find((entry) =>
+      Array.isArray(entry?.publicPageIds) && entry.publicPageIds.includes(publicPageId)
+    );
+    if (localEntry) {
+      effective = {
+        groups: Array.isArray(localEntry.groups) ? localEntry.groups.map((entry) => normalizeFaceGroupEntry(entry)) : [],
+      };
+    }
   }
-
-  const effective = await getEffectiveFaceGroupsForPublicPage(db, publicPageId);
   if (!effective?.groups?.length) {
     sendJson(res, 200, { publicPageId, faceId, photoIds: [] });
     return;
@@ -3192,6 +3192,114 @@ async function handleMergePublicPageFaces(req, res) {
   } catch (error) {
     sendJson(res, 400, { error: error.message || "Could not merge face groups." });
   }
+}
+
+async function handleFaceDetectionEnqueue(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+  try {
+    const body = await readRequestBody(req);
+    const pageId = String(body?.pageId || "").trim();
+    if (!pageId) {
+      sendJson(res, 400, { error: "Missing page identifier." });
+      return;
+    }
+    const db = getFirestoreDb();
+    if (!db) {
+      sendJson(res, 503, { error: "Firestore read backend unavailable." });
+      return;
+    }
+    const pageRef = db.collection(FIREBASE_COLLECTIONS.users).doc(account.localId).collection("pages").doc(pageId);
+    const pageSnapshot = await pageRef.get();
+    if (!pageSnapshot.exists) {
+      sendJson(res, 404, { error: "Album not found." });
+      return;
+    }
+    const pageData = pageSnapshot.data() || {};
+    const siblingPublicPageSnapshots = await db.collection(FIREBASE_COLLECTIONS.publicPages).where("pageId", "==", pageId).get();
+    const publicPageIds = siblingPublicPageSnapshots.docs.map((docSnap) => docSnap.id);
+    await withFaceQueueStoreMutation(async () => {
+      const queueStore = readFaceDetectionQueueStore();
+      const existing = normalizeFaceDetectionJob(queueStore.jobs?.[pageId] || {});
+      if (existing.status === "queued" || existing.status === "processing") {
+        throw new Error("Face detection is already in progress for this album.");
+      }
+      const nowIso = new Date().toISOString();
+      queueStore.jobs[pageId] = normalizeFaceDetectionJob({
+        pageId,
+        ownerUid: account.localId,
+        pageName: String(pageData.pageName || "").trim(),
+        pageSlug: String(pageData.pageSlug || "").trim(),
+        studioSlug: String(pageData.studioSlug || "").trim(),
+        source: String(body?.source || "manual").trim() || "manual",
+        status: "queued",
+        queuedAt: nowIso,
+        updatedAt: nowIso,
+        completedAt: "",
+        failedAt: "",
+        processingStartedAt: "",
+        runtimeError: "",
+        progressPercent: 0,
+        processedPhotoCount: 0,
+        totalPhotoCount: 0,
+        publicPageIds,
+      });
+      writeFaceDetectionQueueStore(queueStore);
+      await withFaceResultsStoreMutation(async () => {
+        const resultsStore = readFaceDetectionResultsStore();
+        const current = resultsStore.pages?.[pageId] || {};
+        resultsStore.pages[pageId] = {
+          ...(current && typeof current === "object" ? current : {}),
+          pageId,
+          publicPageIds,
+          updatedAt: nowIso,
+        };
+        writeFaceDetectionResultsStore(resultsStore);
+      });
+    });
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error?.message || "Could not queue face detection." });
+  }
+}
+
+async function handleFaceDetectionStatuses(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const pageIds = String(requestUrl.searchParams.get("pageIds") || "")
+    .split(",")
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const only = new Set(pageIds);
+  const queueStore = readFaceDetectionQueueStore();
+  const jobs = Object.values(queueStore.jobs || {})
+    .map((job) => normalizeFaceDetectionJob(job || {}))
+    .filter((job) => job.ownerUid === account.localId && (!only.size || only.has(job.pageId)));
+
+  const queued = jobs
+    .filter((job) => job.status === "queued")
+    .sort((left, right) => (Date.parse(left.queuedAt || "") || 0) - (Date.parse(right.queuedAt || "") || 0));
+  const queuePositionByPageId = new Map();
+  queued.forEach((job, index) => {
+    queuePositionByPageId.set(job.pageId, index + 1);
+  });
+
+  const statuses = {};
+  for (const pageId of only) {
+    const job = jobs.find((entry) => entry.pageId === pageId) || normalizeFaceDetectionJob({ pageId, ownerUid: account.localId, status: "idle" });
+    statuses[pageId] = {
+      ...job,
+      requestedAt: job.queuedAt || "",
+      error: job.runtimeError || "",
+      queuePosition: queuePositionByPageId.get(pageId) || 0,
+    };
+  }
+  sendJson(res, 200, { statuses });
 }
 
 async function handleEventPhotoLike(req, res) {
@@ -5089,6 +5197,14 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/public-page/merge-faces" && req.method === "POST") {
     await handleMergePublicPageFaces(req, res);
+    return;
+  }
+  if (requestUrl.pathname === "/api/face-detection/enqueue" && req.method === "POST") {
+    await handleFaceDetectionEnqueue(req, res);
+    return;
+  }
+  if (requestUrl.pathname === "/api/face-detection/statuses" && req.method === "GET") {
+    await handleFaceDetectionStatuses(req, res);
     return;
   }
 

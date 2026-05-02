@@ -1498,68 +1498,19 @@ async function enqueueFaceDetection(page, { manual = false } = {}) {
     return;
   }
 
-  const pageRef = doc(getPagesCollection(), page.id);
-  const primaryPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(page));
-  const customDomain = getPageCustomDomain(page);
-  const aliasPublicPageRef = customDomain
-    ? doc(db, collections.publicPages, getCustomDomainPublicPageId(customDomain, page.pageSlug))
-    : null;
-  const queueRef = doc(db, collections.faceDetectionQueue, page.id);
-
-  await runTransaction(db, async (transaction) => {
-    const queueSnapshot = await transaction.get(queueRef);
-    const queueStatus = String(queueSnapshot.data()?.status || "").trim().toLowerCase();
-    if (queueStatus === "queued" || queueStatus === "processing") {
-      throw new Error("Face detection is already in progress for this album.");
-    }
-
-    const faceDetectionPayload = {
-      status: "queued",
-      source: manual ? "manual" : "auto",
-      requestedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      completedAt: null,
-    };
-
-    const pageSnapshot = await transaction.get(pageRef);
-    if (!pageSnapshot.exists()) {
-      throw new Error("Album not found.");
-    }
-
-    const primaryPublicSnapshot = await transaction.get(primaryPublicPageRef);
-    let aliasPublicSnapshot = null;
-    if (aliasPublicPageRef) {
-      aliasPublicSnapshot = await transaction.get(aliasPublicPageRef);
-    }
-
-    transaction.set(pageRef, { faceDetection: faceDetectionPayload }, { merge: true });
-    if (primaryPublicSnapshot.exists()) {
-      transaction.set(primaryPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
-    }
-
-    if (aliasPublicSnapshot?.exists()) {
-      transaction.set(aliasPublicPageRef, { faceDetection: faceDetectionPayload }, { merge: true });
-    }
-
-    transaction.set(queueRef, {
+  const headers = await getAuthHeaders();
+  const response = await fetch("/api/face-detection/enqueue", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
       pageId: page.id,
-      ownerUid: currentUser.uid,
-      studioSlug: String(page.studioSlug || currentProfile?.studioSlug || "").trim(),
-      pageSlug: String(page.pageSlug || "").trim(),
-      pageName: String(page.pageName || "").trim(),
-      status: "queued",
       source: manual ? "manual" : "auto",
-      queuedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      completedAt: null,
-      failedAt: null,
-      processingStartedAt: null,
-      runtimeError: "",
-      progressPercent: 0,
-      processedPhotoCount: 0,
-      totalPhotoCount: 0,
-    }, { merge: true });
+    }),
   });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not queue face detection.");
+  }
 }
 
 function closeFaceMergePopup() {
@@ -2739,14 +2690,7 @@ async function loadSavedPages({ includeQueueRecovery = true } = {}) {
   savedPages = snapshot.docs
     .map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }))
     .sort((left, right) => getDateValueMs(right.createdAt) - getDateValueMs(left.createdAt));
-  try {
-    await attachFaceQueuePositions();
-  } catch (error) {
-    console.warn("Queue position attach failed, continuing without positions:", error);
-  }
-  if (includeQueueRecovery) {
-    await resetMissingFaceQueueStates();
-  }
+  await attachFaceQueuePositions();
   renderSavedPagesTable();
 }
 
@@ -2754,100 +2698,41 @@ async function attachFaceQueuePositions() {
   if (!savedPages.length) {
     return;
   }
-  const hasQueued = savedPages.some((page) => normalizeFaceDetectionState(page?.faceDetection).status === "queued");
-  if (!hasQueued) {
-    return;
-  }
-  const queueSnapshot = await getDocs(
-    query(
-      collection(db, collections.faceDetectionQueue),
-      where("status", "in", ["queued", "processing"]),
-      orderBy("queuedAt", "asc")
-    )
-  );
-  const queuePositionByPageId = new Map();
-  let queuedOrder = 0;
-  queueSnapshot.docs.forEach((queueDoc) => {
-    const status = String(queueDoc.data()?.status || "").trim().toLowerCase();
-    if (status !== "queued") {
-      return;
-    }
-    queuedOrder += 1;
-    queuePositionByPageId.set(queueDoc.id, queuedOrder);
+  const headers = await getAuthHeaders();
+  const pageIds = savedPages.map((page) => page.id).filter(Boolean);
+  const response = await fetch(`/api/face-detection/statuses?pageIds=${encodeURIComponent(pageIds.join(","))}`, {
+    headers,
   });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not fetch face detection status.");
+  }
+  const statuses = payload?.statuses && typeof payload.statuses === "object" ? payload.statuses : {};
   savedPages = savedPages.map((page) => {
-    const faceDetection = normalizeFaceDetectionState(page?.faceDetection);
-    if (faceDetection.status !== "queued") {
+    const status = statuses[page.id];
+    if (!status || typeof status !== "object") {
       return page;
     }
     return {
       ...page,
       faceDetection: {
-        ...(page.faceDetection || {}),
-        queuePosition: queuePositionByPageId.get(page.id) || 0,
+        status: String(status.status || "idle"),
+        source: String(status.source || ""),
+        requestedAt: status.requestedAt || null,
+        completedAt: status.completedAt || null,
+        updatedAt: status.updatedAt || null,
+        runtimeError: status.runtimeError || "",
+        error: status.error || "",
+        faceGroupCount: Number(status.faceGroupCount) || 0,
+        detectedPhotoCount: Number(status.detectedPhotoCount) || 0,
+        scannedPhotoCount: Number(status.scannedPhotoCount) || 0,
+        progressPercent: Number(status.progressPercent) || 0,
+        processedPhotoCount: Number(status.processedPhotoCount) || 0,
+        totalPhotoCount: Number(status.totalPhotoCount) || 0,
+        queuePosition: Number(status.queuePosition) || 0,
       },
     };
   });
-}
-
-async function resetMissingFaceQueueStates() {
-  if (!savedPages.length) {
-    return;
-  }
-
-  const candidates = savedPages.filter((page) => {
-    const status = normalizeFaceDetectionState(page?.faceDetection).status;
-    return status === "queued" || status === "processing";
-  });
-  if (!candidates.length) {
-    return;
-  }
-
-  for (const page of candidates) {
-    const queueRef = doc(db, collections.faceDetectionQueue, page.id);
-    const queueSnapshot = await getDoc(queueRef);
-    if (queueSnapshot.exists()) {
-      continue;
-    }
-
-    const idlePayload = {
-      status: "idle",
-      source: String(page?.faceDetection?.source || "").trim(),
-      requestedAt: null,
-      completedAt: null,
-      updatedAt: serverTimestamp(),
-      error: "Queue entry was missing. Status auto-reset to idle.",
-      progressPercent: 0,
-      processedPhotoCount: 0,
-      totalPhotoCount: 0,
-      faceGroupCount: 0,
-      detectedPhotoCount: 0,
-      scannedPhotoCount: 0,
-    };
-
-    const pageRef = doc(getPagesCollection(), page.id);
-    const primaryPublicPageRef = doc(db, collections.publicPages, getPrimaryPublicPageId(page));
-    const customDomain = getPageCustomDomain(page);
-    const aliasPublicPageRef = customDomain
-      ? doc(db, collections.publicPages, getCustomDomainPublicPageId(customDomain, page.pageSlug))
-      : null;
-
-    const writes = [setDoc(pageRef, { faceDetection: idlePayload }, { merge: true })];
-
-    const primaryPublicSnapshot = await getDoc(primaryPublicPageRef);
-    if (primaryPublicSnapshot.exists()) {
-      writes.push(setDoc(primaryPublicPageRef, { faceDetection: idlePayload }, { merge: true }));
-    }
-    if (aliasPublicPageRef) {
-      const aliasPublicSnapshot = await getDoc(aliasPublicPageRef);
-      if (aliasPublicSnapshot.exists()) {
-        writes.push(setDoc(aliasPublicPageRef, { faceDetection: idlePayload }, { merge: true }));
-      }
-    }
-
-    await Promise.all(writes);
-    Object.assign(page, { faceDetection: { ...idlePayload, updatedAt: new Date().toISOString() } });
-  }
 }
 
 async function loadEvents() {
@@ -4651,17 +4536,6 @@ async function reservePairingCode(pageRef, pagePayload) {
           updatedAt: serverTimestamp(),
         });
       }
-      transaction.set(doc(db, collections.faceDetectionQueue, pageRef.id), {
-        pageId: pageRef.id,
-        ownerUid: currentUser.uid,
-        studioSlug: String(pagePayload.studioSlug || "").trim(),
-        pageSlug: String(pagePayload.pageSlug || "").trim(),
-        pageName: String(pagePayload.pageName || "").trim(),
-        status: "queued",
-        source: "auto",
-        queuedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
       return;
     }
 
@@ -4694,9 +4568,9 @@ async function createPageRecord() {
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
     faceDetection: {
-      status: "queued",
-      source: "auto",
-      requestedAt: serverTimestamp(),
+      status: "idle",
+      source: "",
+      requestedAt: null,
       updatedAt: serverTimestamp(),
       completedAt: null,
     },
@@ -4748,9 +4622,9 @@ async function updatePageRecord() {
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
     faceDetection: existingPage.faceDetection || {
-      status: "queued",
-      source: "auto",
-      requestedAt: existingPage.createdAt || serverTimestamp(),
+      status: "idle",
+      source: "",
+      requestedAt: null,
       updatedAt: serverTimestamp(),
       completedAt: null,
     },
