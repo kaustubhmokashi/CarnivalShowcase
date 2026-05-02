@@ -2132,6 +2132,10 @@ async function getAdminAuthHeaders() {
   };
 }
 
+async function getAuthHeaders() {
+  return getAdminAuthHeaders();
+}
+
 function updateDriveConnectionUi() {
   if (!eventDriveConnectionStatus || !connectEventDriveButton) {
     return;
