@@ -3796,9 +3796,29 @@ async function refreshStudioState(user) {
 
   setStudioStatus(studioAuthStatus, "Checking your studio...");
   setStudioStatus(studioNameStatus, "Preparing your studio...");
-  await ensureUserShell(user);
-  const resolvedProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
-  currentProfile = resolvedProfile;
+  try {
+    await ensureUserShell(user);
+    const resolvedProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
+    currentProfile = resolvedProfile;
+  } catch (error) {
+    console.warn("Studio profile bootstrap fallback:", error);
+    if (hasCachedStudioIdentity) {
+      currentProfile = {
+        ...(currentProfile || {}),
+        ...cachedProfile,
+        email: user.email || currentProfile?.email || "",
+        displayName: user.displayName || currentProfile?.displayName || "",
+        photoURL: user.photoURL || currentProfile?.photoURL || "",
+      };
+    } else {
+      currentProfile = {
+        ...(currentProfile || {}),
+        email: user.email || currentProfile?.email || "",
+        displayName: user.displayName || currentProfile?.displayName || "",
+        photoURL: user.photoURL || currentProfile?.photoURL || "",
+      };
+    }
+  }
   if ((!currentProfile?.studioName || !currentProfile?.studioSlug) && hasCachedStudioIdentity) {
     currentProfile = {
       ...(currentProfile || {}),
