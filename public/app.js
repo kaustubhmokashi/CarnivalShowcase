@@ -1482,11 +1482,21 @@ async function openFacePickerPopup() {
     const payload = await fetchFaceGroups();
     const status = String(payload?.status || "").trim().toLowerCase();
     const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+    const sortedGroups = groups
+      .slice()
+      .sort((left, right) => {
+        const leftCount = Math.max(0, Number(left?.photoCount || left?.count) || 0);
+        const rightCount = Math.max(0, Number(right?.photoCount || right?.count) || 0);
+        if (rightCount !== leftCount) {
+          return rightCount - leftCount;
+        }
+        return String(left?.id || "").localeCompare(String(right?.id || ""));
+      });
     if (status === "queued" || status === "processing") {
       statusEl.textContent = "Face detection is in progress. Please try again in a few minutes.";
       return;
     }
-    if (status !== "completed" || !groups.length) {
+    if (status !== "completed" || !sortedGroups.length) {
       statusEl.textContent = "No detected faces available yet for this album.";
       return;
     }
@@ -1494,7 +1504,7 @@ async function openFacePickerPopup() {
     statusEl.classList.add("hidden");
     gridEl.classList.remove("hidden");
     gridEl.innerHTML = "";
-    groups.forEach((group) => {
+    sortedGroups.forEach((group) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "face-picker-item";
