@@ -1205,11 +1205,15 @@ async function resolveExistingStudioIdentity(user, profile) {
     };
 
     if (recoveredProfile.studioName && recoveredProfile.studioSlug) {
-      await setDoc(getUserRef(user.uid), {
-        studioName: recoveredProfile.studioName,
-        studioSlug: recoveredProfile.studioSlug,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      try {
+        await setDoc(getUserRef(user.uid), {
+          studioName: recoveredProfile.studioName,
+          studioSlug: recoveredProfile.studioSlug,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } catch (error) {
+        console.warn("Studio profile recovery write skipped:", error);
+      }
     }
 
     return recoveredProfile;
@@ -1236,11 +1240,15 @@ async function resolveExistingStudioIdentity(user, profile) {
   };
 
   if (recoveredProfile.studioName && recoveredProfile.studioSlug) {
-    await setDoc(getUserRef(user.uid), {
-      studioName: recoveredProfile.studioName,
-      studioSlug: recoveredProfile.studioSlug,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+    try {
+      await setDoc(getUserRef(user.uid), {
+        studioName: recoveredProfile.studioName,
+        studioSlug: recoveredProfile.studioSlug,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (error) {
+      console.warn("Studio page-based recovery write skipped:", error);
+    }
   }
 
   return recoveredProfile;
@@ -1264,7 +1272,11 @@ async function ensureUserShell(user) {
     payload.accountStatus = isAdminEmail(user.email) ? "active" : "new";
   }
 
-  await setDoc(userRef, payload, { merge: true });
+  try {
+    await setDoc(userRef, payload, { merge: true });
+  } catch (error) {
+    console.warn("User shell write skipped:", error);
+  }
 }
 
 function renderSavedPagesTable() {
@@ -2690,7 +2702,11 @@ async function loadSavedPages({ includeQueueRecovery = true } = {}) {
   savedPages = snapshot.docs
     .map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }))
     .sort((left, right) => getDateValueMs(right.createdAt) - getDateValueMs(left.createdAt));
-  await attachFaceQueuePositions();
+  try {
+    await attachFaceQueuePositions();
+  } catch (error) {
+    console.warn("Face status attach skipped:", error);
+  }
   renderSavedPagesTable();
 }
 
@@ -3797,8 +3813,12 @@ async function refreshStudioState(user) {
   setStudioStatus(studioAuthStatus, "Checking your studio...");
   setStudioStatus(studioNameStatus, "Preparing your studio...");
   try {
+    const loadedProfile = await loadUserProfile(user).catch((error) => {
+      console.warn("Profile read failed, continuing with fallbacks:", error);
+      return null;
+    });
     await ensureUserShell(user);
-    const resolvedProfile = await resolveExistingStudioIdentity(user, await loadUserProfile(user));
+    const resolvedProfile = await resolveExistingStudioIdentity(user, loadedProfile);
     currentProfile = resolvedProfile;
   } catch (error) {
     console.warn("Studio profile bootstrap fallback:", error);
