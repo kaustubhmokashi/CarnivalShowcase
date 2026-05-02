@@ -150,6 +150,7 @@ const wizardTemplateStatus = document.getElementById("wizard-template-status");
 const screenEventPublic = document.getElementById("screen-event-public");
 const eventPublicLogoLink = document.getElementById("event-public-logo-link");
 const eventPublicLogo = document.getElementById("event-public-logo");
+const craftedFooterEventFaviconEl = document.getElementById("crafted-footer-event-favicon");
 const eventUploadForm = document.getElementById("event-upload-form");
 const eventUploadInput = document.getElementById("event-upload-input");
 const eventUploadStatus = document.getElementById("event-upload-status");
@@ -437,6 +438,9 @@ function setDocumentFavicon(faviconLink) {
   document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
     link.href = faviconSource;
   });
+  if (craftedFooterEventFaviconEl) {
+    craftedFooterEventFaviconEl.src = faviconSource;
+  }
 }
 
 function setColorInputs(hexInput, pickerInput, value) {

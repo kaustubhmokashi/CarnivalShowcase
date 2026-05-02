@@ -1024,6 +1024,25 @@ label:focus-within {
   min-height: 1px;
 }
 
+.crafted-footer {
+  margin: 24px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.3;
+  color: #000;
+  text-align: center;
+}
+
+.crafted-footer img {
+  width: 12px;
+  height: 12px;
+  display: block;
+  object-fit: contain;
+}
+
 .scroll-top-button {
   position: fixed;
   right: 24px;

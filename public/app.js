@@ -18,6 +18,7 @@ const photoCountEl = document.getElementById("photo-count");
 const galleryErrorStateEl = document.getElementById("gallery-error-state");
 const galleryErrorMessageEl = document.getElementById("gallery-error-message");
 const panelFaviconEl = document.querySelector(".panel-favicon");
+const craftedFooterAlbumFaviconEl = document.getElementById("crafted-footer-album-favicon");
 const selectedGridFolderEl = document.getElementById("selected-grid-folder");
 const folderTabsEl = document.getElementById("folder-tabs");
 const folderTabsShellEl = document.querySelector(".folder-tabs-shell");
@@ -1241,6 +1242,9 @@ function setDocumentFavicon(faviconLink) {
 
   if (panelFaviconEl) {
     panelFaviconEl.src = faviconSource;
+  }
+  if (craftedFooterAlbumFaviconEl) {
+    craftedFooterAlbumFaviconEl.src = faviconSource;
   }
 }
 
