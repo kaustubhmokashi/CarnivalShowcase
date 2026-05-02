@@ -3670,8 +3670,9 @@ input[type="checkbox"]:checked {
 }
 
 .event-public-shell .event-public-logo-upload {
+  top: 16px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 #manage-event-panel .studio-wizard-head {
