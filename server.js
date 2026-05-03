@@ -2420,8 +2420,13 @@ async function getPublicPageRecordById(publicPageId) {
 
   const db = getFirestoreDb();
   if (db) {
-    const snapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
-    return snapshot.exists ? snapshot.data() || null : null;
+    try {
+      const snapshot = await db.collection(FIREBASE_COLLECTIONS.publicPages).doc(publicPageId).get();
+      return snapshot.exists ? snapshot.data() || null : null;
+    } catch (_) {
+      // Fall through to REST lookup below so legacy pages still resolve
+      // when admin credentials are unavailable or temporarily throttled.
+    }
   }
 
   if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
@@ -2455,16 +2460,20 @@ async function getAlbumSnapshotChunksForPublicPage(publicPageId) {
 
   const db = getFirestoreDb();
   if (db) {
-    const snapshot = await db
-      .collection(FIREBASE_COLLECTIONS.publicPages)
-      .doc(publicPageId)
-      .collection(ALBUM_SNAPSHOT_SUBCOLLECTION)
-      .orderBy("index", "asc")
-      .get();
+    try {
+      const snapshot = await db
+        .collection(FIREBASE_COLLECTIONS.publicPages)
+        .doc(publicPageId)
+        .collection(ALBUM_SNAPSHOT_SUBCOLLECTION)
+        .orderBy("index", "asc")
+        .get();
 
-    return snapshot.docs
-      .map((doc) => doc.data() || {})
-      .sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+      return snapshot.docs
+        .map((doc) => doc.data() || {})
+        .sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+    } catch (_) {
+      // Fall through to REST lookup below for resilience.
+    }
   }
 
   if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
@@ -2524,8 +2533,12 @@ async function getPairingCodeRecordById(code) {
 
   const db = getFirestoreDb();
   if (db) {
-    const snapshot = await db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(normalizedCode).get();
-    return snapshot.exists ? snapshot.data() || null : null;
+    try {
+      const snapshot = await db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(normalizedCode).get();
+      return snapshot.exists ? snapshot.data() || null : null;
+    } catch (_) {
+      // Fall through to REST lookup below for legacy compatibility.
+    }
   }
 
   if (!FIREBASE_WEB_CONFIG.projectId || !FIREBASE_WEB_CONFIG.apiKey) {
