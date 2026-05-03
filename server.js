@@ -4512,6 +4512,7 @@ function extractOriginFromHomepageLink(homepageLink) {
 
 async function resolveStudioCustomDomainOrigin(studioSlug) {
   const slug = String(studioSlug || "").trim().toLowerCase();
+  const db = getFirestoreDb();
   if (!slug || !db) return "";
   try {
     const snapshot = await db
