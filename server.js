@@ -4205,6 +4205,7 @@ async function handleResolvePairingCode(req, res) {
     String(pageRecord?.driveLink || "").trim() ||
     String(pairingRecord.url || "").trim() ||
     String(pairingRecord.normalizedUrl || "").trim();
+  const publicPageUrl = buildPublicPageUrl(req, pageRecord, publicPageId);
 
   if (snapshot?.folders?.length) {
     sendJson(res, 200, {
@@ -4224,10 +4225,10 @@ async function handleResolvePairingCode(req, res) {
     sendJson(res, 200, {
       code,
       mode: "folder",
-      url: folderUrl,
+      url: publicPageUrl || folderUrl,
       ready: true,
       permanent: true,
-      source: "firestore",
+      source: publicPageUrl ? "firestore-public-page" : "firestore",
       folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
     });
     return;
@@ -4585,6 +4586,29 @@ async function resolveEventOrigin(req, { homepageLink = "", studioSlug = "", cus
   if (fromHomepage) return fromHomepage;
 
   return buildOriginFromRequest(req);
+}
+
+function buildPublicPageUrl(req, pageRecord = {}, publicPageId = "") {
+  const pageSlug = String(pageRecord?.pageSlug || "").trim();
+  if (!pageSlug) {
+    return "";
+  }
+
+  const customDomain = normalizeHostname(pageRecord?.customDomain || "");
+  if (customDomain) {
+    return `https://${customDomain}/${encodeURIComponent(pageSlug)}`;
+  }
+
+  const studioSlug =
+    String(pageRecord?.studioSlug || "").trim() ||
+    String(publicPageId || "")
+      .split("__")[0]
+      .trim();
+  if (studioSlug) {
+    return `${buildOriginFromRequest(req)}/${encodeURIComponent(studioSlug)}/${encodeURIComponent(pageSlug)}`;
+  }
+
+  return "";
 }
 
 function combineEventDateTime(dateValue, timeValue) {
