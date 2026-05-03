@@ -438,9 +438,6 @@ function setDocumentFavicon(faviconLink) {
   document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
     link.href = faviconSource;
   });
-  if (craftedFooterEventFaviconEl) {
-    craftedFooterEventFaviconEl.src = faviconSource;
-  }
 }
 
 function setColorInputs(hexInput, pickerInput, value) {

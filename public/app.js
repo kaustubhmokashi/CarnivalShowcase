@@ -1243,9 +1243,6 @@ function setDocumentFavicon(faviconLink) {
   if (panelFaviconEl) {
     panelFaviconEl.src = faviconSource;
   }
-  if (craftedFooterAlbumFaviconEl) {
-    craftedFooterAlbumFaviconEl.src = faviconSource;
-  }
 }
 
 function setLoadingCoverBackground(imageLink = "") {

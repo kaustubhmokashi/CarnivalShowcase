@@ -1026,6 +1026,7 @@ label:focus-within {
 
 .crafted-footer {
   margin: 24px 0 0;
+  padding-bottom: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1041,6 +1042,12 @@ label:focus-within {
   height: 12px;
   display: block;
   object-fit: contain;
+}
+
+.crafted-footer-home-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .scroll-top-button {
