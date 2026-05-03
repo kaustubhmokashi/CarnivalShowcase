@@ -1038,8 +1038,8 @@ label:focus-within {
 }
 
 .crafted-footer img {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   display: block;
   object-fit: contain;
 }
