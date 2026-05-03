@@ -2535,7 +2535,37 @@ async function getPairingCodeRecordById(code) {
   if (db) {
     try {
       const snapshot = await db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(normalizedCode).get();
-      return snapshot.exists ? snapshot.data() || null : null;
+      if (snapshot.exists) {
+        return snapshot.data() || null;
+      }
+
+      // Legacy fallback: some old albums have pairingCode on publicPages but
+      // no matching pairingCodes doc.
+      const pageMatch = await db
+        .collection(FIREBASE_COLLECTIONS.publicPages)
+        .where("pairingCode", "==", normalizedCode)
+        .limit(1)
+        .get();
+      if (!pageMatch.empty) {
+        const doc = pageMatch.docs[0];
+        const data = doc.data() || {};
+        return {
+          code: normalizedCode,
+          pairingCode: normalizedCode,
+          publicPageId: doc.id,
+          pageId: String(data.pageId || "").trim(),
+          studioSlug: String(data.studioSlug || "").trim(),
+          pageSlug: String(data.pageSlug || "").trim(),
+          pageName: String(data.pageName || "").trim(),
+          ownerUid: String(data.ownerUid || "").trim(),
+          folderName: String(data.pageName || "").trim(),
+          url: String(data.driveLink || "").trim(),
+          normalizedUrl: String(data.driveLink || "").trim(),
+          createdAt: String(data.createdAt || "").trim(),
+          permanent: true,
+        };
+      }
+      return null;
     } catch (_) {
       // Fall through to REST lookup below for legacy compatibility.
     }
