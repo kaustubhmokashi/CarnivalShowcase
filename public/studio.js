@@ -647,6 +647,12 @@ async function openPairingCode(pairingCode) {
     }
   }
 
+  const publicPageUrl = String(pairingPayload?.publicPageUrl || "").trim();
+  if (publicPageUrl) {
+    window.location.href = publicPageUrl;
+    return;
+  }
+
   const folderUrl = String(pairingPayload?.url || pairingPayload?.folderUrl || "").trim();
   if (folderUrl) {
     const normalizedFolderUrl = folderUrl.toLowerCase();
