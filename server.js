@@ -2536,7 +2536,42 @@ async function getPairingCodeRecordById(code) {
     try {
       const snapshot = await db.collection(FIREBASE_COLLECTIONS.pairingCodes).doc(normalizedCode).get();
       if (snapshot.exists) {
-        return snapshot.data() || null;
+        const pairingData = snapshot.data() || {};
+        const pairingPublicPageId =
+          String(pairingData.publicPageId || "").trim() ||
+          (pairingData.studioSlug && pairingData.pageSlug
+            ? `${String(pairingData.studioSlug).trim()}__${String(pairingData.pageSlug).trim()}`
+            : "");
+
+        if (!pairingPublicPageId) {
+          const pageMatch = await db
+            .collection(FIREBASE_COLLECTIONS.publicPages)
+            .where("pairingCode", "==", normalizedCode)
+            .limit(1)
+            .get();
+          if (!pageMatch.empty) {
+            const doc = pageMatch.docs[0];
+            const data = doc.data() || {};
+            return {
+              ...pairingData,
+              code: normalizedCode,
+              pairingCode: normalizedCode,
+              publicPageId: doc.id,
+              pageId: String(data.pageId || pairingData.pageId || "").trim(),
+              studioSlug: String(data.studioSlug || pairingData.studioSlug || "").trim(),
+              pageSlug: String(data.pageSlug || pairingData.pageSlug || "").trim(),
+              pageName: String(data.pageName || pairingData.pageName || "").trim(),
+              ownerUid: String(data.ownerUid || pairingData.ownerUid || "").trim(),
+              folderName: String(data.pageName || pairingData.folderName || "").trim(),
+              url: String(data.driveLink || pairingData.url || "").trim(),
+              normalizedUrl: String(data.driveLink || pairingData.normalizedUrl || pairingData.url || "").trim(),
+              createdAt: String(pairingData.createdAt || data.createdAt || "").trim(),
+              permanent: true,
+            };
+          }
+        }
+
+        return pairingData;
       }
 
       // Legacy fallback: some old albums have pairingCode on publicPages but
