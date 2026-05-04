@@ -131,19 +131,20 @@ const wizardStepLabel = document.getElementById("wizard-step-label");
 const wizardDriveForm = document.getElementById("wizard-drive-form");
 const wizardDriveLink = document.getElementById("wizard-drive-link");
 const wizardDriveStatus = document.getElementById("wizard-drive-status");
+const wizardRemapForm = document.getElementById("wizard-remap-form");
+const wizardRemapList = document.getElementById("wizard-remap-list");
+const wizardCreateVideosFolder = document.getElementById("wizard-create-videos-folder");
+const wizardRemapStatus = document.getElementById("wizard-remap-status");
+const wizardYoutubeStep = document.getElementById("wizard-youtube-step");
+const wizardYoutubeLinks = document.getElementById("wizard-youtube-links");
+const wizardYoutubeAdd = document.getElementById("wizard-youtube-add");
+const wizardYoutubeNext = document.getElementById("wizard-youtube-next");
+const wizardYoutubeStatus = document.getElementById("wizard-youtube-status");
 const wizardMediaStep = document.getElementById("wizard-media-step");
 const wizardMediaSearch = document.getElementById("wizard-media-search");
 const wizardMediaList = document.getElementById("wizard-media-list");
 const wizardMediaNext = document.getElementById("wizard-media-next");
 const wizardMediaStatus = document.getElementById("wizard-media-status");
-const wizardPageForm = document.getElementById("wizard-page-form");
-const wizardPageName = document.getElementById("wizard-page-name");
-const wizardPageStatus = document.getElementById("wizard-page-status");
-const wizardDetailsForm = document.getElementById("wizard-details-form");
-const wizardTagline = document.getElementById("wizard-tagline");
-const wizardEventStart = document.getElementById("wizard-event-start");
-const wizardEventEnd = document.getElementById("wizard-event-end");
-const wizardDetailsStatus = document.getElementById("wizard-details-status");
 const wizardTemplateStep = document.getElementById("wizard-template-step");
 const wizardCreatePage = document.getElementById("wizard-create-page");
 const wizardTemplateStatus = document.getElementById("wizard-template-status");
@@ -327,6 +328,9 @@ function createEmptyWizardState() {
     eventEndDate: "",
     pairingCode: "",
     template: "template-1",
+    folderRemapById: {},
+    includeYoutubeVideosFolder: false,
+    youtubeLinks: [],
   };
 }
 
@@ -729,6 +733,12 @@ function getGalleryOptionsForPage(page, extraOptions = {}) {
     pairingCode: page.pairingCode || "",
     eventDateRange: formatEventDateRange(page),
     branding: page.branding || getProfileBranding(),
+    folderRemapById:
+      page && typeof page.folderRemapById === "object" && page.folderRemapById
+        ? page.folderRemapById
+        : {},
+    includeYoutubeVideosFolder: Boolean(page?.includeYoutubeVideosFolder),
+    youtubeLinks: Array.isArray(page?.youtubeLinks) ? page.youtubeLinks : [],
     ...extraOptions,
   };
 }
@@ -4391,13 +4401,183 @@ function renderSelectedFolderMedia() {
   });
 }
 
+function buildDefaultFolderRemap() {
+  const remap = {};
+  (wizardState.folders || []).forEach((folder) => {
+    if (folder?.id) {
+      remap[folder.id] = folder.name || "";
+    }
+  });
+  return remap;
+}
+
+function renderFolderRemapStep() {
+  if (!wizardRemapList) {
+    return;
+  }
+  wizardRemapList.innerHTML = "";
+  (wizardState.folders || []).forEach((folder) => {
+    const row = document.createElement("div");
+    row.className = "wizard-remap-row";
+    const source = document.createElement("strong");
+    source.textContent = folder.name || "Folder";
+    const arrow = document.createElement("em");
+    arrow.textContent = "→";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = String(wizardState.folderRemapById?.[folder.id] || folder.name || "");
+    input.dataset.folderId = String(folder.id || "");
+    input.placeholder = "Tab name";
+    input.addEventListener("input", () => {
+      const folderId = String(input.dataset.folderId || "");
+      if (!folderId) {
+        return;
+      }
+      wizardState.folderRemapById = {
+        ...(wizardState.folderRemapById || {}),
+        [folderId]: input.value.trim() || folder.name || "",
+      };
+    });
+    row.append(source, arrow, input);
+    wizardRemapList.appendChild(row);
+  });
+}
+
+function addYoutubeLinkRow(link = {}) {
+  wizardState.youtubeLinks.push({
+    url: String(link.url || "").trim(),
+    title: String(link.title || "").trim(),
+    thumbnailUrl: String(link.thumbnailUrl || "").trim(),
+    validated: Boolean(link.validated && link.url && link.title),
+    validating: false,
+    error: "",
+  });
+  renderYoutubeLinksStep();
+}
+
+function isYoutubeStepComplete() {
+  return (wizardState.youtubeLinks || []).every(
+    (item) => !String(item.url || "").trim() || (item.validated && !item.validating)
+  );
+}
+
+function renderYoutubeLinksStep() {
+  if (!wizardYoutubeLinks) {
+    return;
+  }
+  wizardYoutubeLinks.innerHTML = "";
+  (wizardState.youtubeLinks || []).forEach((link, index) => {
+    const row = document.createElement("div");
+    row.className = "wizard-youtube-row";
+
+    const main = document.createElement("div");
+    main.className = "wizard-youtube-row-main";
+
+    const input = document.createElement("input");
+    input.type = "url";
+    input.placeholder = "https://www.youtube.com/watch?v=...";
+    input.value = link.url || "";
+    input.addEventListener("input", () => {
+      const nextUrl = input.value.trim();
+      wizardState.youtubeLinks[index] = {
+        ...wizardState.youtubeLinks[index],
+        url: nextUrl,
+        validated: false,
+        validating: false,
+        title: "",
+        thumbnailUrl: "",
+        error: "",
+      };
+      renderYoutubeLinksStep();
+    });
+
+    const validateButton = document.createElement("button");
+    validateButton.type = "button";
+    validateButton.className = "studio-primary-button";
+    validateButton.textContent = link.validated ? "Validated" : link.validating ? "Validating..." : "Validate";
+    validateButton.disabled = link.validated || link.validating || !String(link.url || "").trim();
+    validateButton.addEventListener("click", async () => {
+      const current = wizardState.youtubeLinks[index];
+      if (!current || !String(current.url || "").trim()) {
+        return;
+      }
+      wizardState.youtubeLinks[index] = {
+        ...current,
+        validating: true,
+        error: "",
+      };
+      renderYoutubeLinksStep();
+      try {
+        const response = await fetch(`/api/youtube/validate?url=${encodeURIComponent(current.url)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not validate this YouTube link.");
+        }
+        wizardState.youtubeLinks[index] = {
+          ...wizardState.youtubeLinks[index],
+          validating: false,
+          validated: true,
+          title: String(payload.title || "").trim(),
+          thumbnailUrl: String(payload.thumbnailUrl || "").trim(),
+          error: "",
+        };
+      } catch (error) {
+        wizardState.youtubeLinks[index] = {
+          ...wizardState.youtubeLinks[index],
+          validating: false,
+          validated: false,
+          title: "",
+          thumbnailUrl: "",
+          error: error.message || "Could not validate this link.",
+        };
+      }
+      renderYoutubeLinksStep();
+    });
+    main.append(input, validateButton);
+    row.appendChild(main);
+
+    if (link.error) {
+      const error = document.createElement("p");
+      error.className = "studio-status is-error";
+      error.textContent = link.error;
+      row.appendChild(error);
+    }
+
+    if (link.validated && link.title) {
+      const preview = document.createElement("div");
+      preview.className = "wizard-youtube-preview";
+      const thumb = document.createElement("img");
+      thumb.alt = link.title;
+      thumb.loading = "lazy";
+      thumb.src = link.thumbnailUrl || "";
+      const title = document.createElement("strong");
+      title.textContent = link.title;
+      preview.append(thumb, title);
+      row.appendChild(preview);
+    }
+
+    wizardYoutubeLinks.appendChild(row);
+  });
+
+  const continueEnabled = isYoutubeStepComplete();
+  if (wizardYoutubeNext) {
+    wizardYoutubeNext.disabled = !continueEnabled;
+  }
+  setStudioStatus(
+    wizardYoutubeStatus,
+    continueEnabled
+      ? "All links are validated."
+      : "Validate all entered YouTube links to continue."
+  );
+}
+
 function showWizardStep(step) {
   currentWizardStep = step;
   wizardStepLabel.textContent = `Step ${step} of 5`;
   wizardDriveForm.classList.toggle("hidden", step !== 1);
-  wizardMediaStep.classList.toggle("hidden", step !== 2);
-  wizardPageForm.classList.toggle("hidden", step !== 3);
-  wizardDetailsForm.classList.toggle("hidden", step !== 4);
+  wizardRemapForm.classList.toggle("hidden", step !== 2);
+  wizardYoutubeStep.classList.toggle("hidden", step !== 3);
+  wizardMediaStep.classList.toggle("hidden", step !== 4);
   wizardTemplateStep.classList.toggle("hidden", step !== 5);
 }
 
@@ -4412,21 +4592,27 @@ function openCreateWizard(options = {}) {
   wizardState = createEmptyWizardState();
   wizardState.mode = "create";
   wizardDriveForm.reset();
-  wizardPageForm.reset();
-  wizardDetailsForm.reset();
   wizardDriveLink.value = "";
-  wizardPageName.value = "";
-  wizardTagline.value = "";
-  wizardEventStart.value = "";
-  wizardEventEnd.value = "";
+  wizardState.folderRemapById = {};
+  wizardState.includeYoutubeVideosFolder = false;
+  wizardState.youtubeLinks = [];
   wizardMediaSearch.value = "";
   wizardMediaList.innerHTML = "";
+  if (wizardRemapList) {
+    wizardRemapList.innerHTML = "";
+  }
+  if (wizardCreateVideosFolder) {
+    wizardCreateVideosFolder.checked = false;
+  }
+  if (wizardYoutubeLinks) {
+    wizardYoutubeLinks.innerHTML = "";
+  }
   wizardMediaSearch.placeholder = "SEARCH FOLDERS";
   wizardCreatePage.textContent = "Create page";
   setStudioStatus(wizardDriveStatus, "");
+  setStudioStatus(wizardRemapStatus, "");
+  setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
-  setStudioStatus(wizardPageStatus, "");
-  setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardTemplateStatus, "");
   studioDashboardPanel.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
@@ -4459,23 +4645,42 @@ function openEditWizard(page, options = {}) {
           thumbnailUrl: page.coverThumbnailUrl || "",
         }
       : null,
+    folderRemapById:
+      page && typeof page.folderRemapById === "object" && page.folderRemapById
+        ? page.folderRemapById
+        : {},
+    includeYoutubeVideosFolder: Boolean(page?.includeYoutubeVideosFolder),
+    youtubeLinks: Array.isArray(page?.youtubeLinks)
+      ? page.youtubeLinks.map((item) => ({
+          url: String(item?.url || "").trim(),
+          title: String(item?.title || "").trim(),
+          thumbnailUrl: String(item?.thumbnailUrl || "").trim(),
+          validated: Boolean(item?.url && item?.title),
+          validating: false,
+          error: "",
+        }))
+      : [],
   };
   wizardDriveForm.reset();
-  wizardPageForm.reset();
-  wizardDetailsForm.reset();
   wizardDriveLink.value = wizardState.driveLink;
-  wizardPageName.value = wizardState.pageName;
-  wizardTagline.value = wizardState.tagline;
-  wizardEventStart.value = wizardState.eventStartDate;
-  wizardEventEnd.value = wizardState.eventEndDate;
   wizardMediaSearch.value = "";
   wizardMediaList.innerHTML = "";
+  if (wizardCreateVideosFolder) {
+    wizardCreateVideosFolder.checked = wizardState.includeYoutubeVideosFolder;
+  }
+  renderFolderRemapStep();
+  if (!wizardState.youtubeLinks.length) {
+    addYoutubeLinkRow();
+    addYoutubeLinkRow();
+  } else {
+    renderYoutubeLinksStep();
+  }
   wizardMediaSearch.placeholder = "SEARCH FOLDERS";
   wizardCreatePage.textContent = "Update page";
   setStudioStatus(wizardDriveStatus, "Load this Drive folder again to choose a new cover, or continue with the current link.");
+  setStudioStatus(wizardRemapStatus, "");
+  setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
-  setStudioStatus(wizardPageStatus, "");
-  setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardTemplateStatus, `Pairing code stays ${wizardState.pairingCode}.`);
   studioDashboardPanel.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
@@ -4524,7 +4729,10 @@ function goBackInWizard() {
     closeCreateWizard();
     return;
   }
-
+  if (currentWizardStep === 4 && !wizardState.includeYoutubeVideosFolder) {
+    showWizardStep(2);
+    return;
+  }
   showWizardStep(currentWizardStep - 1);
 }
 
@@ -4638,6 +4846,15 @@ async function createPageRecord() {
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
+    folderRemapById: wizardState.folderRemapById || {},
+    includeYoutubeVideosFolder: Boolean(wizardState.includeYoutubeVideosFolder),
+    youtubeLinks: (wizardState.youtubeLinks || [])
+      .map((item) => ({
+        url: String(item?.url || "").trim(),
+        title: String(item?.title || "").trim(),
+        thumbnailUrl: String(item?.thumbnailUrl || "").trim(),
+      }))
+      .filter((item) => item.url && item.title),
     faceDetection: {
       status: "idle",
       source: "",
@@ -4692,6 +4909,15 @@ async function updatePageRecord() {
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
     coverName: wizardState.selectedCover?.name || "",
+    folderRemapById: wizardState.folderRemapById || {},
+    includeYoutubeVideosFolder: Boolean(wizardState.includeYoutubeVideosFolder),
+    youtubeLinks: (wizardState.youtubeLinks || [])
+      .map((item) => ({
+        url: String(item?.url || "").trim(),
+        title: String(item?.title || "").trim(),
+        thumbnailUrl: String(item?.thumbnailUrl || "").trim(),
+      }))
+      .filter((item) => item.url && item.title),
     faceDetection: existingPage.faceDetection || {
       status: "idle",
       source: "",
@@ -5408,6 +5634,23 @@ wizardDriveForm?.addEventListener("submit", async (event) => {
     wizardState.folderTree = data.tree;
     wizardState.folders = flattenDriveFolders(data.tree);
     wizardState.flatMedia = flattenDriveMedia(data.tree);
+    wizardState.pageName = String(data?.tree?.name || "").trim() || "Untitled Album";
+    wizardState.pageSlug = slugify(wizardState.pageName) || "";
+    if (!wizardState.pageSlug) {
+      throw new Error("Could not derive a valid album slug from this Drive folder.");
+    }
+    wizardState.folderRemapById = buildDefaultFolderRemap();
+    if (!wizardState.youtubeLinks.length) {
+      wizardState.youtubeLinks = [];
+      addYoutubeLinkRow();
+      addYoutubeLinkRow();
+    } else {
+      renderYoutubeLinksStep();
+    }
+    if (wizardCreateVideosFolder) {
+      wizardCreateVideosFolder.checked = Boolean(wizardState.includeYoutubeVideosFolder);
+    }
+    renderFolderRemapStep();
     wizardState.selectedCover = wizardState.selectedCover?.id
       ? wizardState.flatMedia.find((item) => item.id === wizardState.selectedCover.id) || null
       : null;
@@ -5425,6 +5668,7 @@ wizardDriveForm?.addEventListener("submit", async (event) => {
     renderMediaPicker();
     setStudioStatus(wizardMediaStatus, wizardState.selectedMediaFolderId ? "Click any photo to save it as the cover." : "Select a folder first.");
     setStudioStatus(wizardDriveStatus, "");
+    setStudioStatus(wizardRemapStatus, "Rename tabs if needed, then continue.");
     showWizardStep(2);
   } catch (error) {
     setStudioStatus(wizardDriveStatus, error.message, true);
@@ -5439,46 +5683,40 @@ wizardMediaNext?.addEventListener("click", () => {
     return;
   }
   setStudioStatus(wizardMediaStatus, "");
-  showWizardStep(3);
+  showWizardStep(5);
 });
 
-wizardPageForm?.addEventListener("submit", async (event) => {
+wizardRemapForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    wizardState.pageName = wizardPageName.value.trim();
-    wizardState.pageSlug = slugify(wizardState.pageName);
-    if (!wizardState.pageSlug) {
-      throw new Error("Please enter a valid page name.");
-    }
-
-    setStudioStatus(wizardPageStatus, "Checking for duplicates...");
+    wizardState.includeYoutubeVideosFolder = Boolean(wizardCreateVideosFolder?.checked);
+    setStudioStatus(wizardRemapStatus, "Checking for duplicates...");
     await checkPageDuplicate(wizardState.pageSlug, wizardState.driveLink);
-    setStudioStatus(wizardPageStatus, "");
+    setStudioStatus(wizardRemapStatus, "");
+    if (wizardState.includeYoutubeVideosFolder) {
+      showWizardStep(3);
+      return;
+    }
     showWizardStep(4);
   } catch (error) {
-    setStudioStatus(wizardPageStatus, error.message, true);
+    setStudioStatus(wizardRemapStatus, error.message, true);
   }
 });
 
-wizardDetailsForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const startDate = wizardEventStart.value || "";
-  const endDate = wizardEventEnd.value || "";
+wizardCreateVideosFolder?.addEventListener("change", () => {
+  wizardState.includeYoutubeVideosFolder = Boolean(wizardCreateVideosFolder.checked);
+});
 
-  if (startDate && endDate && endDate < startDate) {
-    setStudioStatus(wizardDetailsStatus, "End date cannot be before start date.", true);
+wizardYoutubeAdd?.addEventListener("click", () => {
+  addYoutubeLinkRow();
+});
+
+wizardYoutubeNext?.addEventListener("click", () => {
+  if (!isYoutubeStepComplete()) {
+    setStudioStatus(wizardYoutubeStatus, "Validate all entered YouTube links to continue.", true);
     return;
   }
-
-  wizardState.tagline = wizardTagline.value.trim();
-  wizardState.eventStartDate = startDate;
-  wizardState.eventEndDate = endDate;
-  setStudioStatus(wizardDetailsStatus, "");
-  setStudioStatus(
-    wizardTemplateStatus,
-    wizardState.mode === "edit" ? `Pairing code stays ${wizardState.pairingCode}.` : ""
-  );
-  showWizardStep(5);
+  showWizardStep(4);
 });
 
 wizardCreatePage?.addEventListener("click", async () => {

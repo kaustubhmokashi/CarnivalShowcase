@@ -418,6 +418,118 @@ function isVideoMedia(item) {
   return Boolean(item?.mimeType && item.mimeType.startsWith("video/"));
 }
 
+function isVideosFolder(folder) {
+  if (!folder) {
+    return false;
+  }
+
+  const normalizedName = String(folder.name || "").trim().toLowerCase();
+  if (normalizedName === "videos") {
+    return true;
+  }
+
+  const folderImages = Array.isArray(folder.images) ? folder.images : [];
+  return folderImages.length > 0 && folderImages.every((item) => isVideoMedia(item));
+}
+
+function orderFoldersForTabs(folders) {
+  const list = Array.isArray(folders) ? [...folders] : [];
+  const nonVideoFolders = list.filter((folder) => !isVideosFolder(folder));
+  const videoFolders = list.filter((folder) => isVideosFolder(folder));
+  return [...nonVideoFolders, ...videoFolders];
+}
+
+function normalizeYoutubeUrl(input) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(raw);
+    return parsed.toString();
+  } catch (_) {
+    return "";
+  }
+}
+
+function buildYoutubeVideosFolderFromLinks(youtubeLinks = []) {
+  const links = Array.isArray(youtubeLinks) ? youtubeLinks : [];
+  const media = links
+    .map((item, index) => {
+      const url = normalizeYoutubeUrl(item?.url);
+      if (!url) {
+        return null;
+      }
+
+      return {
+        id: `youtube-${index}-${btoa(url).replace(/=+$/g, "")}`,
+        name: String(item?.title || item?.url || `Video ${index + 1}`),
+        mimeType: "video/youtube",
+        path: "Videos",
+        folderPath: "Videos",
+        width: null,
+        height: null,
+        url,
+        slideshowUrl: url,
+        thumbnailUrl: String(item?.thumbnailUrl || ""),
+        webViewLink: url,
+      };
+    })
+    .filter(Boolean);
+
+  if (!media.length) {
+    return null;
+  }
+
+  return {
+    id: "__youtube_videos__",
+    name: "Videos",
+    path: "Videos",
+    photoCount: 0,
+    mediaCount: media.length,
+    images: media,
+  };
+}
+
+function mergeYoutubeVideosFolder(folders, options = {}) {
+  const includeYoutubeVideosFolder = Boolean(options?.includeYoutubeVideosFolder);
+  const youtubeLinks = Array.isArray(options?.youtubeLinks) ? options.youtubeLinks : [];
+  if (!includeYoutubeVideosFolder || !youtubeLinks.length) {
+    return orderFoldersForTabs(folders);
+  }
+
+  const merged = Array.isArray(folders) ? [...folders] : [];
+  const youtubeFolder = buildYoutubeVideosFolderFromLinks(youtubeLinks);
+  if (!youtubeFolder) {
+    return orderFoldersForTabs(merged);
+  }
+
+  const existingVideosFolderIndex = merged.findIndex((folder) => String(folder?.name || "").trim().toLowerCase() === "videos");
+  if (existingVideosFolderIndex >= 0) {
+    const existing = merged[existingVideosFolderIndex];
+    const existingImages = Array.isArray(existing?.images) ? existing.images : [];
+    const bySource = new Map();
+    [...existingImages, ...youtubeFolder.images].forEach((item) => {
+      const key = String(item?.webViewLink || item?.slideshowUrl || item?.url || item?.id || "").trim();
+      if (!key) {
+        return;
+      }
+      bySource.set(key, item);
+    });
+    merged[existingVideosFolderIndex] = {
+      ...existing,
+      images: Array.from(bySource.values()),
+      mediaCount: Array.from(bySource.values()).length,
+      photoCount: 0,
+    };
+  } else {
+    merged.push(youtubeFolder);
+  }
+
+  return orderFoldersForTabs(merged);
+}
+
 function normalizePhotoLikesMap(value) {
   if (!value || typeof value !== "object") {
     return {};
@@ -1829,7 +1941,7 @@ function collectFolders(node, parentPath = "") {
 }
 
 function applyFolderState(folders, options = {}) {
-  currentFolders = folders;
+  currentFolders = mergeYoutubeVideosFolder(folders, options);
   selectedFolderId = currentFolders[0] ? currentFolders[0].id : null;
   if (pendingSharedFolderId && currentFolders.some((folder) => folder.id === pendingSharedFolderId)) {
     selectedFolderId = pendingSharedFolderId;

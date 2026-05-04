@@ -330,7 +330,7 @@
 
           <section id="create-page-panel" class="studio-wizard hidden" aria-live="polite">
             <div class="studio-wizard-head">
-              <p id="wizard-step-label" class="studio-kicker">Step 1 of 4</p>
+              <p id="wizard-step-label" class="studio-kicker">Step 1 of 5</p>
               <button id="close-create-page" type="button" class="studio-text-button">Back</button>
             </div>
 
@@ -341,6 +341,27 @@
               <p id="wizard-drive-status" class="studio-status"></p>
             </form>
 
+            <form id="wizard-remap-form" class="studio-panel wizard-step hidden">
+              <h2>Remap folders.</h2>
+              <div id="wizard-remap-list" class="wizard-remap-list"></div>
+              <label class="wizard-remap-video-toggle">
+                <input id="wizard-create-videos-folder" type="checkbox" />
+                <span>Create Videos folder for youtube links</span>
+              </label>
+              <button type="submit" class="studio-primary-button">Next</button>
+              <p id="wizard-remap-status" class="studio-status"></p>
+            </form>
+
+            <div id="wizard-youtube-step" class="studio-panel wizard-step hidden">
+              <h2>YouTube links.</h2>
+              <div id="wizard-youtube-links" class="wizard-youtube-links"></div>
+              <div class="wizard-youtube-actions">
+                <button id="wizard-youtube-add" type="button" class="studio-secondary-button">Add link</button>
+                <button id="wizard-youtube-next" type="button" class="studio-primary-button" disabled>Continue</button>
+              </div>
+              <p id="wizard-youtube-status" class="studio-status"></p>
+            </div>
+
             <div id="wizard-media-step" class="studio-panel wizard-step hidden">
               <h2>Choose the cover photo.</h2>
               <input id="wizard-media-search" type="search" placeholder="SEARCH FOLDERS AND PHOTOS" />
@@ -349,32 +370,8 @@
               <p id="wizard-media-status" class="studio-status"></p>
             </div>
 
-            <form id="wizard-page-form" class="studio-panel wizard-step hidden">
-              <h2>Name this page.</h2>
-              <input id="wizard-page-name" type="text" placeholder="PAGE NAME" required />
-              <button type="submit" class="studio-primary-button">Submit</button>
-              <p id="wizard-page-status" class="studio-status"></p>
-            </form>
-
-            <form id="wizard-details-form" class="studio-panel wizard-step hidden">
-              <h2>Add page details.</h2>
-              <input id="wizard-tagline" type="text" placeholder="TAGLINE" />
-              <div class="date-range-fields">
-                <label>
-                  <span>Event start date</span>
-                  <input id="wizard-event-start" type="date" />
-                </label>
-                <label>
-                  <span>Event end date</span>
-                  <input id="wizard-event-end" type="date" />
-                </label>
-              </div>
-              <button type="submit" class="studio-primary-button">Next</button>
-              <p id="wizard-details-status" class="studio-status"></p>
-            </form>
-
             <div id="wizard-template-step" class="studio-panel wizard-step hidden">
-              <h2>Select a template.</h2>
+              <h2>Complete.</h2>
               <button id="template-one-card" type="button" class="template-card selected" aria-pressed="true">
                 <span>Template 1</span>
                 <small>Current full-width cover and packed grid layout.</small>
