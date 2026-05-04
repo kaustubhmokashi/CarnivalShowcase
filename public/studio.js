@@ -649,6 +649,16 @@ async function openPairingCode(pairingCode) {
 
   const folderUrl = String(pairingPayload?.url || pairingPayload?.folderUrl || "").trim();
   if (folderUrl) {
+    const normalizedFolderUrl = folderUrl.toLowerCase();
+    const isGoogleDriveUrl =
+      normalizedFolderUrl.includes("drive.google.com/") ||
+      normalizedFolderUrl.includes("docs.google.com/");
+
+    if (!isGoogleDriveUrl) {
+      window.location.href = folderUrl;
+      return;
+    }
+
     if (!window.CarnivalGallery?.loadFolder) {
       throw new Error("The hosted gallery loader is unavailable right now.");
     }
