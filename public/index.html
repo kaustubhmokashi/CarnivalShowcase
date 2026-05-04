@@ -330,7 +330,7 @@
 
           <section id="create-page-panel" class="studio-wizard hidden" aria-live="polite">
             <div class="studio-wizard-head">
-              <p id="wizard-step-label" class="studio-kicker">Step 1 of 5</p>
+              <p id="wizard-step-label" class="studio-kicker">Step 1 of 6</p>
               <button id="close-create-page" type="button" class="studio-text-button">Back</button>
             </div>
 
@@ -339,6 +339,30 @@
               <input id="wizard-drive-link" type="url" placeholder="GOOGLE DRIVE LINK" required />
               <button type="submit" class="studio-primary-button">Next</button>
               <p id="wizard-drive-status" class="studio-status"></p>
+            </form>
+
+            <form id="wizard-details-form" class="studio-panel wizard-step hidden">
+              <h2>Album details.</h2>
+              <label>
+                <span>Album name</span>
+                <input id="wizard-album-name" type="text" placeholder="ALBUM NAME" required />
+              </label>
+              <label>
+                <span>Tagline</span>
+                <input id="wizard-album-tagline" type="text" placeholder="TAGLINE" />
+              </label>
+              <div class="date-range-fields">
+                <label>
+                  <span>Start date</span>
+                  <input id="wizard-album-start-date" type="date" />
+                </label>
+                <label>
+                  <span>End date</span>
+                  <input id="wizard-album-end-date" type="date" />
+                </label>
+              </div>
+              <button type="submit" class="studio-primary-button">Next</button>
+              <p id="wizard-details-status" class="studio-status"></p>
             </form>
 
             <form id="wizard-remap-form" class="studio-panel wizard-step hidden">
@@ -371,12 +395,12 @@
             </div>
 
             <div id="wizard-template-step" class="studio-panel wizard-step hidden">
-              <h2>Complete.</h2>
+              <h2>Select a template.</h2>
               <button id="template-one-card" type="button" class="template-card selected" aria-pressed="true">
                 <span>Template 1</span>
                 <small>Current full-width cover and packed grid layout.</small>
               </button>
-              <button id="wizard-create-page" type="button" class="studio-primary-button">Create page</button>
+              <button id="wizard-create-page" type="button" class="studio-primary-button">Create album</button>
               <p id="wizard-template-status" class="studio-status"></p>
             </div>
           </section>

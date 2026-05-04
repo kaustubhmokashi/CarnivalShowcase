@@ -131,6 +131,12 @@ const wizardStepLabel = document.getElementById("wizard-step-label");
 const wizardDriveForm = document.getElementById("wizard-drive-form");
 const wizardDriveLink = document.getElementById("wizard-drive-link");
 const wizardDriveStatus = document.getElementById("wizard-drive-status");
+const wizardDetailsForm = document.getElementById("wizard-details-form");
+const wizardAlbumName = document.getElementById("wizard-album-name");
+const wizardAlbumTagline = document.getElementById("wizard-album-tagline");
+const wizardAlbumStartDate = document.getElementById("wizard-album-start-date");
+const wizardAlbumEndDate = document.getElementById("wizard-album-end-date");
+const wizardDetailsStatus = document.getElementById("wizard-details-status");
 const wizardRemapForm = document.getElementById("wizard-remap-form");
 const wizardRemapList = document.getElementById("wizard-remap-list");
 const wizardCreateVideosFolder = document.getElementById("wizard-create-videos-folder");
@@ -4573,12 +4579,13 @@ function renderYoutubeLinksStep() {
 
 function showWizardStep(step) {
   currentWizardStep = step;
-  wizardStepLabel.textContent = `Step ${step} of 5`;
+  wizardStepLabel.textContent = `Step ${step} of 6`;
   wizardDriveForm.classList.toggle("hidden", step !== 1);
-  wizardRemapForm.classList.toggle("hidden", step !== 2);
-  wizardYoutubeStep.classList.toggle("hidden", step !== 3);
-  wizardMediaStep.classList.toggle("hidden", step !== 4);
-  wizardTemplateStep.classList.toggle("hidden", step !== 5);
+  wizardDetailsForm.classList.toggle("hidden", step !== 2);
+  wizardRemapForm.classList.toggle("hidden", step !== 3);
+  wizardYoutubeStep.classList.toggle("hidden", step !== 4);
+  wizardMediaStep.classList.toggle("hidden", step !== 5);
+  wizardTemplateStep.classList.toggle("hidden", step !== 6);
 }
 
 function openCreateWizard(options = {}) {
@@ -4592,6 +4599,7 @@ function openCreateWizard(options = {}) {
   wizardState = createEmptyWizardState();
   wizardState.mode = "create";
   wizardDriveForm.reset();
+  wizardDetailsForm?.reset();
   wizardDriveLink.value = "";
   wizardState.folderRemapById = {};
   wizardState.includeYoutubeVideosFolder = false;
@@ -4608,8 +4616,9 @@ function openCreateWizard(options = {}) {
     wizardYoutubeLinks.innerHTML = "";
   }
   wizardMediaSearch.placeholder = "SEARCH FOLDERS";
-  wizardCreatePage.textContent = "Create page";
+  wizardCreatePage.textContent = "Create album";
   setStudioStatus(wizardDriveStatus, "");
+  setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardRemapStatus, "");
   setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
@@ -4662,7 +4671,12 @@ function openEditWizard(page, options = {}) {
       : [],
   };
   wizardDriveForm.reset();
+  wizardDetailsForm?.reset();
   wizardDriveLink.value = wizardState.driveLink;
+  if (wizardAlbumName) wizardAlbumName.value = wizardState.pageName || "";
+  if (wizardAlbumTagline) wizardAlbumTagline.value = wizardState.tagline || "";
+  if (wizardAlbumStartDate) wizardAlbumStartDate.value = wizardState.eventStartDate || "";
+  if (wizardAlbumEndDate) wizardAlbumEndDate.value = wizardState.eventEndDate || "";
   wizardMediaSearch.value = "";
   wizardMediaList.innerHTML = "";
   if (wizardCreateVideosFolder) {
@@ -4676,8 +4690,9 @@ function openEditWizard(page, options = {}) {
     renderYoutubeLinksStep();
   }
   wizardMediaSearch.placeholder = "SEARCH FOLDERS";
-  wizardCreatePage.textContent = "Update page";
+  wizardCreatePage.textContent = "Update album";
   setStudioStatus(wizardDriveStatus, "Load this Drive folder again to choose a new cover, or continue with the current link.");
+  setStudioStatus(wizardDetailsStatus, "");
   setStudioStatus(wizardRemapStatus, "");
   setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
@@ -4729,8 +4744,8 @@ function goBackInWizard() {
     closeCreateWizard();
     return;
   }
-  if (currentWizardStep === 4 && !wizardState.includeYoutubeVideosFolder) {
-    showWizardStep(2);
+  if (currentWizardStep === 5 && !wizardState.includeYoutubeVideosFolder) {
+    showWizardStep(3);
     return;
   }
   showWizardStep(currentWizardStep - 1);
@@ -5634,10 +5649,20 @@ wizardDriveForm?.addEventListener("submit", async (event) => {
     wizardState.folderTree = data.tree;
     wizardState.folders = flattenDriveFolders(data.tree);
     wizardState.flatMedia = flattenDriveMedia(data.tree);
-    wizardState.pageName = String(data?.tree?.name || "").trim() || "Untitled Album";
-    wizardState.pageSlug = slugify(wizardState.pageName) || "";
-    if (!wizardState.pageSlug) {
-      throw new Error("Could not derive a valid album slug from this Drive folder.");
+    if (!wizardState.pageName) {
+      wizardState.pageName = String(data?.tree?.name || "").trim() || "Untitled Album";
+    }
+    if (wizardAlbumName && !wizardAlbumName.value.trim()) {
+      wizardAlbumName.value = wizardState.pageName;
+    }
+    if (wizardAlbumTagline && !wizardAlbumTagline.value.trim() && wizardState.tagline) {
+      wizardAlbumTagline.value = wizardState.tagline;
+    }
+    if (wizardAlbumStartDate && !wizardAlbumStartDate.value && wizardState.eventStartDate) {
+      wizardAlbumStartDate.value = wizardState.eventStartDate;
+    }
+    if (wizardAlbumEndDate && !wizardAlbumEndDate.value && wizardState.eventEndDate) {
+      wizardAlbumEndDate.value = wizardState.eventEndDate;
     }
     wizardState.folderRemapById = buildDefaultFolderRemap();
     if (!wizardState.youtubeLinks.length) {
@@ -5668,10 +5693,31 @@ wizardDriveForm?.addEventListener("submit", async (event) => {
     renderMediaPicker();
     setStudioStatus(wizardMediaStatus, wizardState.selectedMediaFolderId ? "Click any photo to save it as the cover." : "Select a folder first.");
     setStudioStatus(wizardDriveStatus, "");
+    setStudioStatus(wizardDetailsStatus, "");
     setStudioStatus(wizardRemapStatus, "Rename tabs if needed, then continue.");
     showWizardStep(2);
   } catch (error) {
     setStudioStatus(wizardDriveStatus, error.message, true);
+  }
+});
+
+wizardDetailsForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const pageName = String(wizardAlbumName?.value || "").trim();
+    const pageSlug = slugify(pageName);
+    if (!pageName || !pageSlug) {
+      throw new Error("Please enter a valid album name.");
+    }
+    wizardState.pageName = pageName;
+    wizardState.pageSlug = pageSlug;
+    wizardState.tagline = String(wizardAlbumTagline?.value || "").trim();
+    wizardState.eventStartDate = String(wizardAlbumStartDate?.value || "").trim();
+    wizardState.eventEndDate = String(wizardAlbumEndDate?.value || "").trim();
+    setStudioStatus(wizardDetailsStatus, "");
+    showWizardStep(3);
+  } catch (error) {
+    setStudioStatus(wizardDetailsStatus, error.message || "Could not save album details.", true);
   }
 });
 
@@ -5683,7 +5729,7 @@ wizardMediaNext?.addEventListener("click", () => {
     return;
   }
   setStudioStatus(wizardMediaStatus, "");
-  showWizardStep(5);
+  showWizardStep(6);
 });
 
 wizardRemapForm?.addEventListener("submit", async (event) => {
@@ -5694,10 +5740,10 @@ wizardRemapForm?.addEventListener("submit", async (event) => {
     await checkPageDuplicate(wizardState.pageSlug, wizardState.driveLink);
     setStudioStatus(wizardRemapStatus, "");
     if (wizardState.includeYoutubeVideosFolder) {
-      showWizardStep(3);
+      showWizardStep(4);
       return;
     }
-    showWizardStep(4);
+    showWizardStep(5);
   } catch (error) {
     setStudioStatus(wizardRemapStatus, error.message, true);
   }
@@ -5716,13 +5762,13 @@ wizardYoutubeNext?.addEventListener("click", () => {
     setStudioStatus(wizardYoutubeStatus, "Validate all entered YouTube links to continue.", true);
     return;
   }
-  showWizardStep(4);
+  showWizardStep(5);
 });
 
 wizardCreatePage?.addEventListener("click", async () => {
   try {
     const isEditMode = wizardState.mode === "edit";
-    setStudioStatus(wizardTemplateStatus, isEditMode ? "Updating page..." : "Creating page...");
+    setStudioStatus(wizardTemplateStatus, isEditMode ? "Updating album..." : "Creating album...");
     const result = isEditMode
       ? await updatePageRecord()
       : await createPageRecord();
@@ -5734,7 +5780,7 @@ wizardCreatePage?.addEventListener("click", async () => {
     setStudioStatus(wizardTemplateStatus, "");
     closeCreateWizard();
     await loadSavedPages();
-    showStudioToast(isEditMode ? "Page updated." : "Page created.");
+    showStudioToast(isEditMode ? "Album updated." : "Album created.");
   } catch (error) {
     setStudioStatus(wizardTemplateStatus, error.message, true);
   }
