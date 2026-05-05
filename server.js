@@ -2521,6 +2521,15 @@ async function getAlbumSnapshotForPublicPage(publicPageId, pageRecord) {
     folderCount: Number(pageRecord?.albumSnapshotFolderCount) || 0,
     mediaCount: Number(pageRecord?.albumSnapshotMediaCount) || 0,
     generatedAt: String(pageRecord?.albumSnapshotGeneratedAt || ""),
+    includeYoutubeVideosFolder: Boolean(pageRecord?.includeYoutubeVideosFolder),
+    youtubeLinks: Array.isArray(pageRecord?.youtubeLinks)
+      ? pageRecord.youtubeLinks.map((item) => ({
+          url: String(item?.url || "").trim(),
+          title: String(item?.title || "").trim(),
+          thumbnailUrl: String(item?.thumbnailUrl || "").trim(),
+          validated: Boolean(item?.validated),
+        }))
+      : [],
     folders: chunks.flatMap((chunk) => (Array.isArray(chunk.folders) ? chunk.folders : [])),
   };
 }

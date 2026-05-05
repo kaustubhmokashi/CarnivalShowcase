@@ -4,6 +4,10 @@ import android.content.Context
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -290,6 +294,11 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
     is TvScreen.VideoPlayer -> VideoPlayerScreen(
       state = state,
       onBack = viewModel::closeVideoPlayer,
+    )
+
+    is TvScreen.YouTubePlayer -> YouTubePlayerScreen(
+      state = state,
+      onBack = viewModel::closeYouTubePlayer,
     )
   }
 }
@@ -1410,6 +1419,58 @@ private fun eventCardRotation(seed: String): Float {
 }
 
 @Composable
+private fun YouTubePlayerScreen(
+  state: DriveDeckUiState,
+  onBack: () -> Unit,
+) {
+  val youtubeUrl = state.youtubePlaybackUrl.trim()
+  if (youtubeUrl.isBlank()) {
+    return
+  }
+
+  val embedUrl = remember(youtubeUrl) {
+    youtubeEmbedUrlFromRaw(youtubeUrl)
+  }
+  val targetUrl = if (embedUrl.isNotBlank()) embedUrl else youtubeUrl
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(Color.Black)
+  ) {
+    AndroidView(
+      factory = { context ->
+        WebView(context).apply {
+          webViewClient = WebViewClient()
+          webChromeClient = WebChromeClient()
+          settings.javaScriptEnabled = true
+          settings.domStorageEnabled = true
+          settings.mediaPlaybackRequiresUserGesture = false
+          settings.cacheMode = WebSettings.LOAD_DEFAULT
+          loadUrl(targetUrl)
+        }
+      },
+      update = { webView ->
+        if (webView.url != targetUrl) {
+          webView.loadUrl(targetUrl)
+        }
+      },
+      modifier = Modifier.fillMaxSize()
+    )
+
+    Box(
+      modifier = Modifier
+        .align(Alignment.TopStart)
+        .padding(24.dp)
+    ) {
+      FocusableIconAction(onClick = onBack) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+      }
+    }
+  }
+}
+
+@Composable
 private fun VideoPlayerScreen(
   state: DriveDeckUiState,
   onBack: () -> Unit,
@@ -1810,6 +1871,29 @@ private fun unsupportedVideoFormatMessage(mimeType: String): String {
     else ->
       "This TV does not support this video format. Please use MP4 for the most reliable playback."
   }
+}
+
+private fun youtubeVideoIdFromRaw(url: String): String {
+  if (url.isBlank()) return ""
+  return runCatching {
+    val uri = android.net.Uri.parse(url)
+    val host = uri.host.orEmpty().lowercase()
+    when {
+      host == "youtu.be" -> uri.lastPathSegment.orEmpty()
+      host.endsWith("youtube.com") && uri.path == "/watch" -> uri.getQueryParameter("v").orEmpty()
+      host.endsWith("youtube.com") && uri.path.orEmpty().startsWith("/shorts/") ->
+        uri.pathSegments.getOrNull(1).orEmpty()
+      host.endsWith("youtube.com") && uri.path.orEmpty().startsWith("/embed/") ->
+        uri.pathSegments.getOrNull(1).orEmpty()
+      else -> ""
+    }.trim()
+  }.getOrDefault("")
+}
+
+private fun youtubeEmbedUrlFromRaw(url: String): String {
+  val videoId = youtubeVideoIdFromRaw(url)
+  if (videoId.isBlank()) return ""
+  return "https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&rel=0"
 }
 
 private fun formatVideoTime(positionMs: Long): String {
@@ -2305,6 +2389,7 @@ sealed interface TvScreen {
   data object Gallery : TvScreen
   data object Slideshow : TvScreen
   data object VideoPlayer : TvScreen
+  data object YouTubePlayer : TvScreen
 }
 
 data class DriveDeckUiState(
@@ -2335,6 +2420,8 @@ data class DriveDeckUiState(
   val eventPresentationTitle: String = "",
   val eventPresentationSlug: String = "",
   val eventPresentationBackgroundUrl: String = "",
+  val youtubePlaybackUrl: String = "",
+  val youtubePlaybackTitle: String = "",
   val inlineVideoPlaybackApprovedId: String? = null,
   val videoPlayerPromptDismissedId: String? = null,
 ) {
@@ -2628,8 +2715,29 @@ class DriveDeckViewModel(
   }
 
   fun openSlideshow(index: Int) {
+    val clampedIndex = index.coerceIn(0, uiState.images.lastIndex.coerceAtLeast(0))
+    val target = uiState.images.getOrNull(clampedIndex)
+    if (target != null && target.mimeType.equals("video/youtube", ignoreCase = true)) {
+      val playbackUrl = target.fullUrl.ifBlank { target.slideshowUrl }
+      if (playbackUrl.isNotBlank()) {
+        uiState = uiState.copy(
+          currentSlideIndex = clampedIndex,
+          screen = TvScreen.YouTubePlayer,
+          youtubePlaybackUrl = playbackUrl,
+          youtubePlaybackTitle = target.name,
+          autoplayEnabled = false,
+          slideshowChromeVisible = true,
+          slideshowSettingsVisible = false,
+          inlineVideoPlaybackApprovedId = null,
+          videoPlayerPromptDismissedId = target.id,
+          isAlbumPresentationMode = false,
+          albumPresentationBackgroundUrl = "",
+        )
+      }
+      return
+    }
     uiState = uiState.copy(
-      currentSlideIndex = index.coerceIn(0, uiState.images.lastIndex.coerceAtLeast(0)),
+      currentSlideIndex = clampedIndex,
       screen = TvScreen.Slideshow,
       autoplayEnabled = true,
       slideshowChromeVisible = false,
@@ -2770,6 +2878,17 @@ class DriveDeckViewModel(
     )
   }
 
+  fun closeYouTubePlayer() {
+    uiState = uiState.copy(
+      screen = TvScreen.Gallery,
+      youtubePlaybackUrl = "",
+      youtubePlaybackTitle = "",
+      autoplayEnabled = false,
+      slideshowChromeVisible = true,
+      slideshowSettingsVisible = false
+    )
+  }
+
   fun changeDuration(delta: Int) {
     uiState = uiState.copy(durationSeconds = (uiState.durationSeconds + delta).coerceIn(2, 15))
   }
@@ -2845,6 +2964,14 @@ class DriveDeckViewModel(
         slideshowChromeVisible = true,
         slideshowSettingsVisible = false
       )
+      TvScreen.YouTubePlayer -> uiState.copy(
+        screen = TvScreen.Gallery,
+        youtubePlaybackUrl = "",
+        youtubePlaybackTitle = "",
+        autoplayEnabled = false,
+        slideshowChromeVisible = true,
+        slideshowSettingsVisible = false
+      )
     }
   }
 
@@ -2913,7 +3040,7 @@ class DriveDeckViewModel(
   }
 
   private fun flattenSnapshotFolders(snapshot: AlbumSnapshotPayload): List<FolderSummary> {
-    return snapshot.folders.mapNotNull { folder ->
+    val baseFolders = snapshot.folders.mapNotNull { folder ->
       val path = folder.path.ifBlank { folder.name }
       val images = folder.images.mapNotNull { image ->
         val id = image.id.trim()
@@ -2943,6 +3070,45 @@ class DriveDeckViewModel(
         )
       }
     }
+
+    val youtubeFolder = buildYouTubeFolderSummary(snapshot)
+    return if (youtubeFolder == null) baseFolders else baseFolders + youtubeFolder
+  }
+
+  private fun buildYouTubeFolderSummary(snapshot: AlbumSnapshotPayload): FolderSummary? {
+    if (!snapshot.includeYoutubeVideosFolder || snapshot.youtubeLinks.isEmpty()) {
+      return null
+    }
+
+    val videos = snapshot.youtubeLinks.mapIndexedNotNull { index, link ->
+      val videoId = youtubeVideoIdFromRaw(link.url)
+      if (videoId.isBlank()) {
+        return@mapIndexedNotNull null
+      }
+      val title = link.title.trim().ifBlank { "Video ${index + 1}" }
+      val watchUrl = "https://www.youtube.com/watch?v=$videoId"
+      val thumbnail = link.thumbnailUrl.trim().ifBlank { "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" }
+      PhotoAsset(
+        id = "youtube-$videoId-$index",
+        name = title,
+        path = "Videos",
+        mimeType = "video/youtube",
+        thumbnailUrl = thumbnail,
+        slideshowUrl = watchUrl,
+        fullUrl = watchUrl,
+      )
+    }
+
+    if (videos.isEmpty()) {
+      return null
+    }
+
+    return FolderSummary(
+      id = "__youtube_videos__",
+      name = "Videos",
+      path = "Videos",
+      images = videos
+    )
   }
 
   class Factory(
@@ -3265,7 +3431,17 @@ data class AlbumSnapshotPayload(
   val coverFileId: String = "",
   val coverImageUrl: String = "",
   val coverThumbnailUrl: String = "",
+  val includeYoutubeVideosFolder: Boolean = false,
+  val youtubeLinks: List<SnapshotYoutubeLink> = emptyList(),
   val folders: List<SnapshotFolder> = emptyList(),
+)
+
+@Serializable
+data class SnapshotYoutubeLink(
+  val url: String = "",
+  val title: String = "",
+  @SerialName("thumbnailUrl") val thumbnailUrl: String = "",
+  val validated: Boolean = false,
 )
 
 @Serializable
