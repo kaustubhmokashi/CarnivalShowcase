@@ -3944,6 +3944,104 @@ function getFolderCacheKey(folderId, includeVideos) {
   return `${folderId}:${includeVideos ? "videos" : "images"}`;
 }
 
+function extractYoutubeVideoId(input) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const normalizedRaw = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(normalizedRaw);
+  } catch (_) {
+    const inlineMatch = raw.match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+    return inlineMatch?.[1] ? String(inlineMatch[1]).trim() : "";
+  }
+
+  const host = normalizeHostname(parsedUrl.hostname);
+  if (!host) {
+    return "";
+  }
+
+  if (host === "youtu.be") {
+    const candidate = String(parsedUrl.pathname || "").replace(/^\/+/, "").split("/")[0];
+    return candidate || "";
+  }
+
+  if (host === "youtube.com" || host === "www.youtube.com" || host === "m.youtube.com") {
+    if (parsedUrl.pathname === "/watch") {
+      return String(parsedUrl.searchParams.get("v") || "").trim();
+    }
+
+    const shortMatch = parsedUrl.pathname.match(/^\/shorts\/([^/?#]+)/i);
+    if (shortMatch?.[1]) {
+      return String(shortMatch[1]).trim();
+    }
+
+    const embedMatch = parsedUrl.pathname.match(/^\/embed\/([^/?#]+)/i);
+    if (embedMatch?.[1]) {
+      return String(embedMatch[1]).trim();
+    }
+  }
+
+  return "";
+}
+
+function isValidYoutubeVideoId(videoId) {
+  return /^[A-Za-z0-9_-]{11}$/.test(String(videoId || "").trim());
+}
+
+async function fetchYoutubeMetadata(videoId) {
+  const normalizedId = String(videoId || "").trim();
+  if (!normalizedId) {
+    return null;
+  }
+
+  const canonicalUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(normalizedId)}`;
+  const providers = [
+    `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`,
+    `https://noembed.com/embed?url=${encodeURIComponent(canonicalUrl)}`,
+  ];
+
+  for (const endpoint of providers) {
+    try {
+      const response = await fetch(endpoint, {
+        headers: {
+          "User-Agent": "CarnivalStories/1.0 (+https://carnivalshowcase.kaustubhmokashi.com)",
+        },
+      });
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      const title = String(payload?.title || "").trim();
+      const thumbnailUrl = String(payload?.thumbnail_url || "").trim();
+      if (!title) {
+        continue;
+      }
+      return { title, thumbnailUrl };
+    } catch (_) {
+      // Try next provider
+    }
+  }
+
+  return null;
+}
+
+function buildYoutubeFallbackMetadata(videoId) {
+  const normalizedId = String(videoId || "").trim();
+  if (!normalizedId) {
+    return null;
+  }
+
+  return {
+    title: `YouTube Video (${normalizedId})`,
+    thumbnailUrl: `https://img.youtube.com/vi/${encodeURIComponent(normalizedId)}/hqdefault.jpg`,
+  };
+}
+
 async function fetchFolderResult(folderId, includeVideos = false) {
   const folderMeta = await driveGetFile(folderId);
   if (folderMeta.mimeType !== FOLDER_MIME_TYPE) {
@@ -4084,6 +4182,31 @@ async function handleApiFolderMeta(req, res) {
       error: formatDriveAccessError(error),
     });
   }
+}
+
+async function handleYoutubeValidate(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const rawUrl = String(requestUrl.searchParams.get("url") || "").trim();
+  const videoId = extractYoutubeVideoId(rawUrl);
+
+  if (!videoId || !isValidYoutubeVideoId(videoId)) {
+    sendJson(res, 400, {
+      error: "Please enter a valid YouTube link.",
+    });
+    return;
+  }
+
+  const metadata = (await fetchYoutubeMetadata(videoId)) || buildYoutubeFallbackMetadata(videoId) || {
+    title: `YouTube Video (${videoId})`,
+    thumbnailUrl: `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`,
+  };
+
+  sendJson(res, 200, {
+    videoId,
+    title: metadata.title,
+    thumbnailUrl: metadata.thumbnailUrl,
+    canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
+  });
 }
 
 async function handleSaveRemoteLink(req, res) {
@@ -5247,6 +5370,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/folder-meta") {
     await handleApiFolderMeta(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/youtube/validate" && req.method === "GET") {
+    await handleYoutubeValidate(req, res);
     return;
   }
 
