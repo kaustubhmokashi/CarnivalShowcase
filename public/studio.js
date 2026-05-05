@@ -133,6 +133,7 @@ const wizardDriveLink = document.getElementById("wizard-drive-link");
 const wizardDriveStatus = document.getElementById("wizard-drive-status");
 const wizardDetailsForm = document.getElementById("wizard-details-form");
 const wizardAlbumName = document.getElementById("wizard-album-name");
+const wizardAlbumUrlPreview = document.getElementById("wizard-album-url-preview");
 const wizardAlbumTagline = document.getElementById("wizard-album-tagline");
 const wizardAlbumStartDate = document.getElementById("wizard-album-start-date");
 const wizardAlbumEndDate = document.getElementById("wizard-album-end-date");
@@ -527,6 +528,31 @@ function slugify(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function updateWizardAlbumUrlPreview() {
+  if (!wizardAlbumUrlPreview) {
+    return;
+  }
+  const pageName = String(wizardAlbumName?.value || wizardState.pageName || "").trim();
+  const pageSlug = slugify(pageName);
+  if (!pageSlug) {
+    wizardAlbumUrlPreview.textContent = "";
+    return;
+  }
+
+  const customDomain = normalizeCustomDomain(
+    currentProfile?.branding?.customDomain || currentProfile?.customDomain || ""
+  );
+  if (customDomain) {
+    wizardAlbumUrlPreview.textContent = `URL: https://${customDomain}/${pageSlug}`;
+    return;
+  }
+
+  const studioSlug = String(currentProfile?.studioSlug || "").trim();
+  wizardAlbumUrlPreview.textContent = studioSlug
+    ? `URL: ${window.location.origin}/${studioSlug}/${pageSlug}`
+    : `URL: ${window.location.origin}/${pageSlug}`;
 }
 
 function escapeMarkup(value) {
@@ -4600,6 +4626,9 @@ function openCreateWizard(options = {}) {
   wizardState.mode = "create";
   wizardDriveForm.reset();
   wizardDetailsForm?.reset();
+  if (wizardAlbumUrlPreview) {
+    wizardAlbumUrlPreview.textContent = "";
+  }
   wizardDriveLink.value = "";
   wizardState.folderRemapById = {};
   wizardState.includeYoutubeVideosFolder = false;
@@ -4677,6 +4706,7 @@ function openEditWizard(page, options = {}) {
   if (wizardAlbumTagline) wizardAlbumTagline.value = wizardState.tagline || "";
   if (wizardAlbumStartDate) wizardAlbumStartDate.value = wizardState.eventStartDate || "";
   if (wizardAlbumEndDate) wizardAlbumEndDate.value = wizardState.eventEndDate || "";
+  updateWizardAlbumUrlPreview();
   wizardMediaSearch.value = "";
   wizardMediaList.innerHTML = "";
   if (wizardCreateVideosFolder) {
@@ -5664,6 +5694,7 @@ wizardDriveForm?.addEventListener("submit", async (event) => {
     if (wizardAlbumEndDate && !wizardAlbumEndDate.value && wizardState.eventEndDate) {
       wizardAlbumEndDate.value = wizardState.eventEndDate;
     }
+    updateWizardAlbumUrlPreview();
     wizardState.folderRemapById = buildDefaultFolderRemap();
     if (!wizardState.youtubeLinks.length) {
       wizardState.youtubeLinks = [];
@@ -5719,6 +5750,10 @@ wizardDetailsForm?.addEventListener("submit", async (event) => {
   } catch (error) {
     setStudioStatus(wizardDetailsStatus, error.message || "Could not save album details.", true);
   }
+});
+
+wizardAlbumName?.addEventListener("input", () => {
+  updateWizardAlbumUrlPreview();
 });
 
 wizardMediaSearch?.addEventListener("input", renderMediaPicker);

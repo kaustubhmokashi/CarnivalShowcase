@@ -2963,6 +2963,15 @@ input[type="checkbox"]:checked {
   color: rgba(0, 0, 0, 0.78);
 }
 
+.wizard-album-url-preview {
+  margin: calc(var(--space-1) * -0.5) 0 0;
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  min-height: 1.2em;
+}
+
 .studio-dashboard {
   display: grid;
   grid-template-columns: 288px minmax(0, 1fr);
