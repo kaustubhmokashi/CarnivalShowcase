@@ -525,27 +525,27 @@ function ensureYoutubeDialog() {
   overlay.setAttribute("aria-hidden", "true");
   overlay.innerHTML = `
     <div class="youtube-dialog-shell">
-      <button type="button" class="youtube-dialog-close" aria-label="Close video">Close</button>
+      <button type="button" class="youtube-dialog-close" aria-label="Close video">
+        <img src="/assets/icons/Close.svg" alt="" aria-hidden="true" />
+      </button>
       <iframe class="youtube-dialog-frame" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
-      <a class="youtube-dialog-link" target="_blank" rel="noopener noreferrer">Open on YouTube</a>
     </div>
   `;
 
   const style = document.createElement("style");
   style.textContent = `
-    .youtube-dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1200;display:flex;align-items:center;justify-content:center;padding:24px}
+    .youtube-dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1200;display:flex;align-items:center;justify-content:center;padding:10px}
     .youtube-dialog-overlay.hidden{display:none}
-    .youtube-dialog-shell{width:min(1080px,100%);background:#111;padding:16px;position:relative}
-    .youtube-dialog-close{position:absolute;top:16px;right:16px;border:1px solid #fff;background:#000;color:#fff;padding:8px 12px;cursor:pointer;z-index:2}
+    .youtube-dialog-shell{width:min(1100px,100%);background:#111;padding:0;position:relative}
+    .youtube-dialog-close{position:absolute;top:10px;right:10px;border:0;background:transparent;color:#fff;padding:0;cursor:pointer;z-index:2;line-height:0}
+    .youtube-dialog-close img{width:24px;height:24px;display:block;filter:brightness(0) invert(1)}
     .youtube-dialog-frame{width:100%;aspect-ratio:16/9;border:0;background:#000}
-    .youtube-dialog-link{display:inline-block;margin-top:12px;color:#fff;text-decoration:underline;letter-spacing:.12em;font-size:11px;text-transform:uppercase}
   `;
   document.head.appendChild(style);
   document.body.appendChild(overlay);
 
   const frame = overlay.querySelector(".youtube-dialog-frame");
   const closeButton = overlay.querySelector(".youtube-dialog-close");
-  const link = overlay.querySelector(".youtube-dialog-link");
 
   const close = () => {
     overlay.classList.add("hidden");
@@ -560,7 +560,7 @@ function ensureYoutubeDialog() {
     }
   });
 
-  youtubeDialogState = { overlay, frame, link, close };
+  youtubeDialogState = { overlay, frame, close };
   return youtubeDialogState;
 }
 
@@ -576,7 +576,6 @@ function openYoutubeDialog(rawUrl) {
     return false;
   }
   dialog.frame.src = embedUrl;
-  dialog.link.href = playbackUrl || rawUrl || "#";
   dialog.overlay.classList.remove("hidden");
   dialog.overlay.setAttribute("aria-hidden", "false");
   return true;
