@@ -143,6 +143,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.UnknownHostException
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -3076,11 +3077,14 @@ class DriveDeckViewModel(
   }
 
   private fun buildYouTubeFolderSummary(snapshot: AlbumSnapshotPayload): FolderSummary? {
-    if (!snapshot.includeYoutubeVideosFolder || snapshot.youtubeLinks.isEmpty()) {
+    if (snapshot.youtubeLinks.isEmpty()) {
       return null
     }
 
     val videos = snapshot.youtubeLinks.mapIndexedNotNull { index, link ->
+      if (!link.validated && link.title.isBlank() && link.thumbnailUrl.isBlank()) {
+        return@mapIndexedNotNull null
+      }
       val videoId = youtubeVideoIdFromRaw(link.url)
       if (videoId.isBlank()) {
         return@mapIndexedNotNull null
@@ -3174,42 +3178,32 @@ class DriveDeckRepository(
 ) {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
+  @Volatile
+  private var activeBaseUrl: String = baseUrl.trimEnd('/')
+  private val fallbackBaseUrls: List<String> = listOf(
+    baseUrl,
+    "https://carnivalshowcase.kaustubhmokashi.com",
+    "https://carnivalshowcase.kaustubmokashi.com",
+  )
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .map { it.trimEnd('/') }
+    .distinct()
 
   suspend fun fetchPairingUrl(): String = withContext(Dispatchers.IO) {
     val explicit = pairingUrlOverride.trim()
     if (explicit.isNotBlank()) {
       return@withContext explicit
     }
-
-    val request = Request.Builder()
-      .url("$baseUrl/api/pairing-origin")
-      .get()
-      .build()
-
-    client.newCall(request).execute().use { response ->
-      val body = response.body?.string().orEmpty()
-      if (!response.isSuccessful) {
-        throw IllegalStateException(extractError(body))
-      }
-
-      val parsed = json.decodeFromString<PairingOriginResponse>(body)
+    requestWithBaseUrlFallback("/api/pairing-origin") { response ->
+      val parsed = json.decodeFromString<PairingOriginResponse>(response)
       "${parsed.origin.trimEnd('/')}/remote-tv"
     }
   }
 
   suspend fun resolvePairing(code: String): PairingResolution = withContext(Dispatchers.IO) {
-    val request = Request.Builder()
-      .url("$baseUrl/api/pairing/resolve?code=${urlEncode(code)}")
-      .get()
-      .build()
-
-    client.newCall(request).execute().use { response ->
-      val body = response.body?.string().orEmpty()
-      if (!response.isSuccessful) {
-        throw IllegalStateException(extractError(body))
-      }
-
-      val parsed = json.decodeFromString<PairingResolveResponse>(body)
+    requestWithBaseUrlFallback("/api/pairing/resolve?code=${urlEncode(code)}") { response ->
+      val parsed = json.decodeFromString<PairingResolveResponse>(response)
       when {
         parsed.mode == "event-presentation" -> {
           PairingResolution.EventPresentation(
@@ -3237,34 +3231,14 @@ class DriveDeckRepository(
   }
 
   suspend fun loadFolder(folderUrl: String): FolderTreeResponse = withContext(Dispatchers.IO) {
-    val request = Request.Builder()
-      .url("$baseUrl/api/folder?includeVideos=1&url=${urlEncode(folderUrl)}")
-      .get()
-      .build()
-
-    client.newCall(request).execute().use { response ->
-      val body = response.body?.string().orEmpty()
-      if (!response.isSuccessful) {
-        throw IllegalStateException(extractError(body))
-      }
-
-      json.decodeFromString<FolderTreeResponse>(body)
+    requestWithBaseUrlFallback("/api/folder?includeVideos=1&url=${urlEncode(folderUrl)}") { response ->
+      json.decodeFromString<FolderTreeResponse>(response)
     }
   }
 
   suspend fun fetchEventPresentation(slug: String): PairingResolution.EventPresentation = withContext(Dispatchers.IO) {
-    val request = Request.Builder()
-      .url("$baseUrl/api/events/public?slug=${urlEncode(slug)}")
-      .get()
-      .build()
-
-    client.newCall(request).execute().use { response ->
-      val body = response.body?.string().orEmpty()
-      if (!response.isSuccessful) {
-        throw IllegalStateException(extractError(body))
-      }
-
-      val parsed = json.decodeFromString<EventPublicResponse>(body)
+    requestWithBaseUrlFallback("/api/events/public?slug=${urlEncode(slug)}") { response ->
+      val parsed = json.decodeFromString<EventPublicResponse>(response)
       val event = parsed.event
       PairingResolution.EventPresentation(
         name = event.name.ifBlank { "Event" },
@@ -3301,7 +3275,45 @@ class DriveDeckRepository(
     if (path.startsWith("http://") || path.startsWith("https://")) {
       return path
     }
-    return "$baseUrl$path"
+    return "$activeBaseUrl$path"
+  }
+
+  private fun <T> requestWithBaseUrlFallback(path: String, parser: (String) -> T): T {
+    var lastError: Throwable? = null
+    val preferred = listOf(activeBaseUrl) + fallbackBaseUrls.filter { it != activeBaseUrl }
+    for (candidateBaseUrl in preferred) {
+      try {
+        val request = Request.Builder()
+          .url("$candidateBaseUrl$path")
+          .get()
+          .build()
+        client.newCall(request).execute().use { response ->
+          val body = response.body?.string().orEmpty()
+          if (!response.isSuccessful) {
+            throw IllegalStateException(extractError(body))
+          }
+          activeBaseUrl = candidateBaseUrl
+          return parser(body)
+        }
+      } catch (error: Throwable) {
+        lastError = error
+        if (!isDnsResolutionError(error)) {
+          throw error
+        }
+      }
+    }
+    throw lastError ?: IllegalStateException("Unable to reach server.")
+  }
+
+  private fun isDnsResolutionError(error: Throwable): Boolean {
+    var current: Throwable? = error
+    while (current != null) {
+      if (current is UnknownHostException) {
+        return true
+      }
+      current = current.cause
+    }
+    return error.message?.contains("Unable to resolve host", ignoreCase = true) == true
   }
 
   private fun extractError(body: String): String {
