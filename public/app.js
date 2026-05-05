@@ -453,6 +453,50 @@ function normalizeYoutubeUrl(input) {
   }
 }
 
+function extractYoutubeVideoId(input) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(raw);
+    const host = String(parsed.hostname || "").toLowerCase();
+    if (host === "youtu.be") {
+      return String(parsed.pathname || "").replace(/^\/+/, "").split("/")[0] || "";
+    }
+    if (host === "youtube.com" || host === "www.youtube.com" || host === "m.youtube.com") {
+      if (parsed.pathname === "/watch") {
+        return String(parsed.searchParams.get("v") || "").trim();
+      }
+      const shortsMatch = parsed.pathname.match(/^\/shorts\/([^/?#]+)/i);
+      if (shortsMatch?.[1]) {
+        return String(shortsMatch[1]).trim();
+      }
+      const embedMatch = parsed.pathname.match(/^\/embed\/([^/?#]+)/i);
+      if (embedMatch?.[1]) {
+        return String(embedMatch[1]).trim();
+      }
+    }
+  } catch (_) {
+    return "";
+  }
+
+  return "";
+}
+
+function getYoutubePlaybackUrl(rawUrl) {
+  const normalized = normalizeYoutubeUrl(rawUrl);
+  if (!normalized) {
+    return "";
+  }
+  const videoId = extractYoutubeVideoId(normalized);
+  if (!videoId) {
+    return normalized;
+  }
+  return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0`;
+}
+
 function buildYoutubeVideosFolderFromLinks(youtubeLinks = []) {
   const links = Array.isArray(youtubeLinks) ? youtubeLinks : [];
   const media = links
@@ -493,9 +537,8 @@ function buildYoutubeVideosFolderFromLinks(youtubeLinks = []) {
 }
 
 function mergeYoutubeVideosFolder(folders, options = {}) {
-  const includeYoutubeVideosFolder = Boolean(options?.includeYoutubeVideosFolder);
   const youtubeLinks = Array.isArray(options?.youtubeLinks) ? options.youtubeLinks : [];
-  if (!includeYoutubeVideosFolder || !youtubeLinks.length) {
+  if (!youtubeLinks.length) {
     return orderFoldersForTabs(folders);
   }
 
@@ -2177,7 +2220,18 @@ function renderGallery(photoItems, options = {}) {
       if (hasPublicPageLikes() && !isVideoMedia(photo)) {
         card.appendChild(renderPhotoLikeBadge(photo));
       }
-      card.addEventListener("click", () => openSlideshow(index));
+      card.addEventListener("click", () => {
+        if (String(photo?.mimeType || "").toLowerCase() === "video/youtube") {
+          const playbackUrl = getYoutubePlaybackUrl(photo?.webViewLink || photo?.slideshowUrl || photo?.url || "");
+          if (playbackUrl) {
+            window.open(playbackUrl, "_blank", "noopener,noreferrer");
+          } else {
+            setStatus("Could not open this YouTube video.", true);
+          }
+          return;
+        }
+        openSlideshow(index);
+      });
       card.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -2193,6 +2247,15 @@ function renderGallery(photoItems, options = {}) {
           moveGalleryFocus("down");
         } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
+          if (String(photo?.mimeType || "").toLowerCase() === "video/youtube") {
+            const playbackUrl = getYoutubePlaybackUrl(photo?.webViewLink || photo?.slideshowUrl || photo?.url || "");
+            if (playbackUrl) {
+              window.open(playbackUrl, "_blank", "noopener,noreferrer");
+            } else {
+              setStatus("Could not open this YouTube video.", true);
+            }
+            return;
+          }
           openSlideshow(index);
         }
       });
