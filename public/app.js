@@ -494,7 +494,8 @@ function getYoutubePlaybackUrl(rawUrl) {
   if (!videoId) {
     return normalized;
   }
-  return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0`;
+  // Use watch URL for reliable playback across domains (embed can fail with Error 153).
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
 function buildYoutubeVideosFolderFromLinks(youtubeLinks = []) {
