@@ -4341,6 +4341,51 @@ async function handleResolvePairingCode(req, res) {
     return;
   }
 
+  const pairingRecord = await getPairingCodeRecordById(code);
+  if (pairingRecord) {
+    const publicPageId =
+      String(pairingRecord.publicPageId || "").trim() ||
+      (pairingRecord.studioSlug && pairingRecord.pageSlug
+        ? `${String(pairingRecord.studioSlug).trim()}__${String(pairingRecord.pageSlug).trim()}`
+        : "");
+    const pageRecord = publicPageId ? await getPublicPageRecordById(publicPageId) : null;
+    const snapshot = pageRecord ? await getAlbumSnapshotForPublicPage(publicPageId, pageRecord) : null;
+    const folderUrl =
+      String(pageRecord?.driveLink || "").trim() ||
+      String(pairingRecord.url || "").trim() ||
+      String(pairingRecord.normalizedUrl || "").trim();
+    const publicPageUrl = buildPublicPageUrl(req, pageRecord, publicPageId);
+
+    if (snapshot?.folders?.length) {
+      sendJson(res, 200, {
+        code,
+        mode: "snapshot",
+        ready: true,
+        permanent: true,
+        source: "firestore",
+        publicPageUrl,
+        folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
+        folderUrl,
+        snapshot,
+      });
+      return;
+    }
+
+    if (folderUrl) {
+      sendJson(res, 200, {
+        code,
+        mode: "folder",
+        url: publicPageUrl || folderUrl,
+        publicPageUrl,
+        ready: true,
+        permanent: true,
+        source: publicPageUrl ? "firestore-public-page" : "firestore",
+        folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
+      });
+      return;
+    }
+  }
+
   const remoteEntry = await resolveRemoteLinkFromStore(code);
   if (remoteEntry?.url) {
     sendJson(res, 200, {
@@ -4351,54 +4396,6 @@ async function handleResolvePairingCode(req, res) {
       permanent: Boolean(remoteEntry.permanent),
       folderName: remoteEntry.folderName || "Google Drive folder",
       source: "remote",
-    });
-    return;
-  }
-
-  const pairingRecord = await getPairingCodeRecordById(code);
-  if (!pairingRecord) {
-    sendJson(res, 404, { error: "Code not found or it has expired. Generate a new code." });
-    return;
-  }
-
-  const publicPageId =
-    String(pairingRecord.publicPageId || "").trim() ||
-    (pairingRecord.studioSlug && pairingRecord.pageSlug
-      ? `${String(pairingRecord.studioSlug).trim()}__${String(pairingRecord.pageSlug).trim()}`
-      : "");
-  const pageRecord = publicPageId ? await getPublicPageRecordById(publicPageId) : null;
-  const snapshot = pageRecord ? await getAlbumSnapshotForPublicPage(publicPageId, pageRecord) : null;
-  const folderUrl =
-    String(pageRecord?.driveLink || "").trim() ||
-    String(pairingRecord.url || "").trim() ||
-    String(pairingRecord.normalizedUrl || "").trim();
-  const publicPageUrl = buildPublicPageUrl(req, pageRecord, publicPageId);
-
-  if (snapshot?.folders?.length) {
-    sendJson(res, 200, {
-      code,
-      mode: "snapshot",
-      ready: true,
-      permanent: true,
-      source: "firestore",
-      publicPageUrl,
-      folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
-      folderUrl,
-      snapshot,
-    });
-    return;
-  }
-
-  if (folderUrl) {
-    sendJson(res, 200, {
-      code,
-      mode: "folder",
-      url: publicPageUrl || folderUrl,
-      publicPageUrl,
-      ready: true,
-      permanent: true,
-      source: publicPageUrl ? "firestore-public-page" : "firestore",
-      folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
     });
     return;
   }
