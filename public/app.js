@@ -3025,6 +3025,7 @@ async function loadFolder(folderUrl, options = {}) {
       coverFileId: options.coverFileId,
       rootName: data.tree?.name || "",
       preservePath: options.preservePath,
+      youtubeLinks: options.youtubeLinks,
     });
     if (coverPhoto) {
       setLoadingState(true, "Loading your albums.", { progress: 62 });
@@ -3087,6 +3088,7 @@ async function loadSnapshot(snapshot, options = {}) {
     coverFileId: options.coverFileId,
     rootName: snapshot?.rootName || "",
     preservePath: options.preservePath,
+    youtubeLinks: options.youtubeLinks,
   });
   setLoadingState(true, "Opening your gallery preview.", { progress: 100 });
   await waitForGalleryVisualReady(3800);
@@ -3113,6 +3115,7 @@ async function revalidateFolder(folderUrl, options = {}) {
       coverFileId: options.coverFileId,
       rootName: data.tree?.name || "",
       preservePath: true,
+      youtubeLinks: options.youtubeLinks,
     });
 
     if (previousSelectedFolderId && currentFolders.some((folder) => folder.id === previousSelectedFolderId)) {
