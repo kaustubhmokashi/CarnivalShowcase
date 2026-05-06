@@ -1,9 +1,13 @@
 package com.carnivalshowcase.tv
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.content.ActivityNotFoundException
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -1424,6 +1428,7 @@ private fun YouTubePlayerScreen(
   state: DriveDeckUiState,
   onBack: () -> Unit,
 ) {
+  val context = LocalContext.current
   val youtubeUrl = state.youtubePlaybackUrl.trim()
   if (youtubeUrl.isBlank()) {
     return
@@ -1433,31 +1438,117 @@ private fun YouTubePlayerScreen(
     youtubeEmbedUrlFromRaw(youtubeUrl)
   }
   val targetUrl = if (embedUrl.isNotBlank()) embedUrl else youtubeUrl
+  var nativeLaunchFailed by remember(targetUrl) { mutableStateOf(false) }
+
+  LaunchedEffect(targetUrl) {
+    nativeLaunchFailed = false
+    val url = targetUrl.trim()
+    if (url.isBlank()) {
+      nativeLaunchFailed = true
+      return@LaunchedEffect
+    }
+
+    val specificIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+      setPackage("com.google.android.youtube.tv")
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    val opened = runCatching {
+      context.startActivity(specificIntent)
+      true
+    }.recoverCatching {
+      context.startActivity(genericIntent)
+      true
+    }.getOrElse { false }
+
+    if (opened) {
+      onBack()
+    } else {
+      nativeLaunchFailed = true
+    }
+  }
+  val embedHtml = remember(targetUrl) {
+    """
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>
+          html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+          iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+        </style>
+      </head>
+      <body>
+        <iframe
+          src="$targetUrl"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen
+          referrerpolicy="strict-origin-when-cross-origin">
+        </iframe>
+      </body>
+      </html>
+    """.trimIndent()
+  }
 
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(Color.Black)
   ) {
-    AndroidView(
-      factory = { context ->
-        WebView(context).apply {
-          webViewClient = WebViewClient()
-          webChromeClient = WebChromeClient()
-          settings.javaScriptEnabled = true
-          settings.domStorageEnabled = true
-          settings.mediaPlaybackRequiresUserGesture = false
-          settings.cacheMode = WebSettings.LOAD_DEFAULT
-          loadUrl(targetUrl)
-        }
-      },
-      update = { webView ->
-        if (webView.url != targetUrl) {
-          webView.loadUrl(targetUrl)
-        }
-      },
-      modifier = Modifier.fillMaxSize()
-    )
+    if (nativeLaunchFailed) {
+      AndroidView(
+        factory = { context ->
+          WebView(context).apply {
+            webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
+            settings.javaScriptEnabled = true
+            settings.javaScriptCanOpenWindowsAutomatically = true
+            settings.loadsImagesAutomatically = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.userAgentString =
+              "Mozilla/5.0 (Linux; Android 13; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            loadDataWithBaseURL(
+              "https://www.youtube.com",
+              embedHtml,
+              "text/html",
+              "utf-8",
+              null
+            )
+          }
+        },
+        update = { webView ->
+          if (webView.url.isNullOrBlank()) {
+            webView.loadDataWithBaseURL(
+              "https://www.youtube.com",
+              embedHtml,
+              "text/html",
+              "utf-8",
+              null
+            )
+          }
+        },
+        modifier = Modifier.fillMaxSize()
+      )
+    } else {
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+      ) {
+        Text("Opening YouTube…", color = Color.White)
+      }
+    }
 
     Box(
       modifier = Modifier
