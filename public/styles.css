@@ -456,11 +456,19 @@ label:focus-within {
 .home-legal-links a {
   color: rgba(0, 0, 0, 0.46);
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-decoration: underline;
-  text-underline-offset: 0.26em;
+  text-decoration: none;
+}
+
+.home-legal-links a + a::before {
+  content: "|";
+  color: rgba(0, 0, 0, 0.46);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  margin-right: var(--space-1);
 }
 
 .link-form {
