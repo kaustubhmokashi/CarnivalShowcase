@@ -64,7 +64,6 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PresentToAll
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
@@ -596,7 +595,11 @@ private fun FolderGridScreen(
     onBack = onBack,
     topAction = {
       FocusableIconAction(onClick = onOpenPresentation) {
-        Icon(Icons.Default.PresentToAll, contentDescription = "Open presentation", tint = TextPrimary)
+        Icon(
+          painter = painterResource(id = R.drawable.ic_present),
+          contentDescription = "Open presentation",
+          tint = TextPrimary
+        )
       }
     }
   ) { padding ->
@@ -656,7 +659,11 @@ private fun GalleryScreen(
     topAction = {
       Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         FocusableIconAction(onClick = onOpenPresentation) {
-          Icon(Icons.Default.PresentToAll, contentDescription = "Open presentation", tint = TextPrimary)
+          Icon(
+            painter = painterResource(id = R.drawable.ic_present),
+            contentDescription = "Open presentation",
+            tint = TextPrimary
+          )
         }
         FocusableIconAction(onClick = onToggleSettings) {
           Icon(Icons.Default.Settings, contentDescription = "Open settings", tint = TextPrimary)
@@ -1210,7 +1217,8 @@ private fun EventPresentationSurface(
 ) {
   val backgroundUrl = state.presentationBackgroundUrl.trim()
   val overlayColor = if (state.isAlbumPresentationMode) {
-    AppBackground.copy(alpha = 0.8f)
+    val parsedOverlay = parseHexColorOrNull(state.albumPresentationOverlayColor)
+    (parsedOverlay ?: if (state.isTemporaryAlbumPresentationMode) Color.White else AppBackground).copy(alpha = 0.8f)
   } else {
     Color(0x66000000)
   }
@@ -1237,13 +1245,6 @@ private fun EventPresentationSurface(
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
-    // Immediate fallback background to avoid delayed appearance on slow networks.
-    AsyncImage(
-      model = if (backgroundUrl.isNotBlank()) backgroundUrl else displayedSlide.thumbnailUrl,
-      contentDescription = null,
-      contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxSize()
-    )
     if (backgroundUrl.isNotBlank()) {
       AsyncImage(
         model = backgroundUrl,
@@ -1255,6 +1256,12 @@ private fun EventPresentationSurface(
         modifier = Modifier
           .fillMaxSize()
           .background(overlayColor)
+      )
+    } else {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Black)
       )
     }
 
@@ -1295,15 +1302,8 @@ private fun EventPresentationSurface(
         ) + fadeIn(
           animationSpec = tween(280)
         )
-        val exit = slideOutHorizontally(
-          animationSpec = tween(740),
-          targetOffsetX = { fullWidth -> transition.outX(fullWidth) }
-        ) + slideOutVertically(
-          animationSpec = tween(740),
-          targetOffsetY = { fullHeight -> transition.outY(fullHeight) }
-        ) + fadeOut(
-          animationSpec = tween(280)
-        )
+        // Keep exit visually clean so old cards don't peek from under the new card.
+        val exit = fadeOut(animationSpec = tween(180))
         enter togetherWith exit using SizeTransform(clip = false)
       }
     ) { targetSlide ->
@@ -1311,6 +1311,9 @@ private fun EventPresentationSurface(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
       ) {
+        val borderWidth = 10.dp
+        val outerRadius = 16.dp
+        val innerRadius = (outerRadius - borderWidth).coerceAtLeast(0.dp)
         val maxCardWidth = maxWidth * 0.8f
         val maxCardHeight = maxHeight * 0.8f
 
@@ -1326,18 +1329,18 @@ private fun EventPresentationSurface(
             .width(cardWidth)
             .height(cardHeight)
             .graphicsLayer { rotationZ = rotation }
-            .shadow(elevation = 26.dp, shape = RoundedCornerShape(12.dp), clip = false)
-            .clip(RoundedCornerShape(12.dp))
+            .shadow(elevation = 26.dp, shape = RoundedCornerShape(outerRadius), clip = false)
+            .clip(RoundedCornerShape(outerRadius))
             .background(Color.White)
-            .padding(12.dp)
+            .padding(borderWidth)
         ) {
           SubcomposeAsyncImage(
             model = targetSlide.slideshowUrl.ifBlank { targetSlide.fullUrl },
             contentDescription = targetSlide.name,
-            contentScale = ContentScale.Fit,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
               .fillMaxSize()
-              .clip(RoundedCornerShape(12.dp))
+              .clip(RoundedCornerShape(innerRadius))
           ) {
             val imageState = painter.state
             LaunchedEffect(targetSlide.id, imageState) {
@@ -1438,9 +1441,14 @@ private fun YouTubePlayerScreen(
     youtubeEmbedUrlFromRaw(youtubeUrl)
   }
   val targetUrl = if (embedUrl.isNotBlank()) embedUrl else youtubeUrl
+  var showLaunchPrompt by remember(targetUrl) { mutableStateOf(true) }
+  var launchRequestCount by remember(targetUrl) { mutableIntStateOf(0) }
   var nativeLaunchFailed by remember(targetUrl) { mutableStateOf(false) }
 
-  LaunchedEffect(targetUrl) {
+  LaunchedEffect(targetUrl, launchRequestCount) {
+    if (launchRequestCount <= 0) {
+      return@LaunchedEffect
+    }
     nativeLaunchFailed = false
     val url = targetUrl.trim()
     if (url.isBlank()) {
@@ -1500,7 +1508,65 @@ private fun YouTubePlayerScreen(
       .fillMaxSize()
       .background(Color.Black)
   ) {
-    if (nativeLaunchFailed) {
+    if (showLaunchPrompt) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color(0xCC000000)),
+        contentAlignment = Alignment.Center
+      ) {
+        Column(
+          modifier = Modifier
+            .width(760.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xEE111111))
+            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(18.dp))
+            .padding(28.dp),
+          verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+          Text(
+            text = "This video will open in YouTube app, continue?",
+            color = Color.White,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            FocusablePrimaryButton(
+              modifier = Modifier.width(180.dp),
+              onClick = {
+                showLaunchPrompt = false
+                launchRequestCount += 1
+              },
+              sharpCorners = true
+            ) {
+              Text("Yes", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            FocusableSurface(
+              modifier = Modifier
+                .height(58.dp)
+                .width(180.dp),
+              onClick = {
+                showLaunchPrompt = false
+                nativeLaunchFailed = true
+              },
+              focusedBorderColor = Color.White,
+              shape = RoundedCornerShape(0.dp),
+              focusedShadow = true
+            ) {
+              Box(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .background(Color.Transparent)
+                  .border(1.dp, Color.White),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("No", color = Color.White, fontWeight = FontWeight.SemiBold)
+              }
+            }
+          }
+        }
+      }
+    } else if (nativeLaunchFailed) {
       AndroidView(
         factory = { context ->
           WebView(context).apply {
@@ -2454,6 +2520,36 @@ private fun ContentScaffold(
 
 private fun Modifier.widthClamped() = this.then(Modifier.fillMaxWidth(0.32f))
 
+private fun resolvePresentationCoverBackground(
+  folders: List<FolderSummary>,
+  explicitCover: String,
+): String {
+  val explicit = explicitCover.trim()
+  if (explicit.isNotBlank()) return explicit
+  return folders
+    .asSequence()
+    .flatMap { it.images.asSequence() }
+    .filterNot { it.isVideo }
+    .mapNotNull { image ->
+      val primary = image.slideshowUrl.trim()
+      if (primary.isNotBlank()) {
+        primary
+      } else {
+        image.fullUrl.trim().ifBlank { null }
+      }
+    }
+    .firstOrNull()
+    .orEmpty()
+}
+
+private fun parseHexColorOrNull(value: String): Color? {
+  val trimmed = value.trim()
+  if (trimmed.isBlank()) return null
+  return runCatching {
+    Color(android.graphics.Color.parseColor(trimmed))
+  }.getOrNull()
+}
+
 private const val QR_BITMAP_SIZE = 360
 
 private fun generateQrBitmap(content: String): Bitmap? {
@@ -2508,6 +2604,8 @@ data class DriveDeckUiState(
   val isEventPresentationMode: Boolean = false,
   val isAlbumPresentationMode: Boolean = false,
   val albumPresentationBackgroundUrl: String = "",
+  val albumPresentationOverlayColor: String = "",
+  val isTemporaryAlbumPresentationMode: Boolean = false,
   val albumPresentationReturnScreen: TvScreen = TvScreen.Gallery,
   val eventPresentationTitle: String = "",
   val eventPresentationSlug: String = "",
@@ -2646,17 +2744,27 @@ class DriveDeckViewModel(
             statusTone = StatusTone.Neutral,
             folders = folders,
             selectedFolder = selectedFolder,
-            albumCoverBackgroundUrl = resolution.coverBackgroundUrl,
+            albumCoverBackgroundUrl = resolvePresentationCoverBackground(
+              folders = folders,
+              explicitCover = resolution.coverBackgroundUrl
+            ),
             images = selectedFolder?.images.orEmpty(),
             screen = nextScreen,
             gallerySettingsVisible = false
+          )
+          uiState = uiState.copy(
+            albumPresentationOverlayColor = resolution.studioBackgroundColor,
+            isTemporaryAlbumPresentationMode = false
           )
           return
         }
 
         val fallbackUrl = resolution.folderUrl.trim()
         if (fallbackUrl.isNotBlank()) {
-          loadFolder(fallbackUrl)
+          loadFolder(
+            folderUrl = fallbackUrl,
+            isTemporary = false
+          )
           return
         }
 
@@ -2667,7 +2775,10 @@ class DriveDeckViewModel(
         )
       }
 
-      is PairingResolution.Folder -> loadFolder(resolution.url)
+      is PairingResolution.Folder -> loadFolder(
+        folderUrl = resolution.url,
+        isTemporary = !resolution.isPermanent
+      )
       is PairingResolution.EventPresentation -> {
         // Some resolve responses can miss background URL; hydrate once from public event API
         // so the presentation background appears immediately.
@@ -2711,6 +2822,8 @@ class DriveDeckViewModel(
       isEventPresentationMode = true,
       isAlbumPresentationMode = false,
       albumPresentationBackgroundUrl = "",
+      albumPresentationOverlayColor = "",
+      isTemporaryAlbumPresentationMode = false,
       eventPresentationTitle = resolution.name,
       eventPresentationSlug = resolution.slug,
       eventPresentationBackgroundUrl = resolution.backgroundUrl
@@ -2734,11 +2847,17 @@ class DriveDeckViewModel(
     }
 
     viewModelScope.launch {
-      loadFolder(folderUrl)
+      loadFolder(
+        folderUrl = folderUrl,
+        isTemporary = true
+      )
     }
   }
 
-  private suspend fun loadFolder(folderUrl: String) {
+  private suspend fun loadFolder(
+    folderUrl: String,
+    isTemporary: Boolean = false,
+  ) {
     stopEventPresentationRefresh()
     uiState = uiState.copy(
       isLoading = true,
@@ -2767,7 +2886,12 @@ class DriveDeckViewModel(
         statusTone = StatusTone.Neutral,
         folders = folders,
         selectedFolder = selectedFolder,
-        albumCoverBackgroundUrl = "",
+        albumCoverBackgroundUrl = resolvePresentationCoverBackground(
+          folders = folders,
+          explicitCover = ""
+        ),
+        albumPresentationOverlayColor = if (isTemporary) "#FFFFFF" else "",
+        isTemporaryAlbumPresentationMode = isTemporary,
         images = selectedFolder?.images.orEmpty(),
         screen = nextScreen,
         gallerySettingsVisible = false,
@@ -2819,11 +2943,13 @@ class DriveDeckViewModel(
           youtubePlaybackTitle = target.name,
           autoplayEnabled = false,
           slideshowChromeVisible = true,
-          slideshowSettingsVisible = false,
-          inlineVideoPlaybackApprovedId = null,
-          videoPlayerPromptDismissedId = target.id,
-          isAlbumPresentationMode = false,
-          albumPresentationBackgroundUrl = "",
+      slideshowSettingsVisible = false,
+      inlineVideoPlaybackApprovedId = null,
+      videoPlayerPromptDismissedId = target.id,
+      isAlbumPresentationMode = false,
+      albumPresentationBackgroundUrl = "",
+      albumPresentationOverlayColor = "",
+      isTemporaryAlbumPresentationMode = false,
         )
       }
       return
@@ -2838,6 +2964,8 @@ class DriveDeckViewModel(
       videoPlayerPromptDismissedId = null,
       isAlbumPresentationMode = false,
       albumPresentationBackgroundUrl = "",
+      albumPresentationOverlayColor = "",
+      isTemporaryAlbumPresentationMode = false,
     )
   }
 
@@ -2856,7 +2984,10 @@ class DriveDeckViewModel(
       return
     }
 
-    val backgroundUrl = uiState.albumCoverBackgroundUrl.trim()
+    val backgroundUrl = resolvePresentationCoverBackground(
+      folders = uiState.folders,
+      explicitCover = uiState.albumCoverBackgroundUrl
+    )
 
     uiState = uiState.copy(
       images = pool.shuffled(),
@@ -2874,6 +3005,8 @@ class DriveDeckViewModel(
       eventPresentationBackgroundUrl = "",
       isAlbumPresentationMode = true,
       albumPresentationBackgroundUrl = backgroundUrl,
+      albumPresentationOverlayColor = uiState.albumPresentationOverlayColor,
+      isTemporaryAlbumPresentationMode = uiState.isTemporaryAlbumPresentationMode,
       albumPresentationReturnScreen = uiState.screen,
       status = "",
       statusTone = StatusTone.Neutral
@@ -3249,11 +3382,15 @@ data class PhotoAsset(
 }
 
 sealed interface PairingResolution {
-  data class Folder(val url: String) : PairingResolution
+  data class Folder(
+    val url: String,
+    val isPermanent: Boolean = false,
+  ) : PairingResolution
   data class Snapshot(
     val snapshot: AlbumSnapshotPayload,
     val folderUrl: String = "",
     val coverBackgroundUrl: String = "",
+    val studioBackgroundColor: String = "",
   ) : PairingResolution
   data class EventPresentation(
     val name: String,
@@ -3311,11 +3448,15 @@ class DriveDeckRepository(
           PairingResolution.Snapshot(
             snapshot = parsed.snapshot,
             folderUrl = parsed.folderUrl.orEmpty(),
-            coverBackgroundUrl = resolveSnapshotCoverBackground(parsed.snapshot)
+            coverBackgroundUrl = resolveSnapshotCoverBackground(parsed.snapshot),
+            studioBackgroundColor = parsed.pageBackgroundColor.orEmpty().trim(),
           )
         }
 
-        !parsed.url.isNullOrBlank() -> PairingResolution.Folder(parsed.url)
+        !parsed.url.isNullOrBlank() -> PairingResolution.Folder(
+          url = parsed.url,
+          isPermanent = parsed.permanent
+        )
         else -> error("This code has no Drive link yet.")
       }
     }
@@ -3499,6 +3640,7 @@ data class PairingResolveResponse(
   val eventName: String? = null,
   val eventPhotos: List<EventPhotoPayload>? = null,
   val eventBackgroundUrl: String? = null,
+  val pageBackgroundColor: String? = null,
 )
 
 @Serializable
