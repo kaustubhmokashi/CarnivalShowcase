@@ -91,11 +91,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1329,43 +1332,64 @@ private fun EventPresentationSurface(
             .width(cardWidth)
             .height(cardHeight)
             .graphicsLayer { rotationZ = rotation }
-            .shadow(elevation = 26.dp, shape = RoundedCornerShape(outerRadius), clip = false)
-            .clip(RoundedCornerShape(outerRadius))
-            .background(Color.White)
-            .padding(borderWidth)
-        ) {
-          SubcomposeAsyncImage(
-            model = targetSlide.slideshowUrl.ifBlank { targetSlide.fullUrl },
-            contentDescription = targetSlide.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-              .fillMaxSize()
-              .clip(RoundedCornerShape(innerRadius))
-          ) {
-            val imageState = painter.state
-            LaunchedEffect(targetSlide.id, imageState) {
-              onSlideReady(imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error)
-              if (imageState is AsyncImagePainter.State.Success) {
-                val intrinsic = painter.intrinsicSize
-                val w = intrinsic.width
-                val h = intrinsic.height
-                if (w > 0f && h > 0f) {
-                  displayedAspectRatio = (w / h).coerceIn(0.3f, 3.5f)
-                }
+            .drawBehind {
+              val radiusPx = outerRadius.toPx()
+              val shadowYOffset = 12.dp.toPx()
+              val shadowLayers = listOf(
+                Triple(8.dp.toPx(), 0.10f, 0.dp.toPx()),
+                Triple(18.dp.toPx(), 0.07f, 4.dp.toPx()),
+                Triple(32.dp.toPx(), 0.04f, 10.dp.toPx())
+              )
+              shadowLayers.forEach { (spread, alpha, extraYOffset) ->
+                drawRoundRect(
+                  color = Color.Black.copy(alpha = alpha),
+                  topLeft = Offset(-spread / 2f, shadowYOffset + extraYOffset - spread / 2f),
+                  size = Size(size.width + spread, size.height + spread),
+                  cornerRadius = CornerRadius(radiusPx + spread / 2f, radiusPx + spread / 2f)
+                )
               }
             }
-            if (imageState is AsyncImagePainter.State.Success) {
-              SubcomposeAsyncImageContent()
-            } else {
-              Box(modifier = Modifier.fillMaxSize()) {
-                CircularProgressIndicator(
-                  modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(18.dp)
-                    .size(20.dp),
-                  color = Color.White,
-                  strokeWidth = 2.dp
-                )
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .clip(RoundedCornerShape(outerRadius))
+              .background(Color.White)
+              .padding(borderWidth)
+          ) {
+            SubcomposeAsyncImage(
+              model = targetSlide.slideshowUrl.ifBlank { targetSlide.fullUrl },
+              contentDescription = targetSlide.name,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(innerRadius))
+            ) {
+              val imageState = painter.state
+              LaunchedEffect(targetSlide.id, imageState) {
+                onSlideReady(imageState is AsyncImagePainter.State.Success || imageState is AsyncImagePainter.State.Error)
+                if (imageState is AsyncImagePainter.State.Success) {
+                  val intrinsic = painter.intrinsicSize
+                  val w = intrinsic.width
+                  val h = intrinsic.height
+                  if (w > 0f && h > 0f) {
+                    displayedAspectRatio = (w / h).coerceIn(0.3f, 3.5f)
+                  }
+                }
+              }
+              if (imageState is AsyncImagePainter.State.Success) {
+                SubcomposeAsyncImageContent()
+              } else {
+                Box(modifier = Modifier.fillMaxSize()) {
+                  CircularProgressIndicator(
+                    modifier = Modifier
+                      .align(Alignment.BottomEnd)
+                      .padding(18.dp)
+                      .size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                  )
+                }
               }
             }
           }
