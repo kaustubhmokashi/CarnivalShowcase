@@ -91,14 +91,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1332,23 +1328,6 @@ private fun EventPresentationSurface(
             .width(cardWidth)
             .height(cardHeight)
             .graphicsLayer { rotationZ = rotation }
-            .drawBehind {
-              val radiusPx = outerRadius.toPx()
-              val shadowYOffset = 12.dp.toPx()
-              val shadowLayers = listOf(
-                Triple(8.dp.toPx(), 0.10f, 0.dp.toPx()),
-                Triple(18.dp.toPx(), 0.07f, 4.dp.toPx()),
-                Triple(32.dp.toPx(), 0.04f, 10.dp.toPx())
-              )
-              shadowLayers.forEach { (spread, alpha, extraYOffset) ->
-                drawRoundRect(
-                  color = Color.Black.copy(alpha = alpha),
-                  topLeft = Offset(-spread / 2f, shadowYOffset + extraYOffset - spread / 2f),
-                  size = Size(size.width + spread, size.height + spread),
-                  cornerRadius = CornerRadius(radiusPx + spread / 2f, radiusPx + spread / 2f)
-                )
-              }
-            }
         ) {
           Box(
             modifier = Modifier
