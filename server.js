@@ -4366,6 +4366,7 @@ async function handleResolvePairingCode(req, res) {
         publicPageUrl,
         folderName: String(pairingRecord.folderName || pageRecord?.pageName || "Google Drive folder"),
         folderUrl,
+        pageBackgroundColor: String(pageRecord?.branding?.backgroundColor || "").trim(),
         snapshot,
       });
       return;

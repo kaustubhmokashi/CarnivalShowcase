@@ -2,18 +2,26 @@ package com.carnivalshowcase.tv
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import android.os.Message
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.content.ActivityNotFoundException
 import android.webkit.CookieManager
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContent
@@ -146,6 +154,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.UnknownHostException
+import java.util.Locale
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -199,8 +208,11 @@ private val AppTypography = Typography().run {
 }
 
 class MainActivity : ComponentActivity() {
+  private var mobileDeepLinkTarget by mutableStateOf<String?>(null)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    mobileDeepLinkTarget = getMobileDeepLinkTarget(intent)
 
     val repository = DriveDeckRepository(
       baseUrl = BuildConfig.CARNIVAL_SHOWCASE_BASE_URL,
@@ -220,17 +232,32 @@ class MainActivity : ComponentActivity() {
           color = AppBackground
         ) {
           val viewModel: DriveDeckViewModel = viewModel(factory = factory)
-          DriveDeckApp(viewModel)
+          DriveDeckApp(
+            viewModel = viewModel,
+            mobileDeepLinkTarget = mobileDeepLinkTarget,
+            onMobileDeepLinkConsumed = { mobileDeepLinkTarget = null },
+          )
         }
       }
     }
   }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    mobileDeepLinkTarget = getMobileDeepLinkTarget(intent)
+  }
 }
 
 @Composable
-private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
+private fun DriveDeckApp(
+  viewModel: DriveDeckViewModel,
+  mobileDeepLinkTarget: String? = null,
+  onMobileDeepLinkConsumed: () -> Unit = {},
+) {
   var showSplash by remember { mutableStateOf(true) }
   val state = viewModel.uiState
+  val isTelevision = isTelevisionDevice()
 
   LaunchedEffect(Unit) {
     delay(6000)
@@ -238,7 +265,18 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
   }
 
   if (showSplash) {
-    SplashScreen()
+    SplashScreen(
+      widthFraction = if (isTelevision) 0.34f else 0.90f
+    )
+    return
+  }
+
+  if (!isTelevision) {
+    MobileWebApp(
+      startUrl = BuildConfig.CARNIVAL_SHOWCASE_BASE_URL,
+      deepLinkTarget = mobileDeepLinkTarget,
+      onDeepLinkConsumed = onMobileDeepLinkConsumed,
+    )
     return
   }
 
@@ -307,7 +345,581 @@ private fun DriveDeckApp(viewModel: DriveDeckViewModel) {
 }
 
 @Composable
-private fun SplashScreen() {
+private fun isTelevisionDevice(): Boolean {
+  val configuration = LocalContext.current.resources.configuration
+  return configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+}
+
+@Composable
+private fun MobileWebApp(
+  startUrl: String,
+  deepLinkTarget: String? = null,
+  onDeepLinkConsumed: () -> Unit = {},
+) {
+  val initialUrl = remember(startUrl) {
+    startUrl.trim().ifBlank { "https://carnivalshowcase.kaustubhmokashi.com" }
+  }
+  val initialUrlWithCacheBust = remember(initialUrl) {
+    val suffix = String.format(Locale.US, "%d-%d", BuildConfig.VERSION_CODE, System.currentTimeMillis())
+    appendQueryParam(initialUrl, "v", suffix)
+  }
+  var webView by remember { mutableStateOf<WebView?>(null) }
+  var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+  val filePickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.StartActivityForResult()
+  ) { result ->
+    val callback = pendingFileCallback
+    pendingFileCallback = null
+    callback?.onReceiveValue(
+      WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+    )
+  }
+
+  BackHandler(enabled = webView != null) {
+    val activeWebView = webView ?: return@BackHandler
+    if (activeWebView.canGoBack()) {
+      activeWebView.goBack()
+      return@BackHandler
+    }
+    activeWebView.evaluateJavascript(
+      "(function(){return (window.history && window.history.length > 1) ? '1' : '0';})();"
+    ) { result ->
+      val hasJsHistory = result == "\"1\"" || result == "1" || result == "true"
+      when {
+        hasJsHistory -> activeWebView.evaluateJavascript("history.back();", null)
+        !isSameWebRoute(activeWebView.url, initialUrlWithCacheBust) ->
+          activeWebView.loadUrl(initialUrlWithCacheBust)
+        else -> {
+          // Keep the user on home instead of finishing the Activity.
+        }
+      }
+    }
+  }
+
+  LaunchedEffect(deepLinkTarget, webView) {
+    val target = deepLinkTarget?.trim().orEmpty()
+    val targetView = webView
+    if (target.isNotBlank() && targetView != null) {
+      targetView.loadUrl(resolveMobileWebUrl(initialUrl, target))
+      onDeepLinkConsumed()
+    }
+  }
+
+  AndroidView(
+    factory = { viewContext ->
+      WebView(viewContext).apply {
+        webView = this
+        webViewClient = object : WebViewClient() {
+          override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            injectMobileWebDebugPanel(view, "onPageStarted", "url=${url.orEmpty()}")
+          }
+
+          override fun onPageCommitVisible(view: WebView?, url: String?) {
+            super.onPageCommitVisible(view, url)
+            injectHomeScreenHeightGuard(view)
+            injectMobileWebDebugPanel(view, "onPageCommitVisible", "url=${url.orEmpty()}")
+          }
+
+          override fun shouldOverrideUrlLoading(
+            view: WebView?,
+            request: WebResourceRequest?
+          ): Boolean {
+            val url = request?.url?.toString().orEmpty()
+            return handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, url)
+          }
+
+          @Deprecated("Deprecated in Android API 24")
+          override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+            return handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, url.orEmpty())
+          }
+
+          override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?
+          ) {
+            super.onReceivedError(view, request, error)
+            if (request?.isForMainFrame == true) {
+              injectMobileWebDebugPanel(
+                view,
+                "onReceivedError",
+                "code=${error?.errorCode ?: -1} desc=${error?.description?.toString().orEmpty()}"
+              )
+            }
+          }
+
+          override fun onReceivedHttpError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            errorResponse: WebResourceResponse?
+          ) {
+            super.onReceivedHttpError(view, request, errorResponse)
+            if (request?.isForMainFrame == true) {
+              injectMobileWebDebugPanel(
+                view,
+                "onReceivedHttpError",
+                "status=${errorResponse?.statusCode ?: -1} reason=${errorResponse?.reasonPhrase.orEmpty()}"
+              )
+            }
+          }
+
+          override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            injectHomeScreenHeightGuard(view)
+            injectGalleryCoverRecovery(view)
+            injectMobileWebDebugPanel(view, "onPageFinished", "url=${url.orEmpty()}")
+          }
+        }
+        webChromeClient = object : WebChromeClient() {
+          override fun onProgressChanged(view: WebView?, newProgress: Int) {
+            super.onProgressChanged(view, newProgress)
+            if (newProgress >= 50) {
+              injectHomeScreenHeightGuard(view)
+              injectGalleryCoverRecovery(view)
+            }
+            injectMobileWebDebugPanel(view, "onProgress", "progress=$newProgress")
+          }
+
+          override fun onCreateWindow(
+            view: WebView?,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: Message?
+          ): Boolean {
+            val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+            val popupWebView = WebView(viewContext).apply {
+              settings.javaScriptEnabled = true
+              settings.domStorageEnabled = true
+              settings.javaScriptCanOpenWindowsAutomatically = true
+              webViewClient = object : WebViewClient() {
+                private fun forwardToMain(url: String?): Boolean {
+                  val resolvedUrl = url.orEmpty()
+                  if (resolvedUrl.isBlank()) {
+                    return false
+                  }
+                  val hostWebView = webView
+                  if (hostWebView != null) {
+                    if (!handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, resolvedUrl)) {
+                      hostWebView.loadUrl(resolvedUrl)
+                    }
+                  }
+                  runCatching { destroy() }
+                  return true
+                }
+
+                override fun shouldOverrideUrlLoading(
+                  view: WebView?,
+                  request: WebResourceRequest?
+                ): Boolean = forwardToMain(request?.url?.toString())
+
+                @Deprecated("Deprecated in Android API 24")
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+                  forwardToMain(url)
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                  super.onPageStarted(view, url, favicon)
+                  forwardToMain(url)
+                }
+              }
+            }
+            transport.webView = popupWebView
+            resultMsg.sendToTarget()
+            return true
+          }
+
+          override fun onShowFileChooser(
+            view: WebView?,
+            filePathCallback: ValueCallback<Array<Uri>>?,
+            fileChooserParams: WebChromeClient.FileChooserParams?
+          ): Boolean {
+            pendingFileCallback?.onReceiveValue(null)
+            pendingFileCallback = filePathCallback
+            val chooserIntent = runCatching {
+              fileChooserParams?.createIntent()
+            }.getOrNull() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+              addCategory(Intent.CATEGORY_OPENABLE)
+              type = "image/*"
+              putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+
+            return runCatching {
+              filePickerLauncher.launch(chooserIntent)
+              true
+            }.getOrElse {
+              pendingFileCallback = null
+              filePathCallback?.onReceiveValue(null)
+              false
+            }
+          }
+        }
+        settings.javaScriptEnabled = true
+        settings.javaScriptCanOpenWindowsAutomatically = true
+        settings.loadsImagesAutomatically = true
+        settings.domStorageEnabled = true
+        settings.databaseEnabled = true
+        settings.mediaPlaybackRequiresUserGesture = false
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = true
+        settings.setSupportMultipleWindows(true)
+        settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+        settings.textZoom = 100
+        settings.setSupportZoom(false)
+        settings.builtInZoomControls = false
+        settings.displayZoomControls = false
+        settings.allowFileAccess = true
+        settings.allowContentAccess = true
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        settings.userAgentString = buildBrowserParityUserAgent(settings.userAgentString)
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+        clearCache(true)
+        clearHistory()
+        setInitialScale(1)
+        loadUrl(initialUrlWithCacheBust)
+      }
+    },
+    update = { view ->
+      webView = view
+      if (view.url.isNullOrBlank()) {
+        view.loadUrl(initialUrlWithCacheBust)
+      }
+    },
+    modifier = Modifier
+      .fillMaxSize()
+      .background(AppBackground)
+  )
+
+  DisposableEffect(Unit) {
+    onDispose {
+      pendingFileCallback?.onReceiveValue(null)
+      pendingFileCallback = null
+      webView = null
+    }
+  }
+}
+
+private fun appendQueryParam(rawUrl: String, key: String, value: String): String {
+  val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return rawUrl
+  if (uri.getQueryParameter(key) == value) return rawUrl
+  return uri.buildUpon()
+    .appendQueryParameter(key, value)
+    .build()
+    .toString()
+}
+
+private fun isSameWebRoute(currentUrl: String?, targetUrl: String): Boolean {
+  val current = runCatching { Uri.parse(currentUrl.orEmpty()) }.getOrNull() ?: return false
+  val target = runCatching { Uri.parse(targetUrl) }.getOrNull() ?: return false
+  val currentHost = current.host.orEmpty().lowercase()
+  val targetHost = target.host.orEmpty().lowercase()
+  if (currentHost != targetHost) return false
+  val currentPath = current.path.orEmpty().ifBlank { "/" }.trimEnd('/').ifBlank { "/" }
+  val targetPath = target.path.orEmpty().ifBlank { "/" }.trimEnd('/').ifBlank { "/" }
+  return currentPath == targetPath
+}
+
+private fun jsQuoted(value: String): String =
+  "\"" + value
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r") + "\""
+
+private fun injectHomeScreenHeightGuard(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var direct = document.getElementById('screen-direct-link');
+      var appShell = document.querySelector('.app-shell');
+      if (!direct || !appShell) return;
+
+      var vh = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+        document.documentElement ? document.documentElement.clientHeight : 0
+      );
+      if (!vh) return;
+
+      var active = direct.classList.contains('active');
+      if (active) {
+        appShell.style.minHeight = vh + 'px';
+        direct.style.minHeight = vh + 'px';
+        direct.style.display = 'grid';
+        direct.style.gridTemplateRows = 'auto 1fr auto';
+      } else {
+        appShell.style.removeProperty('min-height');
+        direct.style.removeProperty('min-height');
+        direct.style.removeProperty('display');
+        direct.style.removeProperty('grid-template-rows');
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectGalleryCoverRecovery(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var gallery = document.getElementById('screen-gallery');
+      var cover = document.getElementById('cover-photo');
+      if (!gallery || !cover) return;
+      if (!gallery.classList.contains('active')) return;
+
+      var coverRect = cover.getBoundingClientRect();
+      if (coverRect.height > 40) return;
+
+      var vh = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+        document.documentElement ? document.documentElement.clientHeight : 0
+      );
+      if (vh > 0) {
+        cover.style.minHeight = vh + 'px';
+        cover.style.height = vh + 'px';
+      }
+
+      var existingCoverCard = cover.querySelector('.photo-card-cover img');
+      if (existingCoverCard) return;
+
+      var firstGridImage = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
+      var source = firstGridImage ? (firstGridImage.currentSrc || firstGridImage.src || '') : '';
+      if (!source) return;
+
+      cover.classList.add('has-cover-image');
+      cover.style.setProperty('--cover-image', 'url("' + source.replace(/"/g, '\\"') + '")');
+
+      var card = document.createElement('div');
+      card.className = 'photo-card photo-card-cover';
+      var img = document.createElement('img');
+      img.src = source;
+      img.alt = 'Cover photo';
+      card.appendChild(img);
+      cover.insertBefore(card, cover.firstChild);
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: String = "") {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var phase = ${jsQuoted(phase)};
+      var note = ${jsQuoted(note)};
+      function r(v){ return (typeof v === 'number' && isFinite(v)) ? Math.round(v) : v; }
+      function metric(sel) {
+        var el = null;
+        try { el = document.querySelector(sel); } catch (_) { el = null; }
+        if (!el) return sel + ':missing';
+        var cs = getComputedStyle(el);
+        var rect = el.getBoundingClientRect();
+        return sel + ': rect=' + r(rect.width) + 'x' + r(rect.height) +
+          ' off=' + el.offsetWidth + 'x' + el.offsetHeight +
+          ' pos=' + cs.position +
+          ' disp=' + cs.display +
+          ' h=' + cs.height +
+          ' minH=' + cs.minHeight +
+          ' ov=' + cs.overflow + '/' + cs.overflowY;
+      }
+      function inlineStyleLine(sel) {
+        var el = null;
+        try { el = document.querySelector(sel); } catch (_) { el = null; }
+        if (!el) return sel + '.style=missing';
+        return sel + '.style h=' + (el.style.height || 'na') + ' minH=' + (el.style.minHeight || 'na');
+      }
+      function flagLine() {
+        var cover = document.getElementById('cover-photo');
+        if (!cover) return 'coverRecovery=missing';
+        var hasNode = !!cover.querySelector('.photo-card-cover img');
+        return 'coverRecovery hasNode=' + hasNode + ' hasClass=' + cover.classList.contains('has-cover-image');
+      }
+      var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+      var now = new Date().toISOString().slice(11, 23);
+      state.logs.unshift(now + ' [' + phase + '] ' + note);
+      state.logs = state.logs.slice(0, 60);
+
+      var panel = document.getElementById('mobile-ui-debug-panel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'mobile-ui-debug-panel';
+        panel.style.position = 'fixed';
+        panel.style.left = '8px';
+        panel.style.right = '8px';
+        panel.style.bottom = '8px';
+        panel.style.height = '260px';
+        panel.style.zIndex = '2147483647';
+        panel.style.background = 'rgba(10, 12, 14, 0.93)';
+        panel.style.color = '#d2ffd2';
+        panel.style.border = '1px solid rgba(150, 255, 150, 0.28)';
+        panel.style.borderRadius = '10px';
+        panel.style.overflow = 'hidden';
+        panel.style.pointerEvents = 'none';
+
+        var title = document.createElement('div');
+        title.textContent = 'Mobile UI Debug';
+        title.style.padding = '8px 10px';
+        title.style.font = '600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace';
+        title.style.letterSpacing = '0.08em';
+        title.style.textTransform = 'uppercase';
+        title.style.borderBottom = '1px solid rgba(150, 255, 150, 0.22)';
+
+        var pre = document.createElement('pre');
+        pre.id = 'mobile-ui-debug-pre';
+        pre.style.margin = '0';
+        pre.style.padding = '8px 10px 10px';
+        pre.style.height = 'calc(100% - 34px)';
+        pre.style.overflow = 'auto';
+        pre.style.whiteSpace = 'pre';
+        pre.style.font = '11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace';
+        panel.appendChild(title);
+        panel.appendChild(pre);
+        document.body.appendChild(panel);
+      }
+
+      var vv = window.visualViewport;
+      var lines = [
+        now + ' [' + phase + ']',
+        'url=' + location.href,
+        'readyState=' + document.readyState + ' visibility=' + document.visibilityState,
+        'viewport inner=' + innerWidth + 'x' + innerHeight +
+          ' visual=' + (vv ? r(vv.width) + 'x' + r(vv.height) : 'na') +
+          ' scale=' + (vv ? vv.scale : 'na'),
+        'html c/s=' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight +
+          ' / ' + document.documentElement.scrollWidth + 'x' + document.documentElement.scrollHeight,
+        'body c/s=' + (document.body ? document.body.clientWidth : 'na') + 'x' + (document.body ? document.body.clientHeight : 'na') +
+          ' / ' + (document.body ? document.body.scrollWidth : 'na') + 'x' + (document.body ? document.body.scrollHeight : 'na'),
+        'nativeView w/h=' + ${target.width} + 'x' + ${target.height} +
+          ' measured=' + ${target.measuredWidth} + 'x' + ${target.measuredHeight} +
+          ' contentHeightPx=' + ${target.contentHeight} + ' scale=' + ${target.scale},
+        metric('.app-shell'),
+        metric('#screen-direct-link'),
+        metric('#screen-gallery'),
+        metric('#cover-photo'),
+        inlineStyleLine('#cover-photo'),
+        flagLine(),
+        metric('#slideshow'),
+        metric('.link-stage'),
+        metric('.home-footer'),
+        'note=' + note
+      ];
+
+      var preNode = document.getElementById('mobile-ui-debug-pre');
+      if (preNode) {
+        preNode.textContent = lines.join('\n') + '\n\nEvents\n' + state.logs.join('\n');
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun buildBrowserParityUserAgent(current: String?): String {
+  val fallback =
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+  val source = current.orEmpty().ifBlank { fallback }
+  return source
+    .replace("; wv", "", ignoreCase = true)
+    .replace(" wv", "", ignoreCase = true)
+    .replace("Version/4.0 ", "", ignoreCase = true)
+}
+
+private fun getMobileDeepLinkTarget(intent: Intent?): String? {
+  val data = intent?.data ?: return null
+  if (data.scheme != "carnivalstories" || data.host != "auth") {
+    return null
+  }
+  if (!data.path.orEmpty().startsWith("/callback")) {
+    return null
+  }
+  return data.getQueryParameter("returnTo")?.takeIf { it.isNotBlank() } ?: "/studio"
+}
+
+private fun handleMobileWebNavigation(context: Context, baseUrl: String, requestedUrl: String): Boolean {
+  if (requestedUrl.isBlank()) {
+    return false
+  }
+  val uri = runCatching { Uri.parse(requestedUrl) }.getOrNull() ?: return false
+  val scheme = uri.scheme.orEmpty().lowercase()
+  if (scheme == "carnivalstories") {
+    val target = getMobileDeepLinkTarget(Intent(Intent.ACTION_VIEW, uri)) ?: "/studio"
+    // If the web app ever lands on our app callback scheme inside WebView, consume it
+    // by letting Android route the deep link back to this Activity instead.
+    openExternalBrowser(context, "carnivalstories://auth/callback?returnTo=${urlEncode(target)}")
+    return true
+  }
+
+  if (shouldOpenOutsideMobileWebView(baseUrl, uri)) {
+    openExternalBrowser(context, getExternalStudioAuthUrl(baseUrl, uri))
+    return true
+  }
+
+  return false
+}
+
+private fun shouldOpenOutsideMobileWebView(baseUrl: String, uri: Uri): Boolean {
+  val host = uri.host.orEmpty().lowercase()
+  val path = uri.path.orEmpty()
+  if (host.contains("accounts.google.com") || host.contains("googleusercontent.com")) {
+    return true
+  }
+
+  val baseHost = runCatching { Uri.parse(baseUrl).host.orEmpty().lowercase() }.getOrDefault("")
+  if (host != baseHost) {
+    return false
+  }
+
+  return path == "/login" || path == "/studio" || path.startsWith("/studio/")
+}
+
+private fun getExternalStudioAuthUrl(baseUrl: String, uri: Uri): String {
+  val host = uri.host.orEmpty().lowercase()
+  if (host.contains("accounts.google.com") || host.contains("googleusercontent.com")) {
+    return uri.toString()
+  }
+
+  val normalizedBase = baseUrl.trim().trimEnd('/').ifBlank {
+    "https://carnivalshowcase.kaustubhmokashi.com"
+  }
+  val targetPath = uri.encodedPath?.takeIf { it.isNotBlank() } ?: "/studio"
+  val targetQuery = uri.encodedQuery?.let { "?$it" }.orEmpty()
+  val returnTo = if (targetPath == "/login") "/studio" else "$targetPath$targetQuery"
+  return Uri.parse("$normalizedBase/login").buildUpon()
+    .appendQueryParameter("source", "android")
+    .appendQueryParameter("returnTo", returnTo)
+    .build()
+    .toString()
+}
+
+private fun resolveMobileWebUrl(baseUrl: String, target: String): String {
+  val trimmedTarget = target.trim()
+  val targetUri = runCatching { Uri.parse(trimmedTarget) }.getOrNull()
+  if (targetUri?.scheme == "http" || targetUri?.scheme == "https") {
+    return trimmedTarget
+  }
+  val normalizedBase = baseUrl.trim().trimEnd('/').ifBlank {
+    "https://carnivalshowcase.kaustubhmokashi.com"
+  }
+  return "$normalizedBase/${trimmedTarget.trimStart('/')}"
+}
+
+private fun openExternalBrowser(context: Context, url: String) {
+  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+    addCategory(Intent.CATEGORY_BROWSABLE)
+  }
+  runCatching {
+    context.startActivity(intent)
+  }
+}
+
+private fun urlEncode(value: String): String =
+  URLEncoder.encode(value, "UTF-8")
+
+@Composable
+private fun SplashScreen(
+  widthFraction: Float
+) {
   val composition by rememberLottieComposition(
     LottieCompositionSpec.RawRes(R.raw.splash_screen_animation)
   )
@@ -326,7 +938,7 @@ private fun SplashScreen() {
       composition = composition,
       progress = { progress },
       modifier = Modifier
-        .fillMaxWidth(0.34f)
+        .fillMaxWidth(widthFraction)
     )
   }
 }

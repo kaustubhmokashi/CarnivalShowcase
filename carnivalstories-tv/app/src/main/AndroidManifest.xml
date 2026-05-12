@@ -3,7 +3,7 @@
 
   <uses-feature
     android:name="android.software.leanback"
-    android:required="true" />
+    android:required="false" />
   <uses-feature
     android:name="android.hardware.touchscreen"
     android:required="false" />
@@ -22,12 +22,20 @@
     android:usesCleartextTraffic="true">
     <activity
       android:name=".MainActivity"
-      android:exported="true"
-      android:screenOrientation="landscape">
+      android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
         <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data
+          android:host="auth"
+          android:pathPrefix="/callback"
+          android:scheme="carnivalstories" />
       </intent-filter>
     </activity>
   </application>

@@ -1598,6 +1598,22 @@ function renderCoverChrome() {
       updateCoverStoryLayout();
     });
   }
+  syncCoverPhotoHeightForViewport();
+}
+
+function syncCoverPhotoHeightForViewport() {
+  if (!coverPhotoEl || !screenGallery?.classList.contains("active")) {
+    return;
+  }
+  const mobileLikeViewport = window.matchMedia("(max-width: 1100px)").matches;
+  if (!mobileLikeViewport) {
+    coverPhotoEl.style.removeProperty("height");
+    coverPhotoEl.style.removeProperty("min-height");
+    return;
+  }
+  const viewportHeight = Math.max(window.innerHeight || 0, 520);
+  coverPhotoEl.style.height = `${viewportHeight}px`;
+  coverPhotoEl.style.minHeight = `${viewportHeight}px`;
 }
 
 function clearFaceFilter({ silent = false } = {}) {
@@ -1991,6 +2007,7 @@ function setActiveScreen(step, options = {}) {
   if (step === 1) {
     focusElement(directLinkInput);
   } else if (step === 3) {
+    syncCoverPhotoHeightForViewport();
     const firstGalleryCard = galleryEl.querySelector(".photo-card:not(.photo-card-cover)");
     if (firstGalleryCard) {
       focusElement(firstGalleryCard);
@@ -2078,7 +2095,7 @@ function applyFolderState(folders, options = {}) {
     ? allMediaItems.find((item) => item.id === options.coverFileId) || currentFolders[0]?.images?.[0] || null
     : currentFolders[0]?.images?.[0] || null;
   if (coverPhoto) {
-    setLoadingCoverBackground(coverPhoto.url || coverPhoto.thumbnailUrl || "");
+    setLoadingCoverBackground(getPhotoSourceCandidates(coverPhoto)[0] || "");
   }
   sharedFolderName = options.rootName || "";
   if (!options.preservePath) {
@@ -2091,6 +2108,15 @@ function applyFolderState(folders, options = {}) {
 
 function getSelectedFolder() {
   return currentFolders.find((folder) => folder.id === selectedFolderId) || null;
+}
+
+function getPhotoSourceCandidates(photo) {
+  if (!photo || typeof photo !== "object") {
+    return [];
+  }
+  return [photo.thumbnailUrl, photo.slideshowUrl, photo.url]
+    .filter(Boolean)
+    .filter((source, index, list) => list.indexOf(source) === index);
 }
 
 function updateFolderTabsVisibility(folders = currentFolders) {
@@ -2190,16 +2216,26 @@ function renderGallery(photoItems, options = {}) {
   pendingGalleryThumbnailLoads = visiblePhotos.length;
 
   if (coverPhoto) {
-    coverPhotoEl.style.setProperty("--cover-image", `url("${coverPhoto.url}")`);
+    const coverSources = getPhotoSourceCandidates(coverPhoto);
+    const primaryCoverSource = coverSources[0] || "";
+    coverPhotoEl.style.setProperty("--cover-image", `url("${primaryCoverSource}")`);
     coverPhotoEl.classList.add("has-cover-image");
     const card = document.createElement("div");
     card.className = "photo-card photo-card-cover";
     const image = document.createElement("img");
-    image.src = coverPhoto.url;
+    let coverSourceIndex = 0;
+    image.src = primaryCoverSource;
     image.alt = coverPhoto.name;
     image.loading = "lazy";
     image.fetchPriority = "high";
     image.addEventListener("error", () => {
+      if (coverSourceIndex < coverSources.length - 1) {
+        coverSourceIndex += 1;
+        const nextSource = coverSources[coverSourceIndex];
+        coverPhotoEl.style.setProperty("--cover-image", `url("${nextSource}")`);
+        image.src = nextSource;
+        return;
+      }
       imageLoadFailures += 1;
       image.style.opacity = "0.14";
       setStatus(
@@ -3115,14 +3151,23 @@ async function loadFolder(folderUrl, options = {}) {
     });
     if (coverPhoto) {
       setLoadingState(true, "Loading your albums.", { progress: 62 });
-      setLoadingCoverBackground(coverPhoto.url || coverPhoto.thumbnailUrl || "");
+      setLoadingCoverBackground(getPhotoSourceCandidates(coverPhoto)[0] || "");
       const coverPreloader = new Image();
-      coverPreloader.src = coverPhoto.url;
-      await new Promise((resolve) => {
-        coverPreloader.onload = resolve;
-        coverPreloader.onerror = resolve;
-      });
-    }
+    const preloadSources = getPhotoSourceCandidates(coverPhoto);
+    let preloadSourceIndex = 0;
+    coverPreloader.src = preloadSources[0] || "";
+    await new Promise((resolve) => {
+      coverPreloader.onload = resolve;
+      coverPreloader.onerror = () => {
+        if (preloadSourceIndex < preloadSources.length - 1) {
+          preloadSourceIndex += 1;
+          coverPreloader.src = preloadSources[preloadSourceIndex];
+          return;
+        }
+        resolve();
+      };
+    });
+  }
     setLoadingState(true, "Loading your albums.", { progress: 100 });
     await waitForGalleryVisualReady(3800);
     await new Promise((resolve) => window.setTimeout(resolve, 120));
@@ -3336,6 +3381,7 @@ window.addEventListener("resize", updateSlideshowActionVisibility);
 window.addEventListener("resize", queueGalleryLayout);
 window.addEventListener("resize", updateScrollTopButtonVisibility);
 window.addEventListener("resize", updateCoverStoryLayout);
+window.addEventListener("resize", syncCoverPhotoHeightForViewport);
 window.addEventListener("scroll", updateScrollTopButtonVisibility, { passive: true });
 window.addEventListener("scroll", updateStickyFolderTabsVisibility, { passive: true });
 window.addEventListener("resize", updateStickyFolderTabsVisibility);
