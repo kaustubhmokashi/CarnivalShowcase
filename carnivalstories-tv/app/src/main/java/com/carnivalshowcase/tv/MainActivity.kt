@@ -721,6 +721,7 @@ private fun MobileWebApp(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         addJavascriptInterface(MobileWebDownloadBridge(viewContext.applicationContext), "AndroidDownloader")
+          addJavascriptInterface(MobileWebShareBridge(viewContext.applicationContext), "AndroidShare")
           addJavascriptInterface(
             MobileWebStudioAuthBridge(viewContext.applicationContext) {
             val client = googleSignInClient
@@ -1004,6 +1005,31 @@ private class MobileWebDownloadBridge(private val context: Context) {
       mimeType = "",
       suggestedFilename = filename.orEmpty()
     )
+  }
+}
+
+private class MobileWebShareBridge(private val context: Context) {
+  @JavascriptInterface
+  fun share(url: String?, text: String?): Boolean {
+    val safeUrl = url.orEmpty().trim()
+    val safeText = text.orEmpty().trim()
+    val payload = listOf(safeText, safeUrl)
+      .filter { it.isNotBlank() }
+      .joinToString("\n")
+      .trim()
+      .ifBlank { return false }
+
+    return runCatching {
+      val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, payload)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      val chooser = Intent.createChooser(intent, "Share")
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(chooser)
+      true
+    }.getOrElse { false }
   }
 }
 
@@ -1381,6 +1407,29 @@ private fun injectMobileDownloadBridge(view: WebView?) {
         }
         return null;
       }
+      function startNativeShare(payload, source) {
+        if (!window.AndroidShare) return false;
+        var text = '';
+        var url = '';
+        if (payload && typeof payload === 'object') {
+          text = String(payload.text || payload.name || '').trim();
+          url = String(payload.url || '').trim();
+        } else if (typeof payload === 'string') {
+          url = payload.trim();
+        }
+        if (!url) {
+          try { url = new URL(window.location.href).href; } catch (_) { url = window.location.href || ''; }
+        }
+        var ok = false;
+        try {
+          ok = !!window.AndroidShare.share(url, text);
+        } catch (error) {
+          push(source + ' share bridge error=' + (error && error.message ? error.message : 'unknown'));
+          return false;
+        }
+        push(source + ' share ' + (ok ? 'started' : 'failed') + ' url=' + (url || 'na'));
+        return ok;
+      }
       function startNativeDownload(photo, source) {
         if (!photo || !photo.url) {
           push(source + ' no current photo');
@@ -1416,6 +1465,9 @@ private fun injectMobileDownloadBridge(view: WebView?) {
       window.__mobileDownloadNow = function(source) {
         return startNativeDownload(currentPhoto(), source || 'manual');
       };
+      window.__mobileShareNow = function(source, payload) {
+        return startNativeShare(payload || currentPhoto(), source || 'manual');
+      };
       var directButton = document.getElementById('download-slide');
       if (directButton && directButton.dataset.mobileDownloadBound !== String(bridgeVersion)) {
         directButton.dataset.mobileDownloadBound = String(bridgeVersion);
@@ -1433,6 +1485,20 @@ private fun injectMobileDownloadBridge(view: WebView?) {
       document.addEventListener('click', function(event) {
         var target = event.target;
         if (!target || !target.closest) return;
+        var shareButton = target.closest('#share-slide, #cover-share-button, .slideshow-action-share, .cover-action-button[aria-label*="Share"], [data-action="share"]');
+        if (shareButton && window.AndroidShare) {
+          push('share click target=' + (shareButton.id ? '#' + shareButton.id : shareButton.tagName.toLowerCase()));
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.stopImmediatePropagation) {
+            event.stopImmediatePropagation();
+          }
+          var payload = shareButton && shareButton.id === 'cover-share-button'
+            ? { url: window.location.href, text: document.title || '' }
+            : currentPhoto();
+          startNativeShare(payload, 'click-share');
+          return;
+        }
         var button = target.closest('#download-slide, .slideshow-action-download, [data-action="download"]');
         if (!button || !window.AndroidDownloader) return;
         push('click target=' + (button.id ? '#' + button.id : button.tagName.toLowerCase()));
@@ -1611,6 +1677,21 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
               img.src = source;
             }
           }
+
+          [
+            '#close-slideshow-mobile',
+            '.slideshow-actions',
+            '#prev-slide',
+            '#next-slide',
+            '#slideshow-loader',
+            '.slideshow-toast',
+            '.slide-video-controls',
+            '.slide-video-overlay'
+          ].forEach(function(selector) {
+            var node = document.querySelector(selector);
+            if (!node) return;
+            node.style.setProperty('z-index', '2147483646', 'important');
+          });
 
           var loader = document.getElementById('slideshow-loader');
           if (loader) {
@@ -2130,6 +2211,15 @@ private fun injectGalleryTapTracer(view: WebView?) {
           var px = Number(x) || 0;
           var py = Number(y) || 0;
           var el = document.elementFromPoint(px, py);
+          var shareButton = el && el.closest ? el.closest('#share-slide, #cover-share-button, .slideshow-action-share, .cover-action-button[aria-label*="Share"], [data-action="share"]') : null;
+          if (shareButton && typeof window.__mobileShareNow === 'function') {
+            push('android-share x=' + px + ' y=' + py + ' via=' + (shareButton.id ? '#' + shareButton.id : shareButton.tagName.toLowerCase()));
+            var sharePayload = shareButton && shareButton.id === 'cover-share-button'
+              ? { url: window.location.href, text: document.title || '' }
+              : null;
+            window.__mobileShareNow('android-bridge', sharePayload);
+            return;
+          }
           var downloadButton = el && el.closest ? el.closest('#download-slide, .slideshow-action-download, [data-action="download"]') : null;
           if (!downloadButton) {
             var downloadCandidates = Array.prototype.slice.call(document.querySelectorAll('#download-slide, .slideshow-action-download, [data-action="download"]'));
@@ -2137,7 +2227,7 @@ private fun injectGalleryTapTracer(view: WebView?) {
               var style = getComputedStyle(candidate);
               if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') return false;
               var rect = candidate.getBoundingClientRect();
-              var pad = 24;
+              var pad = 6;
               return px >= rect.left - pad && px <= rect.right + pad && py >= rect.top - pad && py <= rect.bottom + pad;
             }) || null;
           }
@@ -2326,87 +2416,19 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
   val target = view ?: return
   val script = """
     (function() {
-      var gallery = document.getElementById('screen-gallery');
-      var cover = document.getElementById('cover-photo');
-      if (!gallery || !cover) return;
-      if (!gallery.classList.contains('active')) return;
-
-      function ensureCoverFromGrid() {
-        var existingCoverCard = cover.querySelector('.photo-card-cover img');
-        if (existingCoverCard) return true;
-        var firstGridImage = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
-        var source = firstGridImage ? (firstGridImage.currentSrc || firstGridImage.src || '') : '';
-        if (!source) {
-          var workspaceMain = document.querySelector('#screen-gallery .workspace-main');
-          if (workspaceMain) {
-            var cs = getComputedStyle(workspaceMain);
-            var bg = cs.getPropertyValue('--loading-cover-image') || '';
-            bg = String(bg || '').trim();
-            if (bg && bg !== 'none') {
-              cover.classList.add('has-loading-background');
-              try {
-                cover.style.setProperty('--loading-cover-image', bg);
-              } catch (_) {}
-              return true;
-            }
-          }
-        }
-        if (!source) return false;
-        cover.classList.add('has-cover-image');
-        cover.style.setProperty('--cover-image', 'url("' + source.replace(/"/g, '\\"') + '")');
-        var card = document.createElement('div');
-        card.className = 'photo-card photo-card-cover';
-        var img = document.createElement('img');
-        img.src = source;
-        img.alt = 'Cover photo';
-        card.appendChild(img);
-        cover.insertBefore(card, cover.firstChild);
-        return true;
-      }
-
-      function releaseLoadingUi() {
-        var loadingIndicator = document.querySelector('.loading-indicator');
-        gallery.classList.remove('loading');
-        gallery.classList.remove('loading-fading');
-        gallery.classList.add('revealed');
-        if (loadingIndicator) {
-          loadingIndicator.classList.add('hidden');
-        }
-      }
-
-      var recoveryState = window.__mobileUiRecoveryState || (window.__mobileUiRecoveryState = {});
-      if (!recoveryState.galleryObserverStarted) {
-        recoveryState.galleryObserverStarted = true;
+      function push(msg) {
         try {
-          var galleryGrid = document.getElementById('gallery');
-          if (galleryGrid && window.MutationObserver) {
-            var observer = new MutationObserver(function() {
-              try {
-                if (ensureCoverFromGrid()) {
-                  releaseLoadingUi();
-                }
-              } catch (_) {}
-            });
-            observer.observe(galleryGrid, { childList: true, subtree: true });
-            recoveryState.galleryObserver = observer;
-          }
+          var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+          var now = new Date().toISOString().slice(11, 23);
+          state.logs.unshift(now + ' [cover-recovery] ' + msg);
+          state.logs = state.logs.slice(0, 80);
         } catch (_) {}
       }
-
-      if (!recoveryState.loadingWatchdogStarted) {
-        recoveryState.loadingWatchdogStarted = true;
-        window.setTimeout(function() {
-          try {
-            var g = document.getElementById('screen-gallery');
-            var c = document.getElementById('cover-photo');
-            if (!g || !c || !g.classList.contains('active')) return;
-            if (g.classList.contains('loading')) {
-              releaseLoadingUi();
-            }
-            ensureCoverFromGrid();
-          } catch (_) {}
-        }, 1800);
-      }
+      function recoverCover(reason) {
+      var gallery = document.getElementById('screen-gallery');
+      var cover = document.getElementById('cover-photo');
+      if (!gallery || !cover) return false;
+      if (!gallery.classList.contains('active')) return false;
 
       var vh = Math.max(
         window.innerHeight || 0,
@@ -2417,34 +2439,139 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
       var coverCard = cover.querySelector('.photo-card-cover');
       var coverImg = cover.querySelector('.photo-card-cover img');
       var hasCoverNode = !!coverImg;
-      var hasCoverClass = cover.classList.contains('has-cover-image');
+      var hasLoadingClass = cover.classList.contains('has-loading-background');
+      var hasCoverClass = cover.classList.contains('has-cover-image') || hasLoadingClass;
+      var pinned = String(window.__mobilePinnedCoverSource || '').trim();
+
+      if (hasCoverNode) {
+        var liveSrc = String(coverImg.currentSrc || coverImg.src || '').trim();
+        if (liveSrc) {
+          window.__mobilePinnedCoverSource = liveSrc;
+          pinned = liveSrc;
+        }
+      } else {
+        var cssCoverLive = String(cover.style.getPropertyValue('--cover-image') || '').trim();
+        var cssLoadingLive = String(cover.style.getPropertyValue('--loading-cover-image') || '').trim();
+        var cssPick = cssCoverLive && cssCoverLive !== 'none' ? cssCoverLive : (cssLoadingLive && cssLoadingLive !== 'none' ? cssLoadingLive : '');
+        if (cssPick) {
+          window.__mobilePinnedCoverSource = cssPick;
+          pinned = cssPick;
+        }
+      }
+
+      // Tabbed albums can sometimes mark loading background class before the cover var
+      // reaches #cover-photo in WebView. Mirror it from workspace main if needed.
+      if (!hasCoverNode && hasLoadingClass) {
+        var ownLoadingBg = String(cover.style.getPropertyValue('--loading-cover-image') || '').trim();
+        if (!ownLoadingBg || ownLoadingBg === 'none') {
+          var workspaceMain = document.querySelector('#screen-gallery .workspace-main');
+          if (workspaceMain) {
+            var wsBg = String(getComputedStyle(workspaceMain).getPropertyValue('--loading-cover-image') || '').trim();
+            if (wsBg && wsBg !== 'none') {
+              cover.style.setProperty('--loading-cover-image', wsBg);
+            }
+          }
+        }
+      }
+
+      // App-webview fallback for tabbed albums:
+      // when top cover metadata is missing but grid has photos, promote first visible
+      // grid image as cover so layout remains: cover -> tabs -> grid.
+      if (!hasCoverNode && !hasCoverClass) {
+        var firstGridImage = document.querySelector('#gallery .photo-card img');
+        var fallbackSource = firstGridImage ? String(firstGridImage.currentSrc || firstGridImage.src || '').trim() : '';
+        if (fallbackSource) {
+          cover.style.setProperty('--cover-image', 'url("' + fallbackSource + '")');
+          cover.classList.add('has-cover-image');
+          hasCoverClass = true;
+
+          if (!coverCard) {
+            coverCard = document.createElement('div');
+            coverCard.className = 'photo-card photo-card-cover';
+            cover.appendChild(coverCard);
+          }
+          if (!coverImg) {
+            coverImg = document.createElement('img');
+            coverImg.alt = (firstGridImage && firstGridImage.alt) ? firstGridImage.alt : 'Cover photo';
+            coverCard.appendChild(coverImg);
+          }
+          if (!coverImg.src) {
+            coverImg.src = fallbackSource;
+          }
+          hasCoverNode = !!coverImg;
+          push('promoted cover from grid reason=' + (reason || 'manual'));
+        }
+      }
+
+      if (!hasCoverNode && !hasCoverClass && pinned) {
+        var pinnedCss = pinned.indexOf('url(') === 0 ? pinned : ('url("' + pinned + '")');
+        cover.style.setProperty('--cover-image', pinnedCss);
+        cover.classList.add('has-cover-image');
+        if (!coverCard) {
+          coverCard = document.createElement('div');
+          coverCard.className = 'photo-card photo-card-cover';
+          cover.appendChild(coverCard);
+        }
+        if (!coverImg) {
+          coverImg = document.createElement('img');
+          coverImg.alt = 'Cover photo';
+          coverCard.appendChild(coverImg);
+        }
+        var pinnedSrc = pinnedCss.replace(/^url\((['"]?)(.*)\1\)$/i, '$2');
+        if (pinnedSrc && (!coverImg.src || coverImg.src === 'about:blank')) {
+          coverImg.src = pinnedSrc;
+        }
+        hasCoverNode = !!coverImg;
+        hasCoverClass = true;
+        push('restored pinned cover reason=' + (reason || 'manual'));
+      }
+
       var expectedHeight = vh > 0 ? Math.max(320, Math.round(vh * 0.75)) : 320;
-      if (coverRect.height >= expectedHeight && (hasCoverNode || hasCoverClass)) return;
+      if (coverRect.height >= expectedHeight && (hasCoverNode || hasCoverClass)) return true;
 
       if (vh > 0) {
-        cover.style.minHeight = vh + 'px';
-        cover.style.height = vh + 'px';
+        cover.style.setProperty('min-height', vh + 'px', 'important');
+        cover.style.setProperty('height', vh + 'px', 'important');
       }
+      cover.style.setProperty('display', 'block', 'important');
+      cover.style.setProperty('overflow', 'hidden', 'important');
       if (coverCard) {
-        coverCard.style.position = 'absolute';
-        coverCard.style.inset = '0';
-        coverCard.style.width = '100%';
-        coverCard.style.height = '100%';
-        coverCard.style.display = 'block';
+        coverCard.style.setProperty('position', 'absolute', 'important');
+        coverCard.style.setProperty('inset', '0', 'important');
+        coverCard.style.setProperty('width', '100%', 'important');
+        coverCard.style.setProperty('height', '100%', 'important');
+        coverCard.style.setProperty('display', 'block', 'important');
       }
       if (coverImg) {
-        coverImg.style.width = '100%';
-        coverImg.style.height = '100%';
-        coverImg.style.maxHeight = '100%';
-        coverImg.style.objectFit = 'cover';
-        coverImg.style.objectPosition = 'center center';
+        coverImg.style.setProperty('width', '100%', 'important');
+        coverImg.style.setProperty('height', '100%', 'important');
+        coverImg.style.setProperty('max-height', '100%', 'important');
+        coverImg.style.setProperty('object-fit', 'cover', 'important');
+        coverImg.style.setProperty('object-position', 'center center', 'important');
+      }
+      return !!(cover.querySelector('.photo-card-cover img') || cover.classList.contains('has-cover-image') || cover.classList.contains('has-loading-background'));
       }
 
-      if (gallery.classList.contains('loading') && ensureCoverFromGrid()) {
-        releaseLoadingUi();
+      recoverCover('tick');
+
+      if (!window.__mobileCoverRecoveryObserverBound) {
+        window.__mobileCoverRecoveryObserverBound = true;
+        try {
+          var targetNode = document.getElementById('gallery') || document.body;
+          if (targetNode) {
+            new MutationObserver(function() {
+              recoverCover('mutate');
+            }).observe(targetNode, { childList: true, subtree: true, attributes: true });
+            push('observer attached');
+          }
+        } catch (error) {
+          push('observer error=' + (error && error.message ? error.message : 'unknown'));
+        }
       }
 
-      ensureCoverFromGrid();
+      [180, 520, 1100, 2200, 4200].forEach(function(delay) {
+        window.setTimeout(function() { recoverCover('retry-' + delay); }, delay);
+      });
     })();
   """.trimIndent()
   target.evaluateJavascript(script, null)
@@ -2522,6 +2649,33 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
           ' grid=' + (gridSrc || 'na') +
           ' slide=' + (slideSrc || 'na') +
           ' slideFull=' + (slideFullSrc || 'na');
+      }
+      function coverDebugLine() {
+        var cover = document.getElementById('cover-photo');
+        var gallery = document.getElementById('screen-gallery');
+        if (!cover || !gallery) return 'coverDebug=missing';
+        var coverStyle = getComputedStyle(cover);
+        var cssCover = String(cover.style.getPropertyValue('--cover-image') || '').trim();
+        var cssLoading = String(cover.style.getPropertyValue('--loading-cover-image') || '').trim();
+        var wsMain = document.querySelector('#screen-gallery .workspace-main');
+        var wsLoading = wsMain ? String(getComputedStyle(wsMain).getPropertyValue('--loading-cover-image') || '').trim() : '';
+        var coverCard = cover.querySelector('.photo-card-cover');
+        var coverImg = cover.querySelector('.photo-card-cover img');
+        var firstGrid = document.querySelector('#gallery .photo-card img');
+        var activeTab = document.querySelector('#folder-tabs .folder-tab.is-active, #folder-tabs .folder-tab[aria-selected=\"true\"]');
+        var allTabs = document.querySelectorAll('#folder-tabs .folder-tab, #folder-tabs button');
+        return 'coverDebug classes=' + (cover.className || 'na') +
+          ' galleryClasses=' + (gallery.className || 'na') +
+          ' bgImg=' + (coverStyle.backgroundImage || 'na') +
+          ' cssCover=' + (cssCover || 'na') +
+          ' cssLoading=' + (cssLoading || 'na') +
+          ' wsLoading=' + (wsLoading || 'na') +
+          ' coverCard=' + !!coverCard +
+          ' coverImg=' + !!coverImg +
+          ' coverImgSrc=' + (coverImg ? (coverImg.currentSrc || coverImg.src || 'na') : 'na') +
+          ' firstGridSrc=' + (firstGrid ? (firstGrid.currentSrc || firstGrid.src || 'na') : 'na') +
+          ' tabs=' + (allTabs ? allTabs.length : 0) +
+          ' activeTab=' + (activeTab ? (activeTab.textContent || '').trim().slice(0, 60) : 'na');
       }
       function slideshowDebugLine() {
         var state = window.__mobileSlideshowDebug;
@@ -2862,6 +3016,7 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         galleryStateLine(),
         loadingLine(),
         imageSourceLine(),
+        coverDebugLine(),
         slideshowDebugLine(),
         metric('#slideshow'),
         classLine('#slideshow'),
