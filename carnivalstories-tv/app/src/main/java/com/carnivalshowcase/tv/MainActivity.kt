@@ -542,6 +542,7 @@ private fun MobileWebApp(
 
           override fun onPageCommitVisible(view: WebView?, url: String?) {
             super.onPageCommitVisible(view, url)
+            injectAndroidHeaderOffsetStyle(view)
             injectHomeScreenHeightGuard(view)
             injectStudioScreenHeightGuard(view)
             injectCollapsedParentRecovery(view)
@@ -593,6 +594,7 @@ private fun MobileWebApp(
 
           override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
+            injectAndroidHeaderOffsetStyle(view)
             injectHomeScreenHeightGuard(view)
             injectStudioScreenHeightGuard(view)
             injectCollapsedParentRecovery(view)
@@ -611,6 +613,7 @@ private fun MobileWebApp(
           override fun onProgressChanged(view: WebView?, newProgress: Int) {
             super.onProgressChanged(view, newProgress)
             if (newProgress >= 50) {
+              injectAndroidHeaderOffsetStyle(view)
               injectHomeScreenHeightGuard(view)
               injectStudioScreenHeightGuard(view)
               injectCollapsedParentRecovery(view)
@@ -858,6 +861,7 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
   val delaysMs = longArrayOf(450L, 1200L, 2600L, 4200L)
   delaysMs.forEach { delayMs ->
     target.postDelayed({
+      injectAndroidHeaderOffsetStyle(target)
       injectHomeScreenHeightGuard(target)
       injectStudioScreenHeightGuard(target)
       injectCollapsedParentRecovery(target)
@@ -871,6 +875,32 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
       injectMobileWebDebugPanel(target, "tick", "url=$url delay=${delayMs}ms")
     }, delayMs)
   }
+}
+
+private fun injectAndroidHeaderOffsetStyle(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var styleId = 'android-header-offset-style';
+      var style = document.getElementById(styleId);
+      var css = [
+        ':root { --brand-logo-top: 56px !important; }',
+        '.studio-floating-actions { top: 58px !important; }',
+        '@media (max-width: 900px) {',
+        '  .studio-floating-actions { padding-top: 56px !important; }',
+        '}'
+      ].join('\n');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        document.head.appendChild(style);
+      }
+      if (style.textContent !== css) {
+        style.textContent = css;
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
 }
 
 private fun injectFacePickerPopupRecovery(view: WebView?) {
