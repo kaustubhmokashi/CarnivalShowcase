@@ -584,6 +584,7 @@ private fun MobileWebApp(
             injectSlideshowPaintRecovery(view)
             injectMobileDownloadBridge(view)
             injectAndroidStudioAuthBridge(view)
+            injectStudioSidebarDrawerRecovery(view)
             injectFacePickerPopupRecovery(view)
             injectMobileWebDebugPanel(view, "onPageFinished", "url=${url.orEmpty()}")
             scheduleDelayedMobileWebRecovery(view, url.orEmpty())
@@ -599,6 +600,7 @@ private fun MobileWebApp(
               injectSlideshowPaintRecovery(view)
               injectMobileDownloadBridge(view)
               injectAndroidStudioAuthBridge(view)
+              injectStudioSidebarDrawerRecovery(view)
               injectFacePickerPopupRecovery(view)
             }
             injectMobileWebDebugPanel(view, "onProgress", "progress=$newProgress")
@@ -801,6 +803,7 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
       injectSlideshowPaintRecovery(target)
       injectMobileDownloadBridge(target)
       injectAndroidStudioAuthBridge(target)
+      injectStudioSidebarDrawerRecovery(target)
       injectFacePickerPopupRecovery(target)
       injectMobileWebDebugPanel(target, "tick", "url=$url delay=${delayMs}ms")
     }, delayMs)
@@ -1608,6 +1611,124 @@ private fun injectAndroidStudioAuthBridge(view: WebView?) {
         } catch (error) {
           push('observer error=' + (error && error.message ? error.message : 'unknown'));
         }
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      function push(msg) {
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [studio-drawer] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+      }
+
+      function getNodes() {
+        return {
+          dashboard: document.getElementById('studio-dashboard-panel'),
+          sidebar: document.getElementById('studio-sidebar'),
+          scrim: document.getElementById('studio-sidebar-scrim'),
+          toggle: document.getElementById('studio-sidebar-toggle'),
+          close: document.getElementById('studio-sidebar-close')
+        };
+      }
+
+      function isStudioRoute() {
+        return location.pathname === '/studio' || location.pathname.indexOf('/studio/') === 0;
+      }
+
+      function isMobile() {
+        return Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0) <= 900;
+      }
+
+      function paint(open, reason) {
+        var n = getNodes();
+        if (!isStudioRoute() || !isMobile() || !n.dashboard || !n.sidebar || n.dashboard.classList.contains('hidden')) {
+          return false;
+        }
+
+        n.dashboard.classList.toggle('sidebar-open', !!open);
+        document.body.classList.toggle('studio-sidebar-open-native', !!open);
+
+        if (n.toggle) {
+          n.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        if (n.scrim) {
+          n.scrim.classList.toggle('hidden', !open);
+          n.scrim.style.position = 'fixed';
+          n.scrim.style.inset = '0';
+          n.scrim.style.display = open ? 'block' : 'none';
+          n.scrim.style.zIndex = '2147483400';
+          n.scrim.style.background = 'rgba(0,0,0,0.28)';
+          n.scrim.style.border = '0';
+          n.scrim.style.padding = '0';
+          n.scrim.style.pointerEvents = open ? 'auto' : 'none';
+        }
+
+        n.sidebar.style.position = 'fixed';
+        n.sidebar.style.top = '0';
+        n.sidebar.style.left = '0';
+        n.sidebar.style.bottom = '0';
+        n.sidebar.style.width = 'min(320px, calc(100vw - 32px))';
+        n.sidebar.style.height = '100vh';
+        n.sidebar.style.minHeight = '100vh';
+        n.sidebar.style.display = 'grid';
+        n.sidebar.style.visibility = 'visible';
+        n.sidebar.style.opacity = '1';
+        n.sidebar.style.zIndex = '2147483401';
+        n.sidebar.style.background = '#fff';
+        n.sidebar.style.overflowX = 'hidden';
+        n.sidebar.style.overflowY = 'auto';
+        n.sidebar.style.transform = open ? 'translate3d(0,0,0)' : 'translate3d(-110%,0,0)';
+        n.sidebar.style.webkitTransform = n.sidebar.style.transform;
+        n.sidebar.style.willChange = 'transform';
+        n.sidebar.style.pointerEvents = open ? 'auto' : 'none';
+        n.sidebar.style.boxShadow = open ? '18px 0 48px rgba(0,0,0,0.18)' : '';
+
+        push((open ? 'open' : 'close') + ' reason=' + reason);
+        return true;
+      }
+
+      window.__mobileStudioDrawerPaint = paint;
+
+      if (!window.__mobileStudioDrawerBound) {
+        window.__mobileStudioDrawerBound = true;
+        document.addEventListener('click', function(event) {
+          var n = getNodes();
+          var target = event.target;
+          if (!target || !target.closest) return;
+
+          if (n.toggle && target.closest('#studio-sidebar-toggle')) {
+            var shouldOpen = !(n.dashboard && n.dashboard.classList.contains('sidebar-open'));
+            window.setTimeout(function() { paint(shouldOpen, 'toggle-click'); }, 0);
+            window.setTimeout(function() { paint(shouldOpen, 'toggle-click-late'); }, 80);
+            return;
+          }
+
+          if ((n.close && target.closest('#studio-sidebar-close')) || (n.scrim && target.closest('#studio-sidebar-scrim'))) {
+            window.setTimeout(function() { paint(false, 'close-click'); }, 0);
+          }
+        }, true);
+
+        document.addEventListener('keydown', function(event) {
+          if (event.key === 'Escape') {
+            paint(false, 'escape');
+          }
+        }, true);
+
+        push('bound');
+      }
+
+      var nodes = getNodes();
+      var isOpen = !!(nodes.dashboard && nodes.dashboard.classList.contains('sidebar-open'));
+      if (isOpen || document.body.classList.contains('studio-sidebar-open-native')) {
+        paint(isOpen, 'tick');
       }
     })();
   """.trimIndent()
