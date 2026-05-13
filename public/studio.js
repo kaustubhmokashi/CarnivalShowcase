@@ -281,6 +281,7 @@ function getNextEventExitPreset() {
 
 function closeStudioSidebarDrawer({ restoreFocus = false } = {}) {
   studioDashboardPanel?.classList.remove("sidebar-open");
+  document.body.classList.remove("studio-sidebar-open");
   studioSidebarToggleButton?.setAttribute("aria-expanded", "false");
   studioSidebarScrim?.classList.add("hidden");
   if (restoreFocus) {
@@ -293,6 +294,7 @@ function openStudioSidebarDrawer() {
     return;
   }
   studioDashboardPanel?.classList.add("sidebar-open");
+  document.body.classList.add("studio-sidebar-open");
   studioSidebarToggleButton?.setAttribute("aria-expanded", "true");
   studioSidebarScrim?.classList.remove("hidden");
   studioSidebarCloseButton?.focus();
