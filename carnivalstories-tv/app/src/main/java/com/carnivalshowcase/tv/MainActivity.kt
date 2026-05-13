@@ -543,6 +543,7 @@ private fun MobileWebApp(
           override fun onPageCommitVisible(view: WebView?, url: String?) {
             super.onPageCommitVisible(view, url)
             injectHomeScreenHeightGuard(view)
+            injectStudioScreenHeightGuard(view)
             injectCollapsedParentRecovery(view)
             injectMobileWebDebugPanel(view, "onPageCommitVisible", "url=${url.orEmpty()}")
           }
@@ -593,6 +594,7 @@ private fun MobileWebApp(
           override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
             injectHomeScreenHeightGuard(view)
+            injectStudioScreenHeightGuard(view)
             injectCollapsedParentRecovery(view)
             injectGalleryCoverRecovery(view)
             injectGalleryTapTracer(view)
@@ -610,6 +612,7 @@ private fun MobileWebApp(
             super.onProgressChanged(view, newProgress)
             if (newProgress >= 50) {
               injectHomeScreenHeightGuard(view)
+              injectStudioScreenHeightGuard(view)
               injectCollapsedParentRecovery(view)
               injectGalleryCoverRecovery(view)
               injectSlideshowPaintRecovery(view)
@@ -856,6 +859,7 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
   delaysMs.forEach { delayMs ->
     target.postDelayed({
       injectHomeScreenHeightGuard(target)
+      injectStudioScreenHeightGuard(target)
       injectCollapsedParentRecovery(target)
       injectGalleryCoverRecovery(target)
       injectGalleryTapTracer(target)
@@ -2190,6 +2194,57 @@ private fun injectHomeScreenHeightGuard(view: WebView?) {
         direct.style.removeProperty('display');
         direct.style.removeProperty('grid-template-rows');
       }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectStudioScreenHeightGuard(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var html = document.documentElement;
+      var body = document.body;
+      var appShell = document.querySelector('.app-shell');
+      var studioScreen = document.getElementById('screen-studio');
+      var studioMain = document.querySelector('.studio-main');
+      var authPanel = document.getElementById('studio-auth-panel');
+      var namePanel = document.getElementById('studio-name-panel');
+      if (!html || !body || !appShell || !studioScreen || !studioMain) return;
+
+      var studioActive = studioScreen.classList.contains('active');
+      var authVisible = authPanel && !authPanel.classList.contains('hidden');
+      var nameVisible = namePanel && !namePanel.classList.contains('hidden');
+      if (!studioActive || (!authVisible && !nameVisible)) {
+        studioMain.style.removeProperty('height');
+        [authPanel, namePanel].forEach(function(panel) {
+          if (!panel) return;
+          panel.style.removeProperty('min-height');
+          panel.style.removeProperty('max-height');
+        });
+        return;
+      }
+
+      var vh = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+        html.clientHeight || 0
+      );
+      if (!vh) return;
+
+      html.style.minHeight = vh + 'px';
+      body.style.minHeight = vh + 'px';
+      body.style.height = 'auto';
+      appShell.style.minHeight = vh + 'px';
+      studioScreen.style.minHeight = vh + 'px';
+      studioMain.style.minHeight = vh + 'px';
+      studioMain.style.height = vh + 'px';
+
+      [authPanel, namePanel].forEach(function(panel) {
+        if (!panel || panel.classList.contains('hidden')) return;
+        panel.style.minHeight = vh + 'px';
+        panel.style.maxHeight = vh + 'px';
+      });
     })();
   """.trimIndent()
   target.evaluateJavascript(script, null)
