@@ -1079,9 +1079,9 @@ private fun NativeStudioDrawerOverlay(
 
         Spacer(modifier = Modifier.height(72.dp))
         NativeStudioDrawerButton("Create Album", emphasized = true, onClick = onCreateAlbum)
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         NativeStudioDrawerButton("Create Event", emphasized = false, onClick = onCreateEvent)
-        Spacer(modifier = Modifier.height(72.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         NativeStudioDrawerNavItem("My Albums", active = true) { onSection("pages") }
         NativeStudioDrawerNavItem("Events") { onSection("events") }
         NativeStudioDrawerNavItem("Branding") { onSection("branding") }

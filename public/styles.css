@@ -4610,8 +4610,9 @@ input[type="checkbox"]:checked {
     width: min(320px, calc(100vw - 32px));
     min-height: 100vh;
     height: 100vh;
-    grid-template-rows: auto auto 1fr auto;
-    row-gap: var(--space-2);
+    grid-template-rows: auto auto auto auto;
+    align-content: start;
+    row-gap: 0;
     padding: 16px;
     background: #ffffff;
     border-right: 1px solid rgba(0, 0, 0, 0.12);
@@ -4632,7 +4633,14 @@ input[type="checkbox"]:checked {
   }
 
   .studio-sidebar-logo-link {
-    min-height: 48px;
+    width: 100%;
+    min-height: 72px;
+    margin-top: 72px;
+  }
+
+  .studio-sidebar-logo {
+    width: 100%;
+    max-height: 72px;
   }
 
   .studio-event-logo-link {
@@ -4640,18 +4648,18 @@ input[type="checkbox"]:checked {
   }
 
   .studio-sidebar-actions {
-    margin-top: var(--space-2);
+    gap: 24px;
+    margin-top: 72px;
   }
 
   .studio-sidebar-nav {
     align-content: start;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
+    gap: 24px;
+    margin-top: 24px;
   }
 
   .studio-sidebar-favicon {
-    position: static;
-    margin-top: auto;
+    display: none;
   }
 
   .saved-page-share-button {
@@ -4846,8 +4854,8 @@ input[type="checkbox"]:checked {
   .studio-sidebar-secondary-action {
     display: inline-grid;
     place-items: center;
-    width: min(220px, 100%);
-    min-width: 220px;
+    width: 100%;
+    min-width: 0;
     height: 40px;
     min-height: 40px;
     padding: 0 24px;
