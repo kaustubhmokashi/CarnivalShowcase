@@ -101,6 +101,9 @@ let loadingProgressTarget = 0;
 let loadingProgressMessageBase = "";
 let loadingMessageDots = 0;
 let loadingFadeTimer = null;
+let loadingSafetyTimer = null;
+let lastGalleryActivationAt = 0;
+let lastGalleryActivationKey = "";
 let slideshowPaused = false;
 let slideshowUiHideTimer = null;
 let currentPublicPageId = "";
@@ -164,6 +167,15 @@ let resolveGalleryVisualReady = null;
 const INITIAL_GALLERY_BATCH_SIZE = 36;
 const GALLERY_BATCH_SIZE = 48;
 const PRESENTATION_DEBUG_ENABLED = new URLSearchParams(window.location.search).has("debugPresentation");
+
+function pushMobileSlideshowDebug(message) {
+  try {
+    const state = window.__mobileSlideshowDebug || (window.__mobileSlideshowDebug = { logs: [] });
+    const stamp = new Date().toISOString().slice(11, 23);
+    state.logs.unshift(`${stamp} ${message}`);
+    state.logs = state.logs.slice(0, 20);
+  } catch (_) {}
+}
 
 function ensurePresentationDebugPanel() {
   if (!PRESENTATION_DEBUG_ENABLED) {
@@ -1264,6 +1276,23 @@ function clearLoadingTimer() {
   }
 }
 
+function clearLoadingSafetyTimer() {
+  if (loadingSafetyTimer) {
+    window.clearTimeout(loadingSafetyTimer);
+    loadingSafetyTimer = null;
+  }
+}
+
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 12000));
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function clearSlideshowAdvanceTimer() {
   if (slideshowAdvanceTimer) {
     window.clearTimeout(slideshowAdvanceTimer);
@@ -1498,6 +1527,33 @@ function setLoadingCoverBackground(imageLink = "") {
   coverPhotoEl?.style.removeProperty("--loading-cover-image");
   coverPhotoEl?.classList.remove("has-loading-background");
   screenGallery?.classList.remove("has-loading-cover");
+}
+
+function shouldSkipDuplicateGalleryActivation(key) {
+  const now = Date.now();
+  if (lastGalleryActivationKey === key && now - lastGalleryActivationAt < 450) {
+    return true;
+  }
+  lastGalleryActivationKey = key;
+  lastGalleryActivationAt = now;
+  return false;
+}
+
+function activatePhotoCard(index, photo, source = "click") {
+  const mediaType = String(photo?.mimeType || "").toLowerCase();
+  const key = `${source}:${index}:${photo?.id || "na"}`;
+  if (shouldSkipDuplicateGalleryActivation(key)) {
+    return;
+  }
+  pushMobileSlideshowDebug(`activatePhotoCard source=${source} idx=${index} mediaType=${mediaType || "na"}`);
+  if (mediaType === "video/youtube") {
+    const opened = openYoutubeDialog(photo?.webViewLink || photo?.slideshowUrl || photo?.url || "");
+    if (!opened) {
+      setStatus("Could not open this YouTube video.", true);
+    }
+    return;
+  }
+  openSlideshow(index);
 }
 
 function setActiveBranding(branding = {}) {
@@ -1915,6 +1971,7 @@ function setLoadingState(isLoading, message = "", options = {}) {
   }
 
   if (!isLoading) {
+    clearLoadingSafetyTimer();
     screenGallery.classList.remove("loading");
     screenGallery.classList.add("loading-fading");
     screenGallery.classList.add("revealed");
@@ -1956,6 +2013,23 @@ function setLoadingState(isLoading, message = "", options = {}) {
   screenGallery.classList.add("loading");
   directLoadingIndicatorEl.classList.remove("hidden");
   renderLoadingState();
+
+  clearLoadingSafetyTimer();
+  loadingSafetyTimer = window.setTimeout(() => {
+    if (!screenGallery.classList.contains("loading")) {
+      return;
+    }
+    const hasCoverImage = !!coverPhotoEl?.querySelector(".photo-card-cover img");
+    const hasGridImage = !!galleryEl?.querySelector(".photo-card img");
+    const hasLoadingBackground = coverPhotoEl?.classList.contains("has-loading-background");
+    if (hasCoverImage || hasGridImage || hasLoadingBackground) {
+      setStatus("Gallery loaded with delayed network response.");
+      setLoadingState(false);
+      return;
+    }
+    setGalleryErrorState("Gallery is taking too long to load. Please go back and open it again.");
+    setStatus("Gallery load timed out. Please retry.", true);
+  }, 12000);
 }
 
 function resetGalleryLoadingShell() {
@@ -2115,6 +2189,17 @@ function getPhotoSourceCandidates(photo) {
     return [];
   }
   return [photo.thumbnailUrl, photo.slideshowUrl, photo.url]
+    .filter(Boolean)
+    .filter((source, index, list) => list.indexOf(source) === index);
+}
+
+function getSlideshowSourceCandidates(photo) {
+  if (!photo || typeof photo !== "object") {
+    return [];
+  }
+  return [photo.slideshowUrl, photo.url, photo.thumbnailUrl]
+    .filter(Boolean)
+    .map((source) => String(source || "").trim())
     .filter(Boolean)
     .filter((source, index, list) => list.indexOf(source) === index);
 }
@@ -2341,14 +2426,14 @@ function renderGallery(photoItems, options = {}) {
         card.appendChild(renderPhotoLikeBadge(photo));
       }
       card.addEventListener("click", () => {
-        if (String(photo?.mimeType || "").toLowerCase() === "video/youtube") {
-          const opened = openYoutubeDialog(photo?.webViewLink || photo?.slideshowUrl || photo?.url || "");
-          if (!opened) {
-            setStatus("Could not open this YouTube video.", true);
-          }
-          return;
+        activatePhotoCard(index, photo, "click");
+      });
+      card.addEventListener("pointerup", (event) => {
+        const pointerType = String(event?.pointerType || "").toLowerCase();
+        if (pointerType === "touch" || pointerType === "pen") {
+          event.preventDefault();
+          activatePhotoCard(index, photo, `pointerup:${pointerType}`);
         }
-        openSlideshow(index);
       });
       card.addEventListener("keydown", (event) => {
         if (event.key === "ArrowLeft") {
@@ -2365,14 +2450,7 @@ function renderGallery(photoItems, options = {}) {
           moveGalleryFocus("down");
         } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          if (String(photo?.mimeType || "").toLowerCase() === "video/youtube") {
-            const opened = openYoutubeDialog(photo?.webViewLink || photo?.slideshowUrl || photo?.url || "");
-            if (!opened) {
-              setStatus("Could not open this YouTube video.", true);
-            }
-            return;
-          }
-          openSlideshow(index);
+          activatePhotoCard(index, photo, `key:${event.key}`);
         }
       });
       fragment.appendChild(card);
@@ -2736,6 +2814,7 @@ function hideSlidePhotoCards() {
 
 function showSlide(index) {
   if (!images.length) {
+    pushMobileSlideshowDebug("showSlide aborted: no images");
     return;
   }
 
@@ -2747,10 +2826,12 @@ function showSlide(index) {
 
   currentSlideIndex = (index + images.length) % images.length;
   const photo = images[currentSlideIndex];
+  pushMobileSlideshowDebug(`showSlide index=${currentSlideIndex} photoId=${photo?.id || "na"}`);
   updateSlideshowLikeVisual(photo);
   const requestToken = ++slideshowImageLoadToken;
-  const previewSource = photo.thumbnailUrl || photo.slideshowUrl || photo.url;
-  const fullSource = photo.slideshowUrl || photo.url || previewSource;
+  const slideshowSources = getSlideshowSourceCandidates(photo);
+  const previewSource = slideshowSources[slideshowSources.length - 1] || photo.thumbnailUrl || photo.slideshowUrl || photo.url;
+  const fullSource = slideshowSources[0] || previewSource;
   const isVideo = isVideoMedia(photo);
   cancelBackgroundFolderPreload();
   clearSlideshowAdvanceTimer();
@@ -2874,18 +2955,19 @@ function showSlide(index) {
     activeEntry.image.alt = photo.name;
   }
 
-  const fullImage = new Image();
-  fullImage.decoding = "async";
-  fullImage.onload = () => {
-    if (requestToken !== slideshowImageLoadToken) {
+  let settled = false;
+  const settleSlide = (resolvedSource) => {
+    if (settled || requestToken !== slideshowImageLoadToken) {
       return;
     }
+    settled = true;
 
     if (usePresentationMotion) {
-      applyPresentationMotion(fullSource);
+      applyPresentationMotion(resolvedSource);
     } else if (activeEntry?.image) {
-      activeEntry.image.src = fullSource;
+      activeEntry.image.src = resolvedSource;
     }
+    pushMobileSlideshowDebug(`showSlide settled src=${resolvedSource || "na"}`);
 
     if (slideshowLoaderEl) {
       slideshowLoaderEl.classList.add("hidden");
@@ -2893,24 +2975,55 @@ function showSlide(index) {
 
     scheduleSlideshowAdvance();
   };
-  fullImage.onerror = () => {
+
+  const tryLoadSourceAt = (sourceIndex) => {
     if (requestToken !== slideshowImageLoadToken) {
       return;
     }
-
-    if (usePresentationMotion) {
-      applyPresentationMotion(previewSource);
-    } else if (activeEntry?.image) {
-      activeEntry.image.src = previewSource;
+    const source = slideshowSources[sourceIndex] || previewSource;
+    pushMobileSlideshowDebug(`showSlide try source[${sourceIndex}]=${source || "na"}`);
+    if (!source) {
+      settleSlide("");
+      return;
     }
 
-    if (slideshowLoaderEl) {
-      slideshowLoaderEl.classList.add("hidden");
-    }
+    const fullImage = new Image();
+    fullImage.decoding = "async";
+    const timeout = window.setTimeout(() => {
+      if (requestToken !== slideshowImageLoadToken || settled) {
+        return;
+      }
+      if (sourceIndex < slideshowSources.length - 1) {
+        pushMobileSlideshowDebug(`showSlide timeout source[${sourceIndex}] -> fallback`);
+        tryLoadSourceAt(sourceIndex + 1);
+        return;
+      }
+      pushMobileSlideshowDebug("showSlide timeout final -> preview fallback");
+      settleSlide(previewSource);
+    }, 3500);
 
-    scheduleSlideshowAdvance();
+    fullImage.onload = () => {
+      window.clearTimeout(timeout);
+      pushMobileSlideshowDebug(`showSlide load ok source[${sourceIndex}]`);
+      settleSlide(source);
+    };
+    fullImage.onerror = () => {
+      window.clearTimeout(timeout);
+      if (requestToken !== slideshowImageLoadToken || settled) {
+        return;
+      }
+      if (sourceIndex < slideshowSources.length - 1) {
+        pushMobileSlideshowDebug(`showSlide load err source[${sourceIndex}] -> fallback`);
+        tryLoadSourceAt(sourceIndex + 1);
+        return;
+      }
+      pushMobileSlideshowDebug("showSlide load err final -> preview fallback");
+      settleSlide(previewSource);
+    };
+    fullImage.src = source;
   };
-  fullImage.src = fullSource;
+
+  tryLoadSourceAt(0);
   syncSlideshowPreloadWindow(currentSlideIndex);
 }
 
@@ -2973,9 +3086,11 @@ async function shareCurrentSlide() {
 
 function openSlideshow(index = 0) {
   if (!images.length) {
+    pushMobileSlideshowDebug("openSlideshow blocked: no images");
     setStatus("There aren’t any photos ready to play just yet.", true);
     return;
   }
+  pushMobileSlideshowDebug(`openSlideshow index=${index} images=${images.length}`);
 
   cancelBackgroundFolderPreload();
   slideshowPaused = false;
@@ -3018,6 +3133,7 @@ async function enterSlideshowFullscreen() {
 }
 
 function closeSlideshow() {
+  pushMobileSlideshowDebug("closeSlideshow");
   clearSlideshowAdvanceTimer();
   clearSlideshowUiHideTimer();
   slideshowImageLoadToken += 1;
@@ -3120,7 +3236,7 @@ async function loadFolder(folderUrl, options = {}) {
     let folderName = "";
 
     try {
-      const metaResponse = await fetch(`/api/folder-meta?url=${encodeURIComponent(folderUrl)}`);
+      const metaResponse = await fetchWithTimeout(`/api/folder-meta?url=${encodeURIComponent(folderUrl)}`, {}, 9000);
       const metaData = await metaResponse.json();
       if (metaResponse.ok && metaData.name) {
         folderName = metaData.name;
@@ -3135,7 +3251,7 @@ async function loadFolder(folderUrl, options = {}) {
     beginGalleryVisualWait();
     setLoadingState(true, "Loading your albums.", { progress: 0 });
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
-    const response = await fetch(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`);
+    const response = await fetchWithTimeout(`/api/folder?url=${encodeURIComponent(folderUrl)}&includeVideos=1`, {}, 15000);
     const data = await response.json();
 
     if (!response.ok) {
@@ -3156,7 +3272,8 @@ async function loadFolder(folderUrl, options = {}) {
     const preloadSources = getPhotoSourceCandidates(coverPhoto);
     let preloadSourceIndex = 0;
     coverPreloader.src = preloadSources[0] || "";
-    await new Promise((resolve) => {
+    await Promise.race([
+      new Promise((resolve) => {
       coverPreloader.onload = resolve;
       coverPreloader.onerror = () => {
         if (preloadSourceIndex < preloadSources.length - 1) {
@@ -3166,7 +3283,9 @@ async function loadFolder(folderUrl, options = {}) {
         }
         resolve();
       };
-    });
+      }),
+      new Promise((resolve) => window.setTimeout(resolve, 3500)),
+    ]);
   }
     setLoadingState(true, "Loading your albums.", { progress: 100 });
     await waitForGalleryVisualReady(3800);

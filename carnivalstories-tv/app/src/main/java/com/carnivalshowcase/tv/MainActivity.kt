@@ -1,14 +1,19 @@
 package com.carnivalshowcase.tv
 
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Message
 import android.os.Bundle
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.content.ActivityNotFoundException
+import android.webkit.JavascriptInterface
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -18,6 +23,9 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.URLUtil
+import android.view.MotionEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -377,14 +385,55 @@ private fun MobileWebApp(
 
   BackHandler(enabled = webView != null) {
     val activeWebView = webView ?: return@BackHandler
-    if (activeWebView.canGoBack()) {
-      activeWebView.goBack()
-      return@BackHandler
-    }
     activeWebView.evaluateJavascript(
-      "(function(){return (window.history && window.history.length > 1) ? '1' : '0';})();"
+      """
+        (function() {
+          try {
+            var slideshow = document.getElementById('slideshow');
+            var slideshowOpen = slideshow &&
+              !slideshow.classList.contains('hidden') &&
+              getComputedStyle(slideshow).display !== 'none';
+            if (slideshowOpen) {
+              if (typeof window.closeSlideshow === 'function') {
+                window.closeSlideshow();
+              } else {
+                var closeButton = document.getElementById('close-slideshow') ||
+                  document.querySelector('.slideshow-close, [data-action="close-slideshow"]');
+                if (closeButton && typeof closeButton.click === 'function') {
+                  closeButton.click();
+                } else {
+                  slideshow.classList.add('hidden');
+                  slideshow.setAttribute('aria-hidden', 'true');
+                }
+              }
+              var gallery = document.getElementById('screen-gallery');
+              if (gallery) {
+                gallery.classList.remove('panel-open');
+              }
+              if (typeof window.__mobilePromoteSettingsPanel === 'function') {
+                window.__mobilePromoteSettingsPanel('android-back');
+              }
+              var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+              var now = new Date().toISOString().slice(11, 23);
+              state.logs.unshift(now + ' [back] closed slideshow');
+              state.logs = state.logs.slice(0, 80);
+              return 'closed-slideshow';
+            }
+          } catch (_) {}
+          return (window.history && window.history.length > 1) ? 'history' : 'none';
+        })();
+      """.trimIndent()
     ) { result ->
-      val hasJsHistory = result == "\"1\"" || result == "1" || result == "true"
+      val handledSlideshow = result == "\"closed-slideshow\"" || result == "closed-slideshow"
+      if (handledSlideshow) {
+        injectMobileWebDebugPanel(activeWebView, "back", "closed slideshow")
+        return@evaluateJavascript
+      }
+      if (activeWebView.canGoBack()) {
+        activeWebView.goBack()
+        return@evaluateJavascript
+      }
+      val hasJsHistory = result == "\"history\"" || result == "history"
       when {
         hasJsHistory -> activeWebView.evaluateJavascript("history.back();", null)
         !isSameWebRoute(activeWebView.url, initialUrlWithCacheBust) ->
@@ -418,6 +467,7 @@ private fun MobileWebApp(
           override fun onPageCommitVisible(view: WebView?, url: String?) {
             super.onPageCommitVisible(view, url)
             injectHomeScreenHeightGuard(view)
+            injectCollapsedParentRecovery(view)
             injectMobileWebDebugPanel(view, "onPageCommitVisible", "url=${url.orEmpty()}")
           }
 
@@ -467,8 +517,13 @@ private fun MobileWebApp(
           override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
             injectHomeScreenHeightGuard(view)
+            injectCollapsedParentRecovery(view)
             injectGalleryCoverRecovery(view)
+            injectGalleryTapTracer(view)
+            injectSlideshowPaintRecovery(view)
+            injectMobileDownloadBridge(view)
             injectMobileWebDebugPanel(view, "onPageFinished", "url=${url.orEmpty()}")
+            scheduleDelayedMobileWebRecovery(view, url.orEmpty())
           }
         }
         webChromeClient = object : WebChromeClient() {
@@ -476,7 +531,10 @@ private fun MobileWebApp(
             super.onProgressChanged(view, newProgress)
             if (newProgress >= 50) {
               injectHomeScreenHeightGuard(view)
+              injectCollapsedParentRecovery(view)
               injectGalleryCoverRecovery(view)
+              injectSlideshowPaintRecovery(view)
+              injectMobileDownloadBridge(view)
             }
             injectMobileWebDebugPanel(view, "onProgress", "progress=$newProgress")
           }
@@ -574,9 +632,51 @@ private fun MobileWebApp(
         settings.userAgentString = buildBrowserParityUserAgent(settings.userAgentString)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+        addJavascriptInterface(MobileWebDownloadBridge(viewContext.applicationContext), "AndroidDownloader")
+        setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+          val started = enqueueMobileWebDownload(
+            context = viewContext,
+            url = url.orEmpty(),
+            userAgent = userAgent.orEmpty(),
+            contentDisposition = contentDisposition.orEmpty(),
+            mimeType = mimeType.orEmpty(),
+            suggestedFilename = null
+          )
+          val escapedUrl = url.orEmpty().replace("\\", "\\\\").replace("'", "\\'")
+          val status = if (started) "started" else "failed"
+          evaluateJavascript(
+            """
+              (function() {
+                var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+                var now = new Date().toISOString().slice(11, 23);
+                state.logs.unshift(now + ' [download] listener $status url=$escapedUrl');
+                state.logs = state.logs.slice(0, 80);
+              })();
+            """.trimIndent(),
+            null
+          )
+        }
         clearCache(true)
         clearHistory()
         setInitialScale(1)
+        setOnTouchListener { _, motionEvent ->
+          if (motionEvent?.actionMasked == MotionEvent.ACTION_UP) {
+            val density = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+            val cssX = motionEvent.x / density
+            val cssY = motionEvent.y / density
+            val bridgeScript = """
+              (function() {
+                try {
+                  if (typeof window.__androidBridgeTap === 'function') {
+                    window.__androidBridgeTap(${String.format(Locale.US, "%.2f", cssX)}, ${String.format(Locale.US, "%.2f", cssY)});
+                  }
+                } catch (_) {}
+              })();
+            """.trimIndent()
+            evaluateJavascript(bridgeScript, null)
+          }
+          false
+        }
         loadUrl(initialUrlWithCacheBust)
       }
     },
@@ -598,6 +698,602 @@ private fun MobileWebApp(
       webView = null
     }
   }
+}
+
+private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
+  val target = view ?: return
+  val delaysMs = longArrayOf(450L, 1200L, 2600L, 4200L)
+  delaysMs.forEach { delayMs ->
+    target.postDelayed({
+      injectHomeScreenHeightGuard(target)
+      injectCollapsedParentRecovery(target)
+      injectGalleryCoverRecovery(target)
+      injectGalleryTapTracer(target)
+      injectSlideshowPaintRecovery(target)
+      injectMobileDownloadBridge(target)
+      injectMobileWebDebugPanel(target, "tick", "url=$url delay=${delayMs}ms")
+    }, delayMs)
+  }
+}
+
+private class MobileWebDownloadBridge(private val context: Context) {
+  @JavascriptInterface
+  fun download(url: String?, filename: String?): Boolean {
+    return enqueueMobileWebDownload(
+      context = context,
+      url = url.orEmpty(),
+      userAgent = "",
+      contentDisposition = "",
+      mimeType = "",
+      suggestedFilename = filename.orEmpty()
+    )
+  }
+}
+
+private fun enqueueMobileWebDownload(
+  context: Context,
+  url: String,
+  userAgent: String,
+  contentDisposition: String,
+  mimeType: String,
+  suggestedFilename: String?
+): Boolean {
+  val trimmedUrl = url.trim()
+  val uri = runCatching { Uri.parse(trimmedUrl) }.getOrNull() ?: return false
+  val scheme = uri.scheme?.lowercase(Locale.US)
+  if (scheme != "http" && scheme != "https") {
+    return false
+  }
+
+  val filename = (suggestedFilename
+    ?.trim()
+    ?.takeIf { it.isNotBlank() }
+    ?: URLUtil.guessFileName(trimmedUrl, contentDisposition.takeIf { it.isNotBlank() }, mimeType.takeIf { it.isNotBlank() }))
+    .replace(Regex("""[\\/:*?"<>|]"""), "_")
+    .ifBlank { "photo.jpg" }
+
+  return runCatching {
+    val request = DownloadManager.Request(uri)
+      .setTitle(filename)
+      .setDescription("Downloading photo")
+      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+      .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+      .setAllowedOverMetered(true)
+      .setAllowedOverRoaming(true)
+
+    if (mimeType.isNotBlank()) {
+      request.setMimeType(mimeType)
+    }
+    if (userAgent.isNotBlank()) {
+      request.addRequestHeader("User-Agent", userAgent)
+    }
+    CookieManager.getInstance().getCookie(trimmedUrl)?.takeIf { it.isNotBlank() }?.let { cookie ->
+      request.addRequestHeader("Cookie", cookie)
+    }
+
+    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    manager.enqueue(request)
+    showMobileToast(context, "Download started")
+    true
+  }.getOrElse {
+    showMobileToast(context, "Could not start download")
+    false
+  }
+}
+
+private fun showMobileToast(context: Context, message: String) {
+  Handler(Looper.getMainLooper()).post {
+    Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+  }
+}
+
+private fun injectMobileDownloadBridge(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var bridgeVersion = 2;
+      function push(msg) {
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [download] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+        window.__mobileDownloadLast = now + ' ' + msg;
+      }
+      if (!window.AndroidDownloader) {
+        return;
+      }
+      if (window.__mobileDownloadBridgeVersion === bridgeVersion) {
+        return;
+      }
+      window.__mobileDownloadBridgeVersion = bridgeVersion;
+      window.__mobileDownloadBridgeBound = true;
+      function currentPhoto() {
+        try {
+          if (typeof window.getCurrentSlidePhoto === 'function') {
+            var direct = window.getCurrentSlidePhoto();
+            if (direct && direct.url) return direct;
+          }
+        } catch (_) {}
+        var img = document.getElementById('slide-image') || document.getElementById('slide-image-full');
+        if (img && (img.currentSrc || img.src)) {
+          return {
+            url: img.currentSrc || img.src,
+            name: (img.alt || 'photo') + '.jpg'
+          };
+        }
+        var first = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
+        if (first && (first.currentSrc || first.src)) {
+          return {
+            url: first.currentSrc || first.src,
+            name: (first.alt || 'photo') + '.jpg'
+          };
+        }
+        return null;
+      }
+      function startNativeDownload(photo, source) {
+        if (!photo || !photo.url) {
+          push(source + ' no current photo');
+          return false;
+        }
+        var resolvedUrl = '';
+        try {
+          resolvedUrl = new URL(photo.url, window.location.href).href;
+        } catch (_) {
+          resolvedUrl = photo.url;
+        }
+        var name = (photo.name || photo.alt || 'photo.jpg').replace(/[\\/:*?"<>|]/g, '_');
+        var ok = false;
+        try {
+          ok = !!window.AndroidDownloader.download(resolvedUrl, name);
+        } catch (error) {
+          push(source + ' bridge error=' + (error && error.message ? error.message : 'unknown'));
+          return false;
+        }
+        push(source + ' ' + (ok ? 'started' : 'failed') + ' url=' + resolvedUrl + ' name=' + name);
+        return ok;
+      }
+      if (typeof window.downloadCurrentSlide === 'function' && !window.__mobileDownloadOriginal) {
+        window.__mobileDownloadOriginal = window.downloadCurrentSlide;
+        window.downloadCurrentSlide = function() {
+          if (window.AndroidDownloader && startNativeDownload(currentPhoto(), 'function')) {
+            return;
+          }
+          return window.__mobileDownloadOriginal.apply(this, arguments);
+        };
+        push('wrapped downloadCurrentSlide');
+      }
+      window.__mobileDownloadNow = function(source) {
+        return startNativeDownload(currentPhoto(), source || 'manual');
+      };
+      var directButton = document.getElementById('download-slide');
+      if (directButton && directButton.dataset.mobileDownloadBound !== String(bridgeVersion)) {
+        directButton.dataset.mobileDownloadBound = String(bridgeVersion);
+        directButton.addEventListener('click', function(event) {
+          push('direct-button click');
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.stopImmediatePropagation) {
+            event.stopImmediatePropagation();
+          }
+          startNativeDownload(currentPhoto(), 'direct-button');
+        }, true);
+        push('direct button bound');
+      }
+      document.addEventListener('click', function(event) {
+        var target = event.target;
+        if (!target || !target.closest) return;
+        var button = target.closest('#download-slide, .slideshow-action-download, [data-action="download"]');
+        if (!button || !window.AndroidDownloader) return;
+        push('click target=' + (button.id ? '#' + button.id : button.tagName.toLowerCase()));
+        var photo = currentPhoto();
+        event.preventDefault();
+        event.stopPropagation();
+        startNativeDownload(photo, 'click');
+      }, true);
+      push('bridge attached v=' + bridgeVersion);
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectSlideshowPaintRecovery(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      function push(msg) {
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [slide-recovery] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+      }
+
+      window.__mobileForceSlideshowPaint = function(reason) {
+        try {
+          var slideshow = document.getElementById('slideshow');
+          var frame = document.querySelector('#slideshow .slideshow-frame');
+          var card = document.getElementById('slide-card-a');
+          var img = document.getElementById('slide-image');
+          var gallery = document.getElementById('screen-gallery');
+          var settingsPanel = document.querySelector('#screen-gallery .workspace-side');
+          if (!slideshow || !card || !img) {
+            push('missing nodes reason=' + (reason || 'manual'));
+            return false;
+          }
+
+          var open = !slideshow.classList.contains('hidden') || getComputedStyle(slideshow).display !== 'none';
+          if (!open) {
+            return false;
+          }
+
+          var vh = Math.max(
+            window.innerHeight || 0,
+            window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+            document.documentElement ? document.documentElement.clientHeight : 0
+          );
+          var vw = Math.max(
+            window.innerWidth || 0,
+            window.visualViewport ? Math.round(window.visualViewport.width) : 0,
+            document.documentElement ? document.documentElement.clientWidth : 0
+          );
+          if (!vh) vh = 1;
+          if (!vw) vw = 1;
+          var pxHeight = vh + 'px';
+          var pxWidth = vw + 'px';
+
+          var source = img.currentSrc || img.src || '';
+          if (!source) {
+            var firstGridImage = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
+            source = firstGridImage ? (firstGridImage.currentSrc || firstGridImage.src || '') : '';
+            if (source) {
+              img.src = source;
+            }
+          }
+
+          slideshow.classList.remove('hidden');
+          slideshow.classList.remove('slideshow-ui-hidden');
+          slideshow.style.display = 'block';
+          slideshow.style.position = 'fixed';
+          slideshow.style.inset = '0';
+          slideshow.style.width = pxWidth;
+          slideshow.style.height = pxHeight;
+          slideshow.style.minHeight = pxHeight;
+          slideshow.style.zIndex = '2147483600';
+          slideshow.style.background = slideshow.style.background || '#ffffff';
+          slideshow.style.overflow = 'hidden';
+          slideshow.setAttribute('aria-hidden', 'false');
+
+          if (frame) {
+            frame.style.position = 'relative';
+            frame.style.display = 'block';
+            frame.style.width = pxWidth;
+            frame.style.height = pxHeight;
+            frame.style.minHeight = pxHeight;
+            frame.style.overflow = 'hidden';
+          }
+
+          card.classList.remove('hidden', 'is-leaving');
+          card.classList.add('is-active');
+          card.style.position = 'absolute';
+          card.style.top = Math.round(vh / 2) + 'px';
+          card.style.left = Math.round(vw / 2) + 'px';
+          card.style.zIndex = '20';
+          card.style.display = 'grid';
+          card.style.placeItems = 'center';
+          card.style.width = pxWidth;
+          card.style.height = pxHeight;
+          card.style.maxWidth = pxWidth;
+          card.style.maxHeight = pxHeight;
+          card.style.minHeight = '0';
+          card.style.opacity = '1';
+          card.style.visibility = 'visible';
+          card.style.transform = 'translate(-50%, -50%)';
+          card.setAttribute('aria-hidden', 'false');
+
+          img.classList.remove('hidden');
+          img.style.display = 'block';
+          img.style.visibility = 'visible';
+          img.style.opacity = '1';
+          img.style.width = 'auto';
+          img.style.height = 'auto';
+          img.style.maxWidth = pxWidth;
+          img.style.maxHeight = pxHeight;
+          img.style.objectFit = 'contain';
+          img.style.margin = '0 auto';
+          img.style.background = 'transparent';
+          if (source && !img.src) {
+            img.src = source;
+          }
+
+          var loader = document.getElementById('slideshow-loader');
+          if (loader) {
+            loader.classList.add('hidden');
+          }
+
+          window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('paint');
+
+          push('applied reason=' + (reason || 'manual') + ' size=' + pxWidth + 'x' + pxHeight + ' src=' + (source || 'na'));
+          return true;
+        } catch (error) {
+          push('error=' + (error && error.message ? error.message : 'unknown'));
+          return false;
+        }
+      };
+
+      window.__mobilePromoteSettingsPanel = function(reason) {
+        try {
+          var gallery = document.getElementById('screen-gallery');
+          var slideshow = document.getElementById('slideshow');
+          var side = document.querySelector('#screen-gallery .workspace-side') ||
+            document.querySelector('body > .workspace-side[data-mobile-settings-promoted="true"]');
+          if (!gallery || !side) return false;
+
+          var slideshowOpen = slideshow &&
+            !slideshow.classList.contains('hidden') &&
+            getComputedStyle(slideshow).display !== 'none';
+          if (slideshowOpen) {
+            window.__mobileSlideshowHadOpenSettingsContext = true;
+          } else if (window.__mobileSlideshowHadOpenSettingsContext && gallery.classList.contains('panel-open')) {
+            gallery.classList.remove('panel-open');
+            window.__mobileSlideshowHadOpenSettingsContext = false;
+            push('settings closed after slideshow close reason=' + (reason || 'manual'));
+          }
+
+          var panelOpen = gallery.classList.contains('panel-open');
+          if (!panelOpen) {
+            if (side.dataset && side.dataset.mobileSettingsPromoted === 'true' && window.__mobileSettingsPanelHome) {
+              var home = window.__mobileSettingsPanelHome;
+              if (home.parent && document.contains(home.parent)) {
+                if (home.nextSibling && document.contains(home.nextSibling) && home.nextSibling.parentNode === home.parent) {
+                  home.parent.insertBefore(side, home.nextSibling);
+                } else {
+                  home.parent.appendChild(side);
+                }
+              }
+              delete side.dataset.mobileSettingsPromoted;
+            }
+            side.style.removeProperty('display');
+            side.style.removeProperty('z-index');
+            side.style.removeProperty('pointer-events');
+            side.style.removeProperty('transform');
+            side.style.removeProperty('isolation');
+            side.style.removeProperty('position');
+            side.style.removeProperty('top');
+            side.style.removeProperty('right');
+            side.style.removeProperty('bottom');
+            side.style.removeProperty('left');
+            side.style.removeProperty('width');
+            side.style.removeProperty('height');
+            side.style.removeProperty('max-height');
+            side.style.removeProperty('overflow');
+            side.style.removeProperty('background');
+            side.style.removeProperty('box-shadow');
+            return false;
+          }
+
+          if (!window.__mobileSettingsPanelHome) {
+            window.__mobileSettingsPanelHome = {
+              parent: side.parentNode,
+              nextSibling: side.nextSibling
+            };
+          }
+          if (side.parentNode !== document.body) {
+            document.body.appendChild(side);
+            if (side.dataset) {
+              side.dataset.mobileSettingsPromoted = 'true';
+            }
+          }
+
+          var vh = Math.max(
+            window.innerHeight || 0,
+            window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+            document.documentElement ? document.documentElement.clientHeight : 0
+          ) || 1;
+          var vw = Math.max(
+            window.innerWidth || 0,
+            window.visualViewport ? Math.round(window.visualViewport.width) : 0,
+            document.documentElement ? document.documentElement.clientWidth : 0
+          ) || 1;
+          var width = Math.min(360, Math.max(1, vw - 24));
+
+          side.style.setProperty('display', 'block', 'important');
+          side.style.setProperty('position', 'fixed', 'important');
+          side.style.setProperty('top', '0px', 'important');
+          side.style.setProperty('right', '0px', 'important');
+          side.style.setProperty('bottom', 'auto', 'important');
+          side.style.setProperty('left', 'auto', 'important');
+          side.style.setProperty('width', width + 'px', 'important');
+          side.style.setProperty('height', vh + 'px', 'important');
+          side.style.setProperty('max-height', vh + 'px', 'important');
+          side.style.setProperty('overflow', 'auto', 'important');
+          side.style.setProperty('z-index', '2147483647', 'important');
+          side.style.setProperty('pointer-events', 'auto', 'important');
+          side.style.setProperty('background', 'var(--template-bg)', 'important');
+          side.style.setProperty('box-shadow', '-24px 0 56px rgba(var(--template-accent-rgb), 0.22)', 'important');
+          side.style.setProperty('transform', 'none', 'important');
+          side.style.setProperty('isolation', 'isolate', 'important');
+
+          if (slideshow && !slideshow.classList.contains('hidden')) {
+            slideshow.style.setProperty('z-index', '2147483600', 'important');
+          }
+
+          push('settings promoted reason=' + (reason || 'manual') + ' size=' + width + 'x' + vh + ' parent=' + (side.parentNode === document.body ? 'body' : 'gallery'));
+          return true;
+        } catch (error) {
+          push('settings promote error=' + (error && error.message ? error.message : 'unknown'));
+          return false;
+        }
+      };
+
+      if (!window.__mobileSettingsPanelObserverStarted) {
+        window.__mobileSettingsPanelObserverStarted = true;
+        try {
+          var galleryForSettings = document.getElementById('screen-gallery');
+          if (galleryForSettings && window.MutationObserver) {
+            new MutationObserver(function(records) {
+              records.forEach(function(record) {
+                if (record.attributeName === 'class') {
+                  window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('class-change');
+                }
+              });
+            }).observe(galleryForSettings, { attributes: true, attributeFilter: ['class'] });
+          }
+
+          document.addEventListener('click', function(event) {
+            var target = event.target;
+            if (!target || !target.closest) return;
+            if (target.closest('#toggle-slideshow-settings') || target.closest('#toggle-gallery-settings')) {
+              window.setTimeout(function() {
+                window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('settings-click');
+              }, 0);
+              window.setTimeout(function() {
+                window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('settings-click-late');
+              }, 120);
+            }
+          }, true);
+
+          push('settings observer attached');
+        } catch (error) {
+          push('settings observer error=' + (error && error.message ? error.message : 'unknown'));
+        }
+      }
+
+      if (!window.__mobileSlideshowLifecycleObserverStarted) {
+        window.__mobileSlideshowLifecycleObserverStarted = true;
+        try {
+          var watched = [
+            document.getElementById('slideshow'),
+            document.getElementById('slide-card-a'),
+            document.getElementById('slide-image'),
+            document.getElementById('slideshow-loader')
+          ].filter(Boolean);
+          var observer = new MutationObserver(function(records) {
+            records.forEach(function(record) {
+              var target = record.target;
+              var name = target.id ? '#' + target.id : target.tagName.toLowerCase();
+              var value = '';
+              if (record.attributeName === 'class') {
+                value = target.className || '';
+              } else if (record.attributeName === 'src') {
+                value = target.currentSrc || target.src || '';
+              } else if (record.attributeName === 'style') {
+                value = target.getAttribute('style') || '';
+              } else if (record.attributeName === 'aria-hidden') {
+                value = target.getAttribute('aria-hidden') || '';
+              }
+              push('mutate ' + name + ' ' + record.attributeName + '=' + value);
+              if (target.id === 'slideshow' && record.attributeName === 'class') {
+                window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('slideshow-class');
+              }
+            });
+          });
+          watched.forEach(function(node) {
+            observer.observe(node, {
+              attributes: true,
+              attributeFilter: ['class', 'src', 'style', 'aria-hidden']
+            });
+          });
+          push('observer attached nodes=' + watched.length);
+        } catch (error) {
+          push('observer error=' + (error && error.message ? error.message : 'unknown'));
+        }
+      }
+
+      window.__mobileForceSlideshowPaint('tick');
+      window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('tick');
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
+private fun injectGalleryTapTracer(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+      if (window.__mobileTapTracerBound) return;
+      window.__mobileTapTracerBound = true;
+      function push(msg) {
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [tap] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+      }
+      function onHit(e, type) {
+        var t = e && e.target;
+        if (!t || !t.closest) return;
+        var card = t.closest('#gallery .photo-card');
+        if (!card) return;
+        push(type + ' idx=' + ((card.dataset && card.dataset.index) ? card.dataset.index : 'na') + ' prevented=' + !!e.defaultPrevented);
+        if (type === 'touchend' || type === 'pointerup') {
+          window.setTimeout(function() {
+            try {
+              if (!card.isConnected) return;
+              var idx = Number((card.dataset && card.dataset.index) ? card.dataset.index : 0) || 0;
+              if (typeof window.openSlideshow === 'function') {
+                window.openSlideshow(idx);
+                push('bridge-openSlideshow idx=' + idx);
+              } else {
+                card.click();
+                push('bridge-click idx=' + idx);
+              }
+              window.setTimeout(function() {
+                try {
+                  if (typeof window.__mobileForceSlideshowPaint === 'function') {
+                    window.__mobileForceSlideshowPaint('tap-bridge');
+                  }
+                } catch (_) {}
+              }, 120);
+            } catch (_) {}
+          }, 0);
+        }
+      }
+      document.addEventListener('touchend', function(e) { onHit(e, 'touchend'); }, true);
+      document.addEventListener('pointerup', function(e) { onHit(e, 'pointerup'); }, true);
+      document.addEventListener('click', function(e) { onHit(e, 'click'); }, true);
+      window.__androidBridgeTap = function(x, y) {
+        try {
+          var px = Number(x) || 0;
+          var py = Number(y) || 0;
+          var el = document.elementFromPoint(px, py);
+          var downloadButton = el && el.closest ? el.closest('#download-slide, .slideshow-action-download, [data-action="download"]') : null;
+          if (!downloadButton) {
+            var downloadCandidates = Array.prototype.slice.call(document.querySelectorAll('#download-slide, .slideshow-action-download, [data-action="download"]'));
+            downloadButton = downloadCandidates.find(function(candidate) {
+              var style = getComputedStyle(candidate);
+              if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') return false;
+              var rect = candidate.getBoundingClientRect();
+              var pad = 24;
+              return px >= rect.left - pad && px <= rect.right + pad && py >= rect.top - pad && py <= rect.bottom + pad;
+            }) || null;
+          }
+          if (downloadButton && typeof window.__mobileDownloadNow === 'function') {
+            push('android-download x=' + px + ' y=' + py + ' via=' + (downloadButton.id ? '#' + downloadButton.id : downloadButton.tagName.toLowerCase()));
+            window.__mobileDownloadNow('android-bridge');
+            return;
+          }
+          if (!el || !el.closest) return;
+          var card = el.closest('#gallery .photo-card');
+          if (!card) return;
+          var idx = Number((card.dataset && card.dataset.index) ? card.dataset.index : 0) || 0;
+          push('android-bridge idx=' + idx + ' x=' + x + ' y=' + y);
+          if (typeof window.openSlideshow === 'function') {
+            window.openSlideshow(idx);
+            push('android-openSlideshow idx=' + idx);
+          } else {
+            card.click();
+            push('android-click idx=' + idx);
+          }
+          window.setTimeout(function() {
+            try {
+              if (typeof window.__mobileForceSlideshowPaint === 'function') {
+                window.__mobileForceSlideshowPaint('android-bridge');
+              }
+            } catch (_) {}
+          }, 120);
+        } catch (_) {}
+      };
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
 }
 
 private fun appendQueryParam(rawUrl: String, key: String, value: String): String {
@@ -659,6 +1355,46 @@ private fun injectHomeScreenHeightGuard(view: WebView?) {
   target.evaluateJavascript(script, null)
 }
 
+private fun injectCollapsedParentRecovery(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      var html = document.documentElement;
+      var body = document.body;
+      var appShell = document.querySelector('.app-shell');
+      if (!html || !body || !appShell) return;
+
+      var vh = Math.max(
+        window.innerHeight || 0,
+        window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+        html.clientHeight || 0
+      );
+      if (!vh) return;
+
+      var collapsed =
+        (body.clientHeight || 0) < 80 ||
+        (appShell.getBoundingClientRect().height || 0) < 80;
+      if (!collapsed) return;
+
+      html.style.minHeight = vh + 'px';
+      body.style.minHeight = vh + 'px';
+      body.style.height = 'auto';
+      appShell.style.minHeight = vh + 'px';
+      appShell.style.height = 'auto';
+
+      var direct = document.getElementById('screen-direct-link');
+      var gallery = document.getElementById('screen-gallery');
+      if (direct && direct.classList.contains('active')) {
+        direct.style.minHeight = vh + 'px';
+      }
+      if (gallery && gallery.classList.contains('active')) {
+        gallery.style.minHeight = vh + 'px';
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
 private fun injectGalleryCoverRecovery(view: WebView?) {
   val target = view ?: return
   val script = """
@@ -668,8 +1404,87 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
       if (!gallery || !cover) return;
       if (!gallery.classList.contains('active')) return;
 
+      function ensureCoverFromGrid() {
+        var existingCoverCard = cover.querySelector('.photo-card-cover img');
+        if (existingCoverCard) return true;
+        var firstGridImage = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
+        var source = firstGridImage ? (firstGridImage.currentSrc || firstGridImage.src || '') : '';
+        if (!source) {
+          var workspaceMain = document.querySelector('#screen-gallery .workspace-main');
+          if (workspaceMain) {
+            var cs = getComputedStyle(workspaceMain);
+            var bg = cs.getPropertyValue('--loading-cover-image') || '';
+            bg = String(bg || '').trim();
+            if (bg && bg !== 'none') {
+              cover.classList.add('has-loading-background');
+              try {
+                cover.style.setProperty('--loading-cover-image', bg);
+              } catch (_) {}
+              return true;
+            }
+          }
+        }
+        if (!source) return false;
+        cover.classList.add('has-cover-image');
+        cover.style.setProperty('--cover-image', 'url("' + source.replace(/"/g, '\\"') + '")');
+        var card = document.createElement('div');
+        card.className = 'photo-card photo-card-cover';
+        var img = document.createElement('img');
+        img.src = source;
+        img.alt = 'Cover photo';
+        card.appendChild(img);
+        cover.insertBefore(card, cover.firstChild);
+        return true;
+      }
+
+      function releaseLoadingUi() {
+        var loadingIndicator = document.querySelector('.loading-indicator');
+        gallery.classList.remove('loading');
+        gallery.classList.remove('loading-fading');
+        gallery.classList.add('revealed');
+        if (loadingIndicator) {
+          loadingIndicator.classList.add('hidden');
+        }
+      }
+
+      var recoveryState = window.__mobileUiRecoveryState || (window.__mobileUiRecoveryState = {});
+      if (!recoveryState.galleryObserverStarted) {
+        recoveryState.galleryObserverStarted = true;
+        try {
+          var galleryGrid = document.getElementById('gallery');
+          if (galleryGrid && window.MutationObserver) {
+            var observer = new MutationObserver(function() {
+              try {
+                if (ensureCoverFromGrid()) {
+                  releaseLoadingUi();
+                }
+              } catch (_) {}
+            });
+            observer.observe(galleryGrid, { childList: true, subtree: true });
+            recoveryState.galleryObserver = observer;
+          }
+        } catch (_) {}
+      }
+
+      if (!recoveryState.loadingWatchdogStarted) {
+        recoveryState.loadingWatchdogStarted = true;
+        window.setTimeout(function() {
+          try {
+            var g = document.getElementById('screen-gallery');
+            var c = document.getElementById('cover-photo');
+            if (!g || !c || !g.classList.contains('active')) return;
+            if (g.classList.contains('loading')) {
+              releaseLoadingUi();
+            }
+            ensureCoverFromGrid();
+          } catch (_) {}
+        }, 1800);
+      }
+
       var coverRect = cover.getBoundingClientRect();
-      if (coverRect.height > 40) return;
+      var hasCoverNode = !!cover.querySelector('.photo-card-cover img');
+      var hasCoverClass = cover.classList.contains('has-cover-image');
+      if (coverRect.height > 40 && (hasCoverNode || hasCoverClass)) return;
 
       var vh = Math.max(
         window.innerHeight || 0,
@@ -681,23 +1496,11 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
         cover.style.height = vh + 'px';
       }
 
-      var existingCoverCard = cover.querySelector('.photo-card-cover img');
-      if (existingCoverCard) return;
+      if (gallery.classList.contains('loading') && ensureCoverFromGrid()) {
+        releaseLoadingUi();
+      }
 
-      var firstGridImage = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
-      var source = firstGridImage ? (firstGridImage.currentSrc || firstGridImage.src || '') : '';
-      if (!source) return;
-
-      cover.classList.add('has-cover-image');
-      cover.style.setProperty('--cover-image', 'url("' + source.replace(/"/g, '\\"') + '")');
-
-      var card = document.createElement('div');
-      card.className = 'photo-card photo-card-cover';
-      var img = document.createElement('img');
-      img.src = source;
-      img.alt = 'Cover photo';
-      card.appendChild(img);
-      cover.insertBefore(card, cover.firstChild);
+      ensureCoverFromGrid();
     })();
   """.trimIndent()
   target.evaluateJavascript(script, null)
@@ -736,6 +1539,127 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         var hasNode = !!cover.querySelector('.photo-card-cover img');
         return 'coverRecovery hasNode=' + hasNode + ' hasClass=' + cover.classList.contains('has-cover-image');
       }
+      function recoveryLine() {
+        var body = document.body;
+        var shell = document.querySelector('.app-shell');
+        if (!body || !shell) return 'parentRecovery=missing';
+        return 'parentRecovery bodyMinH=' + (body.style.minHeight || 'na') +
+          ' shellMinH=' + (shell.style.minHeight || 'na');
+      }
+      function galleryStateLine() {
+        var gallery = document.getElementById('screen-gallery');
+        if (!gallery) return 'galleryState=missing';
+        return 'galleryState classes=' + (gallery.className || '');
+      }
+      function loadingLine() {
+        var el = document.querySelector('.loading-indicator');
+        if (!el) return 'loadingIndicator=missing';
+        var cs = getComputedStyle(el);
+        return 'loadingIndicator disp=' + cs.display + ' vis=' + cs.visibility + ' classes=' + (el.className || '');
+      }
+      function imageSourceLine() {
+        var coverImg = document.querySelector('#cover-photo .photo-card-cover img');
+        var gridImg = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
+        var slideImg = document.querySelector('#slide-image');
+        var slideImgFull = document.querySelector('#slide-image-full');
+        var coverSrc = coverImg ? (coverImg.currentSrc || coverImg.src || '') : '';
+        var gridSrc = gridImg ? (gridImg.currentSrc || gridImg.src || '') : '';
+        var slideSrc = slideImg ? (slideImg.currentSrc || slideImg.src || '') : '';
+        var slideFullSrc = slideImgFull ? (slideImgFull.currentSrc || slideImgFull.src || '') : '';
+        return 'imgSrc cover=' + (coverSrc || 'na') +
+          ' grid=' + (gridSrc || 'na') +
+          ' slide=' + (slideSrc || 'na') +
+          ' slideFull=' + (slideFullSrc || 'na');
+      }
+      function slideshowDebugLine() {
+        var state = window.__mobileSlideshowDebug;
+        if (!state || !Array.isArray(state.logs) || !state.logs.length) {
+          return 'slideshowDebug=none';
+        }
+        return 'slideshowDebug=' + state.logs.slice(0, 4).join(' || ');
+      }
+      function classLine(sel) {
+        var el = null;
+        try { el = document.querySelector(sel); } catch (_) { el = null; }
+        if (!el) return sel + '.class=missing';
+        return sel + '.class=' + (el.className || '');
+      }
+      function imageDetailLine(sel) {
+        var img = null;
+        try { img = document.querySelector(sel); } catch (_) { img = null; }
+        if (!img) return sel + '.img=missing';
+        var cs = getComputedStyle(img);
+        var rect = img.getBoundingClientRect();
+        return sel + '.img complete=' + !!img.complete +
+          ' natural=' + (img.naturalWidth || 0) + 'x' + (img.naturalHeight || 0) +
+          ' rect=' + r(rect.width) + 'x' + r(rect.height) +
+          ' disp=' + cs.display +
+          ' vis=' + cs.visibility +
+          ' opacity=' + cs.opacity +
+          ' src=' + (img.currentSrc || img.src || 'na');
+      }
+      function styleLine(sel) {
+        var el = null;
+        try { el = document.querySelector(sel); } catch (_) { el = null; }
+        if (!el) return sel + '.style=missing';
+        var cs = getComputedStyle(el);
+        return sel + '.style z=' + cs.zIndex +
+          ' opacity=' + cs.opacity +
+          ' vis=' + cs.visibility +
+          ' transform=' + cs.transform +
+          ' pointer=' + cs.pointerEvents;
+      }
+      function hitTestLine() {
+        var x = Math.round((window.innerWidth || 0) / 2);
+        var y = Math.round((window.innerHeight || 0) / 2);
+        var list = [];
+        try {
+          list = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)])
+            .filter(Boolean)
+            .slice(0, 8)
+            .map(function(el) {
+              return (el.id ? '#' + el.id : el.tagName.toLowerCase()) +
+                (el.className && typeof el.className === 'string' ? '.' + el.className.trim().replace(/\s+/g, '.') : '');
+            });
+        } catch (_) {}
+        return 'hitTest center=' + x + ',' + y + ' stack=' + (list.length ? list.join(' > ') : 'na');
+      }
+      function openerLine() {
+        var cards = document.querySelectorAll('#gallery .photo-card:not(.photo-card-cover)');
+        return 'openers openSlideshow=' + (typeof window.openSlideshow) +
+          ' mobileForce=' + (typeof window.__mobileForceSlideshowPaint) +
+          ' firstCards=' + cards.length;
+      }
+      function downloadLine() {
+        var button = document.getElementById('download-slide') ||
+          document.querySelector('.slideshow-action-download, [data-action="download"]');
+        var rect = button ? button.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+        return 'download bridge=' + (typeof window.AndroidDownloader) +
+          ' bound=' + !!window.__mobileDownloadBridgeBound +
+          ' version=' + (window.__mobileDownloadBridgeVersion || 'na') +
+          ' wrapped=' + !!window.__mobileDownloadOriginal +
+          ' manual=' + (typeof window.__mobileDownloadNow) +
+          ' last=' + (window.__mobileDownloadLast || 'na') +
+          ' button=' + (button ? ((button.id ? '#' + button.id : button.tagName.toLowerCase()) + ' disp=' + getComputedStyle(button).display + ' rect=' + r(rect.left) + ',' + r(rect.top) + ',' + r(rect.width) + 'x' + r(rect.height)) : 'missing');
+      }
+      function settingsLine() {
+        var gallery = document.getElementById('screen-gallery');
+        var side = document.querySelector('#screen-gallery .workspace-side') ||
+          document.querySelector('body > .workspace-side[data-mobile-settings-promoted="true"]');
+        var panel = side ? side.querySelector('.side-panel') : null;
+        if (!gallery || !side) return 'settings=missing';
+        var cs = getComputedStyle(side);
+        var rect = side.getBoundingClientRect();
+        var panelRect = panel ? panel.getBoundingClientRect() : { width: 0, height: 0 };
+        return 'settings panelOpen=' + gallery.classList.contains('panel-open') +
+          ' sideRect=' + r(rect.width) + 'x' + r(rect.height) +
+          ' sideDisp=' + cs.display +
+          ' sidePos=' + cs.position +
+          ' sideZ=' + cs.zIndex +
+          ' sideParent=' + (side.parentNode === document.body ? 'body' : '#screen-gallery') +
+          ' promoted=' + (side.dataset && side.dataset.mobileSettingsPromoted === 'true') +
+          ' panelRect=' + r(panelRect.width) + 'x' + r(panelRect.height);
+      }
       var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
       var now = new Date().toISOString().slice(11, 23);
       state.logs.unshift(now + ' [' + phase + '] ' + note);
@@ -749,22 +1673,181 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         panel.style.left = '8px';
         panel.style.right = '8px';
         panel.style.bottom = '8px';
-        panel.style.height = '260px';
+        panel.style.height = '42vh';
+        panel.style.maxHeight = '520px';
+        panel.style.minHeight = '280px';
         panel.style.zIndex = '2147483647';
         panel.style.background = 'rgba(10, 12, 14, 0.93)';
         panel.style.color = '#d2ffd2';
         panel.style.border = '1px solid rgba(150, 255, 150, 0.28)';
         panel.style.borderRadius = '10px';
         panel.style.overflow = 'hidden';
-        panel.style.pointerEvents = 'none';
+        panel.style.pointerEvents = 'auto';
 
         var title = document.createElement('div');
+        title.style.position = 'relative';
         title.textContent = 'Mobile UI Debug';
         title.style.padding = '8px 10px';
         title.style.font = '600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace';
         title.style.letterSpacing = '0.08em';
         title.style.textTransform = 'uppercase';
         title.style.borderBottom = '1px solid rgba(150, 255, 150, 0.22)';
+
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.id = 'mobile-ui-debug-copy';
+        copyBtn.textContent = 'Copy';
+        copyBtn.style.position = 'absolute';
+        copyBtn.style.top = '5px';
+        copyBtn.style.right = '8px';
+        copyBtn.style.padding = '3px 8px';
+        copyBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
+        copyBtn.style.borderRadius = '6px';
+        copyBtn.style.background = 'rgba(20, 28, 24, 0.9)';
+        copyBtn.style.color = '#d2ffd2';
+        copyBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
+        copyBtn.style.letterSpacing = '0.06em';
+        copyBtn.style.cursor = 'pointer';
+        copyBtn.style.pointerEvents = 'auto';
+        copyBtn.addEventListener('click', function() {
+          var preNode = document.getElementById('mobile-ui-debug-pre');
+          var text = preNode ? preNode.textContent || '' : '';
+          if (!text) return;
+          var done = function() {
+            copyBtn.textContent = 'Copied';
+            window.setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1100);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function() {});
+          } else {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            ta.style.pointerEvents = 'none';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+              document.execCommand('copy');
+              done();
+            } catch (_) {}
+            ta.remove();
+          }
+        });
+
+        var openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.id = 'mobile-ui-debug-open-slide';
+        openBtn.textContent = 'Open Slide';
+        openBtn.style.position = 'absolute';
+        openBtn.style.top = '5px';
+        openBtn.style.right = '118px';
+        openBtn.style.padding = '3px 8px';
+        openBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
+        openBtn.style.borderRadius = '6px';
+        openBtn.style.background = 'rgba(20, 28, 24, 0.9)';
+        openBtn.style.color = '#d2ffd2';
+        openBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
+        openBtn.style.letterSpacing = '0.03em';
+        openBtn.style.cursor = 'pointer';
+        openBtn.style.pointerEvents = 'auto';
+        openBtn.addEventListener('click', function() {
+          try {
+            var s = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+            var ts = new Date().toISOString().slice(11, 23);
+            var firstCard = document.querySelector('#gallery .photo-card:not(.photo-card-cover)');
+            if (typeof window.openSlideshow === 'function') {
+              window.openSlideshow(0);
+              s.logs.unshift(ts + ' [debug-open] window.openSlideshow(0)');
+              s.logs = s.logs.slice(0, 80);
+              window.setTimeout(function() {
+                try {
+                  if (typeof window.__mobileForceSlideshowPaint === 'function') {
+                    window.__mobileForceSlideshowPaint('debug-open');
+                  }
+                } catch (_) {}
+              }, 120);
+              return;
+            }
+            if (firstCard && typeof firstCard.click === 'function') {
+              firstCard.click();
+              s.logs.unshift(ts + ' [debug-open] firstCard.click()');
+              s.logs = s.logs.slice(0, 80);
+              window.setTimeout(function() {
+                try {
+                  if (typeof window.__mobileForceSlideshowPaint === 'function') {
+                    window.__mobileForceSlideshowPaint('debug-open');
+                  }
+                } catch (_) {}
+              }, 120);
+              return;
+            }
+            s.logs.unshift(ts + ' [debug-open] no callable opener');
+            s.logs = s.logs.slice(0, 80);
+          } catch (err) {
+            try {
+              var s2 = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+              var ts2 = new Date().toISOString().slice(11, 23);
+              s2.logs.unshift(ts2 + ' [debug-open] error=' + (err && err.message ? err.message : 'unknown'));
+              s2.logs = s2.logs.slice(0, 80);
+            } catch (_) {}
+          }
+        });
+
+        var hideBtn = document.createElement('button');
+        hideBtn.type = 'button';
+        hideBtn.id = 'mobile-ui-debug-hide';
+        hideBtn.textContent = 'Hide';
+        hideBtn.style.position = 'absolute';
+        hideBtn.style.top = '5px';
+        hideBtn.style.right = '56px';
+        hideBtn.style.padding = '3px 8px';
+        hideBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
+        hideBtn.style.borderRadius = '6px';
+        hideBtn.style.background = 'rgba(20, 28, 24, 0.9)';
+        hideBtn.style.color = '#d2ffd2';
+        hideBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
+        hideBtn.style.letterSpacing = '0.06em';
+        hideBtn.style.cursor = 'pointer';
+        hideBtn.style.pointerEvents = 'auto';
+
+        var showBtn = document.getElementById('mobile-ui-debug-show');
+        if (!showBtn) {
+          showBtn = document.createElement('button');
+          showBtn.type = 'button';
+          showBtn.id = 'mobile-ui-debug-show';
+          showBtn.textContent = 'Show Debug';
+          showBtn.style.position = 'fixed';
+          showBtn.style.right = '12px';
+          showBtn.style.bottom = '12px';
+          showBtn.style.zIndex = '2147483647';
+          showBtn.style.padding = '6px 10px';
+          showBtn.style.border = '1px solid rgba(150, 255, 150, 0.42)';
+          showBtn.style.borderRadius = '8px';
+          showBtn.style.background = 'rgba(10, 12, 14, 0.9)';
+          showBtn.style.color = '#d2ffd2';
+          showBtn.style.font = '600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
+          showBtn.style.letterSpacing = '0.06em';
+          showBtn.style.cursor = 'pointer';
+          showBtn.style.pointerEvents = 'auto';
+          showBtn.style.display = 'none';
+          showBtn.addEventListener('click', function() {
+            var p = document.getElementById('mobile-ui-debug-panel');
+            if (!p) return;
+            p.style.display = 'block';
+            showBtn.style.display = 'none';
+          });
+          document.body.appendChild(showBtn);
+        }
+
+        hideBtn.addEventListener('click', function() {
+          panel.style.display = 'none';
+          var button = document.getElementById('mobile-ui-debug-show');
+          if (button) {
+            button.style.display = 'block';
+          }
+        });
 
         var pre = document.createElement('pre');
         pre.id = 'mobile-ui-debug-pre';
@@ -774,6 +1857,9 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         pre.style.overflow = 'auto';
         pre.style.whiteSpace = 'pre';
         pre.style.font = '11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace';
+        title.appendChild(openBtn);
+        title.appendChild(hideBtn);
+        title.appendChild(copyBtn);
         panel.appendChild(title);
         panel.appendChild(pre);
         document.body.appendChild(panel);
@@ -800,7 +1886,30 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         metric('#cover-photo'),
         inlineStyleLine('#cover-photo'),
         flagLine(),
+        recoveryLine(),
+        galleryStateLine(),
+        loadingLine(),
+        imageSourceLine(),
+        slideshowDebugLine(),
         metric('#slideshow'),
+        classLine('#slideshow'),
+        styleLine('#slideshow'),
+        metric('.slideshow-frame'),
+        styleLine('.slideshow-frame'),
+        metric('#slide-card-a'),
+        classLine('#slide-card-a'),
+        styleLine('#slide-card-a'),
+        metric('#slide-card-b'),
+        classLine('#slide-card-b'),
+        styleLine('#slide-card-b'),
+        imageDetailLine('#slide-image'),
+        imageDetailLine('#slide-image-full'),
+        metric('#slideshow-loader'),
+        classLine('#slideshow-loader'),
+        openerLine(),
+        downloadLine(),
+        settingsLine(),
+        hitTestLine(),
         metric('.link-stage'),
         metric('.home-footer'),
         'note=' + note

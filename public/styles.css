@@ -623,6 +623,7 @@ label:focus-within {
   text-align: left;
   color: rgba(var(--template-bg-rgb), 0.8);
   opacity: 1;
+  pointer-events: none;
   transition: opacity 1000ms ease;
 }
 
