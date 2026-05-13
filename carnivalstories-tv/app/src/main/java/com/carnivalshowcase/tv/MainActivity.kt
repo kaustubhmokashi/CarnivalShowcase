@@ -1646,10 +1646,51 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
         return Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0) <= 900;
       }
 
+      function rememberHome(node, key) {
+        if (!node || window[key]) return;
+        var marker = document.createComment(key);
+        node.parentNode && node.parentNode.insertBefore(marker, node);
+        window[key] = {
+          parent: node.parentNode,
+          marker: marker
+        };
+      }
+
+      function promoteForNativeDrawer(n) {
+        rememberHome(n.scrim, '__mobileStudioDrawerScrimHome');
+        rememberHome(n.sidebar, '__mobileStudioDrawerSidebarHome');
+        if (n.scrim && n.scrim.parentNode !== document.body) {
+          document.body.appendChild(n.scrim);
+        }
+        if (n.sidebar && n.sidebar.parentNode !== document.body) {
+          document.body.appendChild(n.sidebar);
+        }
+      }
+
+      function restoreFromNativeDrawer(n) {
+        var sidebarHome = window.__mobileStudioDrawerSidebarHome;
+        var scrimHome = window.__mobileStudioDrawerScrimHome;
+        if (n.sidebar && sidebarHome && sidebarHome.parent && sidebarHome.marker) {
+          sidebarHome.parent.insertBefore(n.sidebar, sidebarHome.marker);
+          sidebarHome.marker.remove();
+          window.__mobileStudioDrawerSidebarHome = null;
+        }
+        if (n.scrim && scrimHome && scrimHome.parent && scrimHome.marker) {
+          scrimHome.parent.insertBefore(n.scrim, scrimHome.marker);
+          scrimHome.marker.remove();
+          window.__mobileStudioDrawerScrimHome = null;
+        }
+      }
+
       function paint(open, reason) {
         var n = getNodes();
         if (!isStudioRoute() || !isMobile() || !n.dashboard || !n.sidebar || n.dashboard.classList.contains('hidden')) {
           return false;
+        }
+
+        if (open) {
+          promoteForNativeDrawer(n);
+          n = getNodes();
         }
 
         n.dashboard.classList.toggle('sidebar-open', !!open);
@@ -1690,6 +1731,13 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
         n.sidebar.style.willChange = 'transform';
         n.sidebar.style.pointerEvents = open ? 'auto' : 'none';
         n.sidebar.style.boxShadow = open ? '18px 0 48px rgba(0,0,0,0.18)' : '';
+        n.sidebar.style.contain = 'none';
+        n.sidebar.style.clipPath = 'none';
+        n.sidebar.style.webkitClipPath = 'none';
+
+        if (!open) {
+          restoreFromNativeDrawer(n);
+        }
 
         push((open ? 'open' : 'close') + ' reason=' + reason);
         return true;
