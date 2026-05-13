@@ -68,6 +68,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -383,6 +385,9 @@ private fun MobileWebApp(
   var webView by remember { mutableStateOf<WebView?>(null) }
   var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
   var googleSignInInFlight by remember { mutableStateOf(false) }
+  var nativeStudioDrawerOpen by remember { mutableStateOf(false) }
+  var nativeStudioDrawerLogoUrl by remember { mutableStateOf("") }
+  var nativeStudioDrawerName by remember { mutableStateOf("") }
   val googleSignInClient = remember(context, googleWebClientId) {
     if (googleWebClientId.isBlank()) {
       null
@@ -445,6 +450,11 @@ private fun MobileWebApp(
   }
 
   BackHandler(enabled = webView != null) {
+    if (nativeStudioDrawerOpen) {
+      nativeStudioDrawerOpen = false
+      webView?.evaluateJavascript("window.__mobileCloseWebStudioDrawer && window.__mobileCloseWebStudioDrawer('android-back');", null)
+      return@BackHandler
+    }
     val activeWebView = webView ?: return@BackHandler
     activeWebView.evaluateJavascript(
       """
@@ -515,9 +525,14 @@ private fun MobileWebApp(
     }
   }
 
-  AndroidView(
-    factory = { viewContext ->
-      WebView(viewContext).apply {
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(AppBackground)
+  ) {
+    AndroidView(
+      factory = { viewContext ->
+        WebView(viewContext).apply {
         webView = this
         webViewClient = object : WebViewClient() {
           override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -700,8 +715,8 @@ private fun MobileWebApp(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         addJavascriptInterface(MobileWebDownloadBridge(viewContext.applicationContext), "AndroidDownloader")
-        addJavascriptInterface(
-          MobileWebStudioAuthBridge(viewContext.applicationContext) {
+          addJavascriptInterface(
+            MobileWebStudioAuthBridge(viewContext.applicationContext) {
             val client = googleSignInClient
             if (client == null) {
               val message = "Google web client ID is missing in the Android build."
@@ -721,10 +736,21 @@ private fun MobileWebApp(
                 Toast.makeText(viewContext, message, Toast.LENGTH_LONG).show()
               }
             }
-          },
-          "AndroidStudioAuth"
-        )
-        setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            },
+            "AndroidStudioAuth"
+          )
+          addJavascriptInterface(
+            MobileWebStudioUiBridge(
+              onOpenStudioDrawer = { nativeStudioDrawerOpen = true },
+              onCloseStudioDrawer = { nativeStudioDrawerOpen = false },
+              onUpdateStudioDrawer = { logoUrl, studioName ->
+                nativeStudioDrawerLogoUrl = logoUrl
+                nativeStudioDrawerName = studioName
+              }
+            ),
+            "AndroidStudioUi"
+          )
+          setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
           val started = enqueueMobileWebDownload(
             context = viewContext,
             url = url.orEmpty(),
@@ -768,19 +794,52 @@ private fun MobileWebApp(
           }
           false
         }
-        loadUrl(initialUrlWithCacheBust)
+          loadUrl(initialUrlWithCacheBust)
+        }
+      },
+      update = { view ->
+        webView = view
+        if (view.url.isNullOrBlank()) {
+          view.loadUrl(initialUrlWithCacheBust)
+        }
+      },
+      modifier = Modifier
+        .fillMaxSize()
+        .background(AppBackground)
+    )
+
+    NativeStudioDrawerOverlay(
+      visible = nativeStudioDrawerOpen,
+      logoUrl = nativeStudioDrawerLogoUrl,
+      studioName = nativeStudioDrawerName,
+      onClose = {
+        nativeStudioDrawerOpen = false
+        webView?.evaluateJavascript("window.__mobileCloseWebStudioDrawer && window.__mobileCloseWebStudioDrawer('native-close');", null)
+      },
+      onCreateAlbum = {
+        nativeStudioDrawerOpen = false
+        webView?.evaluateJavascript(
+          "window.__mobileStudioDrawerAction && window.__mobileStudioDrawerAction('create-album');",
+          null
+        )
+      },
+      onCreateEvent = {
+        nativeStudioDrawerOpen = false
+        webView?.evaluateJavascript(
+          "window.__mobileStudioDrawerAction && window.__mobileStudioDrawerAction('create-event');",
+          null
+        )
+      },
+      onSection = { section ->
+        nativeStudioDrawerOpen = false
+        val safeSection = JSONObject.quote(section)
+        webView?.evaluateJavascript(
+          "window.__mobileStudioDrawerAction && window.__mobileStudioDrawerAction($safeSection);",
+          null
+        )
       }
-    },
-    update = { view ->
-      webView = view
-      if (view.url.isNullOrBlank()) {
-        view.loadUrl(initialUrlWithCacheBust)
-      }
-    },
-    modifier = Modifier
-      .fillMaxSize()
-      .background(AppBackground)
-  )
+    )
+  }
 
   DisposableEffect(Unit) {
     onDispose {
@@ -928,6 +987,163 @@ private class MobileWebStudioAuthBridge(
           Toast.LENGTH_LONG
         ).show()
       }
+    }
+  }
+}
+
+private class MobileWebStudioUiBridge(
+  private val onOpenStudioDrawer: () -> Unit,
+  private val onCloseStudioDrawer: () -> Unit,
+  private val onUpdateStudioDrawer: (String, String) -> Unit
+) {
+  @JavascriptInterface
+  fun openStudioDrawer() {
+    Handler(Looper.getMainLooper()).post {
+      onOpenStudioDrawer()
+    }
+  }
+
+  @JavascriptInterface
+  fun closeStudioDrawer() {
+    Handler(Looper.getMainLooper()).post {
+      onCloseStudioDrawer()
+    }
+  }
+
+  @JavascriptInterface
+  fun updateStudioDrawer(logoUrl: String?, studioName: String?) {
+    Handler(Looper.getMainLooper()).post {
+      onUpdateStudioDrawer(logoUrl.orEmpty(), studioName.orEmpty())
+    }
+  }
+}
+
+@Composable
+private fun NativeStudioDrawerOverlay(
+  visible: Boolean,
+  logoUrl: String,
+  studioName: String,
+  onClose: () -> Unit,
+  onCreateAlbum: () -> Unit,
+  onCreateEvent: () -> Unit,
+  onSection: (String) -> Unit
+) {
+  AnimatedVisibility(
+    visible = visible,
+    enter = fadeIn(tween(120)),
+    exit = fadeOut(tween(120))
+  ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color(0x66000000))
+          .clickable(onClick = onClose)
+      )
+      Column(
+        modifier = Modifier
+          .width(320.dp)
+          .fillMaxHeight()
+          .background(Color.White)
+          .padding(horizontal = 16.dp, vertical = 28.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Text(
+          text = "×",
+          color = Color.Black,
+          fontSize = 36.sp,
+          lineHeight = 36.sp,
+          modifier = Modifier
+            .clickable(onClick = onClose)
+            .padding(bottom = 72.dp)
+        )
+
+        if (logoUrl.isNotBlank()) {
+          AsyncImage(
+            model = logoUrl,
+            contentDescription = studioName.ifBlank { "Studio logo" },
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(72.dp)
+          )
+        } else {
+          Text(
+            text = studioName.ifBlank { "CarnivalStories" },
+            color = Color.Black,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth()
+          )
+        }
+
+        Spacer(modifier = Modifier.height(72.dp))
+        NativeStudioDrawerButton("Create Album", emphasized = true, onClick = onCreateAlbum)
+        Spacer(modifier = Modifier.height(32.dp))
+        NativeStudioDrawerButton("Create Event", emphasized = false, onClick = onCreateEvent)
+        Spacer(modifier = Modifier.height(72.dp))
+        NativeStudioDrawerNavItem("My Albums", active = true) { onSection("pages") }
+        NativeStudioDrawerNavItem("Events") { onSection("events") }
+        NativeStudioDrawerNavItem("Branding") { onSection("branding") }
+        NativeStudioDrawerNavItem("Account") { onSection("account") }
+      }
+    }
+  }
+}
+
+@Composable
+private fun NativeStudioDrawerButton(
+  label: String,
+  emphasized: Boolean,
+  onClick: () -> Unit
+) {
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(112.dp)
+      .background(if (emphasized) Color.Black else Color.White)
+      .border(1.dp, Color.Black)
+      .clickable(onClick = onClick),
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = label.uppercase(Locale.US),
+      color = if (emphasized) Color.White else Color.Black,
+      fontSize = 15.sp,
+      fontWeight = FontWeight.ExtraBold,
+      letterSpacing = 5.sp,
+      textAlign = TextAlign.Center
+    )
+  }
+}
+
+@Composable
+private fun NativeStudioDrawerNavItem(
+  label: String,
+  active: Boolean = false,
+  onClick: () -> Unit
+) {
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick)
+      .padding(vertical = 17.dp)
+  ) {
+    Text(
+      text = label.uppercase(Locale.US),
+      color = if (active) Color.Black else Color(0xFF737373),
+      fontSize = 17.sp,
+      fontWeight = FontWeight.ExtraBold,
+      letterSpacing = 4.sp
+    )
+    if (active) {
+      Spacer(modifier = Modifier.height(10.dp))
+      Box(
+        modifier = Modifier
+          .width(132.dp)
+          .height(1.dp)
+          .background(Color.Black)
+      )
     }
   }
 }
@@ -1646,6 +1862,18 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
         return Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0) <= 900;
       }
 
+      function updateNativeDrawerData() {
+        if (!window.AndroidStudioUi || typeof window.AndroidStudioUi.updateStudioDrawer !== 'function') {
+          return;
+        }
+        var logo = document.getElementById('studio-sidebar-logo');
+        var name = document.getElementById('studio-sidebar-name');
+        window.AndroidStudioUi.updateStudioDrawer(
+          logo && logo.src ? logo.src : '',
+          name ? name.textContent.replace(/\s+/g, ' ').trim() : ''
+        );
+      }
+
       function rememberHome(node, key) {
         if (!node || window[key]) return;
         var marker = document.createComment(key);
@@ -1743,6 +1971,26 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
         return true;
       }
 
+      window.__mobileCloseWebStudioDrawer = function(reason) {
+        paint(false, reason || 'native-close');
+      };
+
+      window.__mobileStudioDrawerAction = function(action) {
+        paint(false, 'native-action');
+        if (action === 'create-album') {
+          var createAlbum = document.getElementById('create-page-button');
+          createAlbum && createAlbum.click();
+          return;
+        }
+        if (action === 'create-event') {
+          var createEvent = document.getElementById('create-event-button');
+          createEvent && createEvent.click();
+          return;
+        }
+        var tab = document.querySelector('[data-studio-section="' + action + '"]');
+        tab && tab.click();
+      };
+
       window.__mobileStudioDrawerPaint = paint;
 
       if (!window.__mobileStudioDrawerBound) {
@@ -1753,6 +2001,18 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
           if (!target || !target.closest) return;
 
           if (n.toggle && target.closest('#studio-sidebar-toggle')) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.stopImmediatePropagation) {
+              event.stopImmediatePropagation();
+            }
+            updateNativeDrawerData();
+            paint(false, 'native-intercept');
+            if (window.AndroidStudioUi && typeof window.AndroidStudioUi.openStudioDrawer === 'function') {
+              window.AndroidStudioUi.openStudioDrawer();
+              push('native drawer requested');
+              return;
+            }
             var shouldOpen = !(n.dashboard && n.dashboard.classList.contains('sidebar-open'));
             window.setTimeout(function() { paint(shouldOpen, 'toggle-click'); }, 0);
             window.setTimeout(function() { paint(shouldOpen, 'toggle-click-late'); }, 80);
@@ -1772,6 +2032,8 @@ private fun injectStudioSidebarDrawerRecovery(view: WebView?) {
 
         push('bound');
       }
+
+      updateNativeDrawerData();
 
       var nodes = getNodes();
       var isOpen = !!(nodes.dashboard && nodes.dashboard.classList.contains('sidebar-open'));
