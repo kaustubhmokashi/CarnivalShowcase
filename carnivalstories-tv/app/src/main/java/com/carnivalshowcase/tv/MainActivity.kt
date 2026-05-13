@@ -1100,7 +1100,7 @@ private fun NativeStudioDrawerButton(
   Box(
     modifier = Modifier
       .fillMaxWidth()
-      .height(40.dp)
+      .height(50.dp)
       .background(if (emphasized) Color.Black else Color.White)
       .border(1.dp, Color.Black)
       .clickable(onClick = onClick),

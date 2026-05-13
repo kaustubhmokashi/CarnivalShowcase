@@ -4856,8 +4856,8 @@ input[type="checkbox"]:checked {
     place-items: center;
     width: 100%;
     min-width: 0;
-    height: 40px;
-    min-height: 40px;
+    height: 50px;
+    min-height: 50px;
     padding: 0 24px;
   }
 
