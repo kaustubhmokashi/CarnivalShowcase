@@ -4844,9 +4844,13 @@ input[type="checkbox"]:checked {
 
   .studio-sidebar-primary-action,
   .studio-sidebar-secondary-action {
+    display: inline-grid;
+    place-items: center;
     width: min(220px, 100%);
     min-width: 220px;
-    padding: 18px 24px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0 24px;
   }
 
   .event-upload-bar {
