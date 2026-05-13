@@ -885,8 +885,10 @@ private fun injectAndroidHeaderOffsetStyle(view: WebView?) {
       var style = document.getElementById(styleId);
       var css = [
         ':root { --brand-logo-top: 56px !important; }',
+        '.screen-link .hud-top { padding-top: 58px !important; }',
         '.studio-floating-actions { top: 58px !important; }',
         '@media (max-width: 900px) {',
+        '  .screen-link .hud-top { padding-top: 58px !important; }',
         '  .studio-floating-actions { padding-top: 56px !important; }',
         '}'
       ].join('\n');
