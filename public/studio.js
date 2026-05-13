@@ -302,6 +302,98 @@ function hasFirebaseConfig() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
 }
 
+function ensureCarnivalAndroidAuthBridge() {
+  const bridgeState = window.__carnivalAndroidAuthBridgeState || {
+    installed: false,
+    processing: false,
+  };
+  window.__carnivalAndroidAuthBridgeState = bridgeState;
+
+  const androidTokenQueue = Array.isArray(window.__carnivalAndroidTokenQueue)
+    ? window.__carnivalAndroidTokenQueue
+    : [];
+  window.__carnivalAndroidTokenQueue = androidTokenQueue;
+
+  const processAndroidGoogleToken = async (idToken) => {
+    const token = String(idToken || "").trim();
+    if (!token) {
+      throw new Error("Google sign-in did not return an ID token.");
+    }
+    if (!auth) {
+      if (!androidTokenQueue.includes(token)) {
+        androidTokenQueue.push(token);
+      }
+      setStudioStatus(studioAuthStatus, "Preparing sign-in...");
+      return "queued";
+    }
+    setStudioStatus(studioAuthStatus, "Completing Google sign in...");
+    const credential = GoogleAuthProvider.credential(token);
+    await signInWithCredential(auth, credential);
+    setStudioStatus(studioNameStatus, "Preparing your studio...");
+    setStudioStatus(studioAuthStatus, "");
+    return true;
+  };
+
+  bridgeState.flushAndroidGoogleTokenQueue = async () => {
+    if (bridgeState.processing || !auth || !androidTokenQueue.length) return;
+    bridgeState.processing = true;
+    try {
+      while (androidTokenQueue.length && auth) {
+        const queued = androidTokenQueue.shift();
+        if (!queued) continue;
+        try {
+          await processAndroidGoogleToken(queued);
+          if (String(window.__pendingAndroidGoogleIdToken || "").trim() === queued) {
+            window.__pendingAndroidGoogleIdToken = "";
+          }
+        } catch (_) {
+          androidTokenQueue.unshift(queued);
+          break;
+        }
+      }
+    } finally {
+      bridgeState.processing = false;
+    }
+  };
+
+  bridgeState.consumePendingAndroidGoogleToken = () => {
+    const pendingToken = String(window.__pendingAndroidGoogleIdToken || "").trim();
+    if (!pendingToken) return;
+    window.CarnivalAndroidAuth
+      .signInWithGoogleIdToken(pendingToken)
+      .then((result) => {
+        if (result !== "queued") {
+          window.__pendingAndroidGoogleIdToken = "";
+        }
+      })
+      .catch(() => {});
+  };
+
+  window.CarnivalAndroidAuth = window.CarnivalAndroidAuth || {};
+  window.CarnivalAndroidAuth.signInWithGoogleIdToken = async (idToken) => {
+    const result = await processAndroidGoogleToken(idToken);
+    if (result === "queued") {
+      window.setTimeout(() => {
+        bridgeState.flushAndroidGoogleTokenQueue().catch(() => {});
+      }, 0);
+    }
+    return result;
+  };
+
+  if (!bridgeState.installed) {
+    bridgeState.installed = true;
+    window.addEventListener("carnival-android-google-token", () => {
+      bridgeState.consumePendingAndroidGoogleToken();
+      bridgeState.flushAndroidGoogleTokenQueue().catch(() => {});
+    });
+  }
+
+  bridgeState.consumePendingAndroidGoogleToken();
+  bridgeState.flushAndroidGoogleTokenQueue().catch(() => {});
+}
+
+ensureCarnivalAndroidAuthBridge();
+
 function isAdminEmail(email) {
   return String(email || "").trim().toLowerCase() === ADMIN_EMAIL;
 }
@@ -5097,76 +5189,7 @@ function initializeFirebase() {
       }
     },
   };
-  const androidTokenQueue = Array.isArray(window.__carnivalAndroidTokenQueue)
-    ? window.__carnivalAndroidTokenQueue
-    : [];
-  window.__carnivalAndroidTokenQueue = androidTokenQueue;
-  let androidTokenProcessing = false;
-  const processAndroidGoogleToken = async (idToken) => {
-    const token = String(idToken || "").trim();
-    if (!token) {
-      throw new Error("Google sign-in did not return an ID token.");
-    }
-    if (!auth) {
-      androidTokenQueue.push(token);
-      setStudioStatus(studioAuthStatus, "Preparing sign-in...");
-      return "queued";
-    }
-    setStudioStatus(studioAuthStatus, "Completing Google sign in...");
-    const credential = GoogleAuthProvider.credential(token);
-    await signInWithCredential(auth, credential);
-    setStudioStatus(studioNameStatus, "Preparing your studio...");
-    setStudioStatus(studioAuthStatus, "");
-    return true;
-  };
-  const flushAndroidGoogleTokenQueue = async () => {
-    if (androidTokenProcessing || !auth || !androidTokenQueue.length) return;
-    androidTokenProcessing = true;
-    try {
-      while (androidTokenQueue.length && auth) {
-        const queued = androidTokenQueue.shift();
-        if (!queued) continue;
-        try {
-          await processAndroidGoogleToken(queued);
-          if (String(window.__pendingAndroidGoogleIdToken || "").trim() === queued) {
-            window.__pendingAndroidGoogleIdToken = "";
-          }
-        } catch (_) {
-          break;
-        }
-      }
-    } finally {
-      androidTokenProcessing = false;
-    }
-  };
-  window.CarnivalAndroidAuth = window.CarnivalAndroidAuth || {};
-  window.CarnivalAndroidAuth.signInWithGoogleIdToken = async (idToken) => {
-    const result = await processAndroidGoogleToken(idToken);
-    if (result === "queued") {
-      window.setTimeout(() => {
-        flushAndroidGoogleTokenQueue().catch(() => {});
-      }, 0);
-    }
-    return result;
-  };
-  const consumePendingAndroidGoogleToken = () => {
-    const pendingToken = String(window.__pendingAndroidGoogleIdToken || "").trim();
-    if (!pendingToken) return;
-    window.CarnivalAndroidAuth
-      .signInWithGoogleIdToken(pendingToken)
-      .then((result) => {
-        if (result !== "queued") {
-          window.__pendingAndroidGoogleIdToken = "";
-        }
-      })
-      .catch(() => {});
-  };
-  consumePendingAndroidGoogleToken();
-  flushAndroidGoogleTokenQueue().catch(() => {});
-  window.addEventListener("carnival-android-google-token", () => {
-    consumePendingAndroidGoogleToken();
-    flushAndroidGoogleTokenQueue().catch(() => {});
-  });
+  ensureCarnivalAndroidAuthBridge();
 
   const publicPageRoute = getPublicPageSlugFromPath();
   if (publicPageRoute) {
