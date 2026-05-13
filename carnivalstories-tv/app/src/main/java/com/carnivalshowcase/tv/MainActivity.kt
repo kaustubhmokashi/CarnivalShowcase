@@ -602,6 +602,7 @@ private fun MobileWebApp(
             injectGalleryTapTracer(view)
             injectSlideshowPaintRecovery(view)
             injectMobileDownloadBridge(view)
+            injectAndroidYoutubeExternalBridge(view)
             injectAndroidStudioAuthBridge(view)
             injectStudioSidebarDrawerRecovery(view)
             injectFacePickerPopupRecovery(view)
@@ -620,6 +621,7 @@ private fun MobileWebApp(
               injectGalleryCoverRecovery(view)
               injectSlideshowPaintRecovery(view)
               injectMobileDownloadBridge(view)
+              injectAndroidYoutubeExternalBridge(view)
               injectAndroidStudioAuthBridge(view)
               injectStudioSidebarDrawerRecovery(view)
               injectFacePickerPopupRecovery(view)
@@ -721,9 +723,10 @@ private fun MobileWebApp(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         addJavascriptInterface(MobileWebDownloadBridge(viewContext.applicationContext), "AndroidDownloader")
-          addJavascriptInterface(MobileWebShareBridge(viewContext.applicationContext), "AndroidShare")
-          addJavascriptInterface(
-            MobileWebStudioAuthBridge(viewContext.applicationContext) {
+        addJavascriptInterface(MobileWebShareBridge(viewContext.applicationContext), "AndroidShare")
+        addJavascriptInterface(MobileWebExternalOpenBridge(viewContext.applicationContext), "AndroidExternal")
+        addJavascriptInterface(
+          MobileWebStudioAuthBridge(viewContext.applicationContext) {
             val client = googleSignInClient
             if (client == null) {
               val message = "Google web client ID is missing in the Android build."
@@ -870,6 +873,7 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
       injectGalleryTapTracer(target)
       injectSlideshowPaintRecovery(target)
       injectMobileDownloadBridge(target)
+      injectAndroidYoutubeExternalBridge(target)
       injectAndroidStudioAuthBridge(target)
       injectStudioSidebarDrawerRecovery(target)
       injectFacePickerPopupRecovery(target)
@@ -1028,6 +1032,46 @@ private class MobileWebShareBridge(private val context: Context) {
       val chooser = Intent.createChooser(intent, "Share")
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       context.startActivity(chooser)
+      true
+    }.getOrElse { false }
+  }
+}
+
+private class MobileWebExternalOpenBridge(private val context: Context) {
+  @JavascriptInterface
+  fun openUrl(url: String?): Boolean {
+    val safeUrl = url.orEmpty().trim()
+    if (safeUrl.isBlank()) {
+      return false
+    }
+
+    val uri = runCatching { Uri.parse(safeUrl) }.getOrNull() ?: return false
+    val host = uri.host.orEmpty().lowercase(Locale.US)
+    return runCatching {
+      if (host == "youtu.be" || host.endsWith("youtube.com")) {
+        val youtubeIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+          addCategory(Intent.CATEGORY_BROWSABLE)
+          setPackage("com.google.android.youtube")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching {
+          context.startActivity(youtubeIntent)
+        }.recoverCatching {
+          context.startActivity(
+            Intent(Intent.ACTION_VIEW, uri).apply {
+              addCategory(Intent.CATEGORY_BROWSABLE)
+              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+          )
+        }.getOrThrow()
+      } else {
+        context.startActivity(
+          Intent(Intent.ACTION_VIEW, uri).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+        )
+      }
       true
     }.getOrElse { false }
   }
@@ -2578,475 +2622,54 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
 }
 
 private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: String = "") {
+  return
+}
+
+private fun injectAndroidYoutubeExternalBridge(view: WebView?) {
   val target = view ?: return
-  val appId = BuildConfig.APPLICATION_ID
-  val webClientIdRaw = BuildConfig.CARNIVAL_GOOGLE_WEB_CLIENT_ID.trim()
-  val webClientIdMasked =
-    when {
-      webClientIdRaw.isBlank() -> "missing"
-      webClientIdRaw.length <= 16 -> webClientIdRaw
-      else -> "${webClientIdRaw.take(8)}...${webClientIdRaw.takeLast(8)}"
-    }
   val script = """
     (function() {
-      var phase = ${jsQuoted(phase)};
-      var note = ${jsQuoted(note)};
-      function r(v){ return (typeof v === 'number' && isFinite(v)) ? Math.round(v) : v; }
-      function metric(sel) {
-        var el = null;
-        try { el = document.querySelector(sel); } catch (_) { el = null; }
-        if (!el) return sel + ':missing';
-        var cs = getComputedStyle(el);
-        var rect = el.getBoundingClientRect();
-        return sel + ': rect=' + r(rect.width) + 'x' + r(rect.height) +
-          ' off=' + el.offsetWidth + 'x' + el.offsetHeight +
-          ' pos=' + cs.position +
-          ' disp=' + cs.display +
-          ' h=' + cs.height +
-          ' minH=' + cs.minHeight +
-          ' ov=' + cs.overflow + '/' + cs.overflowY;
-      }
-      function inlineStyleLine(sel) {
-        var el = null;
-        try { el = document.querySelector(sel); } catch (_) { el = null; }
-        if (!el) return sel + '.style=missing';
-        return sel + '.style h=' + (el.style.height || 'na') + ' minH=' + (el.style.minHeight || 'na');
-      }
-      function flagLine() {
-        var cover = document.getElementById('cover-photo');
-        if (!cover) return 'coverRecovery=missing';
-        var hasNode = !!cover.querySelector('.photo-card-cover img');
-        return 'coverRecovery hasNode=' + hasNode + ' hasClass=' + cover.classList.contains('has-cover-image');
-      }
-      function recoveryLine() {
-        var body = document.body;
-        var shell = document.querySelector('.app-shell');
-        if (!body || !shell) return 'parentRecovery=missing';
-        return 'parentRecovery bodyMinH=' + (body.style.minHeight || 'na') +
-          ' shellMinH=' + (shell.style.minHeight || 'na');
-      }
-      function galleryStateLine() {
-        var gallery = document.getElementById('screen-gallery');
-        if (!gallery) return 'galleryState=missing';
-        return 'galleryState classes=' + (gallery.className || '');
-      }
-      function loadingLine() {
-        var el = document.querySelector('.loading-indicator');
-        if (!el) return 'loadingIndicator=missing';
-        var cs = getComputedStyle(el);
-        return 'loadingIndicator disp=' + cs.display + ' vis=' + cs.visibility + ' classes=' + (el.className || '');
-      }
-      function imageSourceLine() {
-        var coverImg = document.querySelector('#cover-photo .photo-card-cover img');
-        var gridImg = document.querySelector('#gallery .photo-card:not(.photo-card-cover) img');
-        var slideImg = document.querySelector('#slide-image');
-        var slideImgFull = document.querySelector('#slide-image-full');
-        var coverSrc = coverImg ? (coverImg.currentSrc || coverImg.src || '') : '';
-        var gridSrc = gridImg ? (gridImg.currentSrc || gridImg.src || '') : '';
-        var slideSrc = slideImg ? (slideImg.currentSrc || slideImg.src || '') : '';
-        var slideFullSrc = slideImgFull ? (slideImgFull.currentSrc || slideImgFull.src || '') : '';
-        return 'imgSrc cover=' + (coverSrc || 'na') +
-          ' grid=' + (gridSrc || 'na') +
-          ' slide=' + (slideSrc || 'na') +
-          ' slideFull=' + (slideFullSrc || 'na');
-      }
-      function coverDebugLine() {
-        var cover = document.getElementById('cover-photo');
-        var gallery = document.getElementById('screen-gallery');
-        if (!cover || !gallery) return 'coverDebug=missing';
-        var coverStyle = getComputedStyle(cover);
-        var cssCover = String(cover.style.getPropertyValue('--cover-image') || '').trim();
-        var cssLoading = String(cover.style.getPropertyValue('--loading-cover-image') || '').trim();
-        var wsMain = document.querySelector('#screen-gallery .workspace-main');
-        var wsLoading = wsMain ? String(getComputedStyle(wsMain).getPropertyValue('--loading-cover-image') || '').trim() : '';
-        var coverCard = cover.querySelector('.photo-card-cover');
-        var coverImg = cover.querySelector('.photo-card-cover img');
-        var firstGrid = document.querySelector('#gallery .photo-card img');
-        var activeTab = document.querySelector('#folder-tabs .folder-tab.is-active, #folder-tabs .folder-tab[aria-selected=\"true\"]');
-        var allTabs = document.querySelectorAll('#folder-tabs .folder-tab, #folder-tabs button');
-        return 'coverDebug classes=' + (cover.className || 'na') +
-          ' galleryClasses=' + (gallery.className || 'na') +
-          ' bgImg=' + (coverStyle.backgroundImage || 'na') +
-          ' cssCover=' + (cssCover || 'na') +
-          ' cssLoading=' + (cssLoading || 'na') +
-          ' wsLoading=' + (wsLoading || 'na') +
-          ' coverCard=' + !!coverCard +
-          ' coverImg=' + !!coverImg +
-          ' coverImgSrc=' + (coverImg ? (coverImg.currentSrc || coverImg.src || 'na') : 'na') +
-          ' firstGridSrc=' + (firstGrid ? (firstGrid.currentSrc || firstGrid.src || 'na') : 'na') +
-          ' tabs=' + (allTabs ? allTabs.length : 0) +
-          ' activeTab=' + (activeTab ? (activeTab.textContent || '').trim().slice(0, 60) : 'na');
-      }
-      function slideshowDebugLine() {
-        var state = window.__mobileSlideshowDebug;
-        var slideshow = document.getElementById('slideshow');
-        var mode = slideshow && slideshow.classList.contains('slideshow-album-presentation') ? 'presentation' : 'standard';
-        if (!state || !Array.isArray(state.logs) || !state.logs.length) {
-          return 'slideshowDebug=none mode=' + mode;
-        }
-        return 'slideshowDebug mode=' + mode + ' ' + state.logs.slice(0, 4).join(' || ');
-      }
-      function classLine(sel) {
-        var el = null;
-        try { el = document.querySelector(sel); } catch (_) { el = null; }
-        if (!el) return sel + '.class=missing';
-        return sel + '.class=' + (el.className || '');
-      }
-      function imageDetailLine(sel) {
-        var img = null;
-        try { img = document.querySelector(sel); } catch (_) { img = null; }
-        if (!img) return sel + '.img=missing';
-        var cs = getComputedStyle(img);
-        var rect = img.getBoundingClientRect();
-        return sel + '.img complete=' + !!img.complete +
-          ' natural=' + (img.naturalWidth || 0) + 'x' + (img.naturalHeight || 0) +
-          ' rect=' + r(rect.width) + 'x' + r(rect.height) +
-          ' disp=' + cs.display +
-          ' vis=' + cs.visibility +
-          ' opacity=' + cs.opacity +
-          ' src=' + (img.currentSrc || img.src || 'na');
-      }
-      function styleLine(sel) {
-        var el = null;
-        try { el = document.querySelector(sel); } catch (_) { el = null; }
-        if (!el) return sel + '.style=missing';
-        var cs = getComputedStyle(el);
-        return sel + '.style z=' + cs.zIndex +
-          ' opacity=' + cs.opacity +
-          ' vis=' + cs.visibility +
-          ' transform=' + cs.transform +
-          ' pointer=' + cs.pointerEvents;
-      }
-      function hitTestLine() {
-        var x = Math.round((window.innerWidth || 0) / 2);
-        var y = Math.round((window.innerHeight || 0) / 2);
-        var list = [];
+      if (window.__mobileYoutubeExternalBridgeInit) return;
+      window.__mobileYoutubeExternalBridgeInit = true;
+
+      function isYoutubeUrl(url) {
         try {
-          list = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)])
-            .filter(Boolean)
-            .slice(0, 8)
-            .map(function(el) {
-              return (el.id ? '#' + el.id : el.tagName.toLowerCase()) +
-                (el.className && typeof el.className === 'string' ? '.' + el.className.trim().replace(/\s+/g, '.') : '');
-            });
-        } catch (_) {}
-        return 'hitTest center=' + x + ',' + y + ' stack=' + (list.length ? list.join(' > ') : 'na');
-      }
-      function openerLine() {
-        var cards = document.querySelectorAll('#gallery .photo-card:not(.photo-card-cover)');
-        return 'openers openSlideshow=' + (typeof window.openSlideshow) +
-          ' mobileForce=' + (typeof window.__mobileForceSlideshowPaint) +
-          ' firstCards=' + cards.length;
-      }
-      function downloadLine() {
-        var button = document.getElementById('download-slide') ||
-          document.querySelector('.slideshow-action-download, [data-action="download"]');
-        var rect = button ? button.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
-        return 'download bridge=' + (typeof window.AndroidDownloader) +
-          ' bound=' + !!window.__mobileDownloadBridgeBound +
-          ' version=' + (window.__mobileDownloadBridgeVersion || 'na') +
-          ' wrapped=' + !!window.__mobileDownloadOriginal +
-          ' manual=' + (typeof window.__mobileDownloadNow) +
-          ' last=' + (window.__mobileDownloadLast || 'na') +
-          ' button=' + (button ? ((button.id ? '#' + button.id : button.tagName.toLowerCase()) + ' disp=' + getComputedStyle(button).display + ' rect=' + r(rect.left) + ',' + r(rect.top) + ',' + r(rect.width) + 'x' + r(rect.height)) : 'missing');
-      }
-      function settingsLine() {
-        var gallery = document.getElementById('screen-gallery');
-        var side = document.querySelector('#screen-gallery .workspace-side') ||
-          document.querySelector('body > .workspace-side[data-mobile-settings-promoted="true"]');
-        var panel = side ? side.querySelector('.side-panel') : null;
-        if (!gallery || !side) return 'settings=missing';
-        var cs = getComputedStyle(side);
-        var rect = side.getBoundingClientRect();
-        var panelRect = panel ? panel.getBoundingClientRect() : { width: 0, height: 0 };
-        return 'settings panelOpen=' + gallery.classList.contains('panel-open') +
-          ' sideRect=' + r(rect.width) + 'x' + r(rect.height) +
-          ' sideDisp=' + cs.display +
-          ' sidePos=' + cs.position +
-          ' sideZ=' + cs.zIndex +
-          ' sideParent=' + (side.parentNode === document.body ? 'body' : '#screen-gallery') +
-          ' promoted=' + (side.dataset && side.dataset.mobileSettingsPromoted === 'true') +
-          ' panelRect=' + r(panelRect.width) + 'x' + r(panelRect.height);
-      }
-      function facePopupLine() {
-        var popup = document.getElementById('face-picker-popup');
-        if (!popup) return 'facePopup=missing';
-        var dialog = popup.querySelector('.face-picker-popup');
-        var cs = getComputedStyle(popup);
-        var rect = popup.getBoundingClientRect();
-        var dialogRect = dialog ? dialog.getBoundingClientRect() : { width: 0, height: 0, top: 0 };
-        return 'facePopup rect=' + r(rect.width) + 'x' + r(rect.height) +
-          ' top=' + r(rect.top) +
-          ' disp=' + cs.display +
-          ' pos=' + cs.position +
-          ' z=' + cs.zIndex +
-          ' dialog=' + r(dialogRect.width) + 'x' + r(dialogRect.height) + '@' + r(dialogRect.top);
-      }
-      var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
-      var now = new Date().toISOString().slice(11, 23);
-      state.logs.unshift(now + ' [' + phase + '] ' + note);
-      state.logs = state.logs.slice(0, 60);
-
-      var panel = document.getElementById('mobile-ui-debug-panel');
-      if (!panel) {
-        panel = document.createElement('div');
-        panel.id = 'mobile-ui-debug-panel';
-        panel.style.position = 'fixed';
-        panel.style.left = '8px';
-        panel.style.right = '8px';
-        panel.style.bottom = '8px';
-        panel.style.height = '42vh';
-        panel.style.maxHeight = '520px';
-        panel.style.minHeight = '280px';
-        panel.style.zIndex = '2147483647';
-        panel.style.background = 'rgba(10, 12, 14, 0.93)';
-        panel.style.color = '#d2ffd2';
-        panel.style.border = '1px solid rgba(150, 255, 150, 0.28)';
-        panel.style.borderRadius = '10px';
-        panel.style.overflow = 'hidden';
-        panel.style.pointerEvents = 'auto';
-
-        var title = document.createElement('div');
-        title.style.position = 'relative';
-        title.textContent = 'Mobile UI Debug';
-        title.style.padding = '8px 10px';
-        title.style.font = '600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace';
-        title.style.letterSpacing = '0.08em';
-        title.style.textTransform = 'uppercase';
-        title.style.borderBottom = '1px solid rgba(150, 255, 150, 0.22)';
-
-        var copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.id = 'mobile-ui-debug-copy';
-        copyBtn.textContent = 'Copy';
-        copyBtn.style.position = 'absolute';
-        copyBtn.style.top = '5px';
-        copyBtn.style.right = '8px';
-        copyBtn.style.padding = '3px 8px';
-        copyBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
-        copyBtn.style.borderRadius = '6px';
-        copyBtn.style.background = 'rgba(20, 28, 24, 0.9)';
-        copyBtn.style.color = '#d2ffd2';
-        copyBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
-        copyBtn.style.letterSpacing = '0.06em';
-        copyBtn.style.cursor = 'pointer';
-        copyBtn.style.pointerEvents = 'auto';
-        copyBtn.addEventListener('click', function() {
-          var preNode = document.getElementById('mobile-ui-debug-pre');
-          var text = preNode ? preNode.textContent || '' : '';
-          if (!text) return;
-          var done = function() {
-            copyBtn.textContent = 'Copied';
-            window.setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1100);
-          };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done).catch(function() {});
-          } else {
-            var ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            ta.style.pointerEvents = 'none';
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            try {
-              document.execCommand('copy');
-              done();
-            } catch (_) {}
-            ta.remove();
-          }
-        });
-
-        var openBtn = document.createElement('button');
-        openBtn.type = 'button';
-        openBtn.id = 'mobile-ui-debug-open-slide';
-        openBtn.textContent = 'Open Slide';
-        openBtn.style.position = 'absolute';
-        openBtn.style.top = '5px';
-        openBtn.style.right = '118px';
-        openBtn.style.padding = '3px 8px';
-        openBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
-        openBtn.style.borderRadius = '6px';
-        openBtn.style.background = 'rgba(20, 28, 24, 0.9)';
-        openBtn.style.color = '#d2ffd2';
-        openBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
-        openBtn.style.letterSpacing = '0.03em';
-        openBtn.style.cursor = 'pointer';
-        openBtn.style.pointerEvents = 'auto';
-        openBtn.addEventListener('click', function() {
-          try {
-            var s = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
-            var ts = new Date().toISOString().slice(11, 23);
-            var firstCard = document.querySelector('#gallery .photo-card:not(.photo-card-cover)');
-            if (typeof window.openSlideshow === 'function') {
-              window.openSlideshow(0);
-              s.logs.unshift(ts + ' [debug-open] window.openSlideshow(0)');
-              s.logs = s.logs.slice(0, 80);
-              window.setTimeout(function() {
-                try {
-                  if (typeof window.__mobileForceSlideshowPaint === 'function') {
-                    window.__mobileForceSlideshowPaint('debug-open');
-                  }
-                } catch (_) {}
-              }, 120);
-              return;
-            }
-            if (firstCard && typeof firstCard.click === 'function') {
-              firstCard.click();
-              s.logs.unshift(ts + ' [debug-open] firstCard.click()');
-              s.logs = s.logs.slice(0, 80);
-              window.setTimeout(function() {
-                try {
-                  if (typeof window.__mobileForceSlideshowPaint === 'function') {
-                    window.__mobileForceSlideshowPaint('debug-open');
-                  }
-                } catch (_) {}
-              }, 120);
-              return;
-            }
-            s.logs.unshift(ts + ' [debug-open] no callable opener');
-            s.logs = s.logs.slice(0, 80);
-          } catch (err) {
-            try {
-              var s2 = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
-              var ts2 = new Date().toISOString().slice(11, 23);
-              s2.logs.unshift(ts2 + ' [debug-open] error=' + (err && err.message ? err.message : 'unknown'));
-              s2.logs = s2.logs.slice(0, 80);
-            } catch (_) {}
-          }
-        });
-
-        var hideBtn = document.createElement('button');
-        hideBtn.type = 'button';
-        hideBtn.id = 'mobile-ui-debug-hide';
-        hideBtn.textContent = 'Hide';
-        hideBtn.style.position = 'absolute';
-        hideBtn.style.top = '5px';
-        hideBtn.style.right = '56px';
-        hideBtn.style.padding = '3px 8px';
-        hideBtn.style.border = '1px solid rgba(150, 255, 150, 0.4)';
-        hideBtn.style.borderRadius = '6px';
-        hideBtn.style.background = 'rgba(20, 28, 24, 0.9)';
-        hideBtn.style.color = '#d2ffd2';
-        hideBtn.style.font = '600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
-        hideBtn.style.letterSpacing = '0.06em';
-        hideBtn.style.cursor = 'pointer';
-        hideBtn.style.pointerEvents = 'auto';
-
-        var showBtn = document.getElementById('mobile-ui-debug-show');
-        if (!showBtn) {
-          showBtn = document.createElement('button');
-          showBtn.type = 'button';
-          showBtn.id = 'mobile-ui-debug-show';
-          showBtn.textContent = 'Show Debug';
-          showBtn.style.position = 'fixed';
-          showBtn.style.right = '12px';
-          showBtn.style.bottom = '12px';
-          showBtn.style.zIndex = '2147483647';
-          showBtn.style.padding = '6px 10px';
-          showBtn.style.border = '1px solid rgba(150, 255, 150, 0.42)';
-          showBtn.style.borderRadius = '8px';
-          showBtn.style.background = 'rgba(10, 12, 14, 0.9)';
-          showBtn.style.color = '#d2ffd2';
-          showBtn.style.font = '600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace';
-          showBtn.style.letterSpacing = '0.06em';
-          showBtn.style.cursor = 'pointer';
-          showBtn.style.pointerEvents = 'auto';
-          showBtn.style.display = 'none';
-          showBtn.addEventListener('click', function() {
-            var p = document.getElementById('mobile-ui-debug-panel');
-            if (!p) return;
-            p.style.display = 'block';
-            showBtn.style.display = 'none';
-          });
-          document.body.appendChild(showBtn);
+          var parsed = new URL(String(url || ''), location.href);
+          var host = (parsed.hostname || '').toLowerCase();
+          return host === 'youtu.be' || host.endsWith('youtube.com');
+        } catch (_) {
+          return false;
         }
-
-        hideBtn.addEventListener('click', function() {
-          panel.style.display = 'none';
-          var button = document.getElementById('mobile-ui-debug-show');
-          if (button) {
-            button.style.display = 'block';
-          }
-        });
-
-        var pre = document.createElement('pre');
-        pre.id = 'mobile-ui-debug-pre';
-        pre.style.margin = '0';
-        pre.style.padding = '8px 10px 10px';
-        pre.style.height = 'calc(100% - 34px)';
-        pre.style.overflow = 'auto';
-        pre.style.whiteSpace = 'pre';
-        pre.style.font = '11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace';
-        title.appendChild(openBtn);
-        title.appendChild(hideBtn);
-        title.appendChild(copyBtn);
-        panel.appendChild(title);
-        panel.appendChild(pre);
-        document.body.appendChild(panel);
       }
 
-      var vv = window.visualViewport;
-      var lines = [
-        now + ' [' + phase + ']',
-        'url=' + location.href,
-        'readyState=' + document.readyState + ' visibility=' + document.visibilityState,
-        'viewport inner=' + innerWidth + 'x' + innerHeight +
-          ' visual=' + (vv ? r(vv.width) + 'x' + r(vv.height) : 'na') +
-          ' scale=' + (vv ? vv.scale : 'na'),
-        'html c/s=' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight +
-          ' / ' + document.documentElement.scrollWidth + 'x' + document.documentElement.scrollHeight,
-        'body c/s=' + (document.body ? document.body.clientWidth : 'na') + 'x' + (document.body ? document.body.clientHeight : 'na') +
-          ' / ' + (document.body ? document.body.scrollWidth : 'na') + 'x' + (document.body ? document.body.scrollHeight : 'na'),
-        'nativeView w/h=' + ${target.width} + 'x' + ${target.height} +
-          ' measured=' + ${target.measuredWidth} + 'x' + ${target.measuredHeight} +
-          ' contentHeightPx=' + ${target.contentHeight} + ' scale=' + ${target.scale},
-        'androidAuth appId=' + ${jsQuoted(appId)} +
-          ' webClientId=' + ${jsQuoted(webClientIdMasked)} +
-          ' hasBridge=' + (typeof window.AndroidStudioAuth) +
-          ' webAuth=' + (window.CarnivalAndroidAuth && typeof window.CarnivalAndroidAuth.signInWithGoogleIdToken),
-        metric('.app-shell'),
-        metric('#screen-direct-link'),
-        metric('#screen-gallery'),
-        metric('#cover-photo'),
-        inlineStyleLine('#cover-photo'),
-        flagLine(),
-        recoveryLine(),
-        galleryStateLine(),
-        loadingLine(),
-        imageSourceLine(),
-        coverDebugLine(),
-        slideshowDebugLine(),
-        metric('#slideshow'),
-        classLine('#slideshow'),
-        styleLine('#slideshow'),
-        metric('.slideshow-frame'),
-        styleLine('.slideshow-frame'),
-        metric('#slide-card-a'),
-        classLine('#slide-card-a'),
-        styleLine('#slide-card-a'),
-        metric('#slide-card-b'),
-        classLine('#slide-card-b'),
-        styleLine('#slide-card-b'),
-        imageDetailLine('#slide-image'),
-        imageDetailLine('#slide-image-full'),
-        metric('#slideshow-loader'),
-        classLine('#slideshow-loader'),
-        openerLine(),
-        downloadLine(),
-        settingsLine(),
-        facePopupLine(),
-        hitTestLine(),
-        metric('.link-stage'),
-        metric('.home-footer'),
-        'note=' + note
-      ];
+      function patchOpenYoutubeDialog() {
+        if (typeof window.openYoutubeDialog !== 'function') return false;
+        if (window.__mobileOpenYoutubeDialogOriginal) return true;
 
-      var preNode = document.getElementById('mobile-ui-debug-pre');
-      if (preNode) {
-        preNode.textContent = lines.join('\n') + '\n\nEvents\n' + state.logs.join('\n');
+        window.__mobileOpenYoutubeDialogOriginal = window.openYoutubeDialog;
+        window.openYoutubeDialog = function(url) {
+          try {
+            var resolved = String(url || '').trim();
+            if (resolved && isYoutubeUrl(resolved) &&
+              window.AndroidExternal &&
+              typeof window.AndroidExternal.openUrl === 'function') {
+              var opened = window.AndroidExternal.openUrl(resolved);
+              if (opened) return true;
+            }
+          } catch (_) {}
+          return window.__mobileOpenYoutubeDialogOriginal.apply(this, arguments);
+        };
+        return true;
       }
+
+      if (patchOpenYoutubeDialog()) return;
+      var attempts = 0;
+      var timer = window.setInterval(function() {
+        attempts += 1;
+        if (patchOpenYoutubeDialog() || attempts > 50) {
+          window.clearInterval(timer);
+        }
+      }, 150);
     })();
   """.trimIndent()
   target.evaluateJavascript(script, null)

@@ -2188,7 +2188,9 @@ function getPhotoSourceCandidates(photo) {
   if (!photo || typeof photo !== "object") {
     return [];
   }
-  return [photo.thumbnailUrl, photo.slideshowUrl, photo.url]
+  return [photo.slideshowUrl, photo.url, photo.thumbnailUrl]
+    .filter(Boolean)
+    .map((source) => String(source || "").trim())
     .filter(Boolean)
     .filter((source, index, list) => list.indexOf(source) === index);
 }

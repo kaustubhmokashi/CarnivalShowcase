@@ -5,7 +5,7 @@
       <solid android:color="#FFFFFF" />
     </shape>
   </item>
-  <item android:left="16dp" android:top="16dp" android:right="16dp" android:bottom="16dp">
+  <item android:left="28dp" android:top="28dp" android:right="28dp" android:bottom="28dp">
     <bitmap
       android:gravity="center"
       android:src="@drawable/carnival_showcase_logo" />
