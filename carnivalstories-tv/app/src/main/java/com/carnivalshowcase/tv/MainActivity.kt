@@ -2408,19 +2408,36 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
         }, 1800);
       }
 
-      var coverRect = cover.getBoundingClientRect();
-      var hasCoverNode = !!cover.querySelector('.photo-card-cover img');
-      var hasCoverClass = cover.classList.contains('has-cover-image');
-      if (coverRect.height > 40 && (hasCoverNode || hasCoverClass)) return;
-
       var vh = Math.max(
         window.innerHeight || 0,
         window.visualViewport ? Math.round(window.visualViewport.height) : 0,
         document.documentElement ? document.documentElement.clientHeight : 0
       );
+      var coverRect = cover.getBoundingClientRect();
+      var coverCard = cover.querySelector('.photo-card-cover');
+      var coverImg = cover.querySelector('.photo-card-cover img');
+      var hasCoverNode = !!coverImg;
+      var hasCoverClass = cover.classList.contains('has-cover-image');
+      var expectedHeight = vh > 0 ? Math.max(320, Math.round(vh * 0.75)) : 320;
+      if (coverRect.height >= expectedHeight && (hasCoverNode || hasCoverClass)) return;
+
       if (vh > 0) {
         cover.style.minHeight = vh + 'px';
         cover.style.height = vh + 'px';
+      }
+      if (coverCard) {
+        coverCard.style.position = 'absolute';
+        coverCard.style.inset = '0';
+        coverCard.style.width = '100%';
+        coverCard.style.height = '100%';
+        coverCard.style.display = 'block';
+      }
+      if (coverImg) {
+        coverImg.style.width = '100%';
+        coverImg.style.height = '100%';
+        coverImg.style.maxHeight = '100%';
+        coverImg.style.objectFit = 'cover';
+        coverImg.style.objectPosition = 'center center';
       }
 
       if (gallery.classList.contains('loading') && ensureCoverFromGrid()) {
