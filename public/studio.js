@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   getAuth,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signOut,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -5096,6 +5097,76 @@ function initializeFirebase() {
       }
     },
   };
+  const androidTokenQueue = Array.isArray(window.__carnivalAndroidTokenQueue)
+    ? window.__carnivalAndroidTokenQueue
+    : [];
+  window.__carnivalAndroidTokenQueue = androidTokenQueue;
+  let androidTokenProcessing = false;
+  const processAndroidGoogleToken = async (idToken) => {
+    const token = String(idToken || "").trim();
+    if (!token) {
+      throw new Error("Google sign-in did not return an ID token.");
+    }
+    if (!auth) {
+      androidTokenQueue.push(token);
+      setStudioStatus(studioAuthStatus, "Preparing sign-in...");
+      return "queued";
+    }
+    setStudioStatus(studioAuthStatus, "Completing Google sign in...");
+    const credential = GoogleAuthProvider.credential(token);
+    await signInWithCredential(auth, credential);
+    setStudioStatus(studioNameStatus, "Preparing your studio...");
+    setStudioStatus(studioAuthStatus, "");
+    return true;
+  };
+  const flushAndroidGoogleTokenQueue = async () => {
+    if (androidTokenProcessing || !auth || !androidTokenQueue.length) return;
+    androidTokenProcessing = true;
+    try {
+      while (androidTokenQueue.length && auth) {
+        const queued = androidTokenQueue.shift();
+        if (!queued) continue;
+        try {
+          await processAndroidGoogleToken(queued);
+          if (String(window.__pendingAndroidGoogleIdToken || "").trim() === queued) {
+            window.__pendingAndroidGoogleIdToken = "";
+          }
+        } catch (_) {
+          break;
+        }
+      }
+    } finally {
+      androidTokenProcessing = false;
+    }
+  };
+  window.CarnivalAndroidAuth = window.CarnivalAndroidAuth || {};
+  window.CarnivalAndroidAuth.signInWithGoogleIdToken = async (idToken) => {
+    const result = await processAndroidGoogleToken(idToken);
+    if (result === "queued") {
+      window.setTimeout(() => {
+        flushAndroidGoogleTokenQueue().catch(() => {});
+      }, 0);
+    }
+    return result;
+  };
+  const consumePendingAndroidGoogleToken = () => {
+    const pendingToken = String(window.__pendingAndroidGoogleIdToken || "").trim();
+    if (!pendingToken) return;
+    window.CarnivalAndroidAuth
+      .signInWithGoogleIdToken(pendingToken)
+      .then((result) => {
+        if (result !== "queued") {
+          window.__pendingAndroidGoogleIdToken = "";
+        }
+      })
+      .catch(() => {});
+  };
+  consumePendingAndroidGoogleToken();
+  flushAndroidGoogleTokenQueue().catch(() => {});
+  window.addEventListener("carnival-android-google-token", () => {
+    consumePendingAndroidGoogleToken();
+    flushAndroidGoogleTokenQueue().catch(() => {});
+  });
 
   const publicPageRoute = getPublicPageSlugFromPath();
   if (publicPageRoute) {
@@ -5465,6 +5536,10 @@ connectDomainForm?.addEventListener("submit", async (event) => {
 googleLoginButton?.addEventListener("click", async () => {
   try {
     setStudioStatus(studioAuthStatus, "Opening Google sign in...");
+    if (window.AndroidStudioAuth?.startGoogleSignIn) {
+      window.AndroidStudioAuth.startGoogleSignIn();
+      return;
+    }
     await signInWithPopup(auth, new GoogleAuthProvider());
     showStudioView("name");
     setStudioStatus(studioNameStatus, "Preparing your studio...");

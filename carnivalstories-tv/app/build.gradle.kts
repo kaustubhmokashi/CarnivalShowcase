@@ -26,8 +26,12 @@ android {
       ?.trim()
       ?.trimEnd('/')
       ?: ""
+    val googleWebClientId = (project.findProperty("carnivalGoogleWebClientId") as? String)
+      ?.trim()
+      ?: ""
     buildConfigField("String", "CARNIVAL_SHOWCASE_BASE_URL", "\"$baseUrl\"")
     buildConfigField("String", "CARNIVAL_SHOWCASE_PAIRING_URL", "\"$pairingUrl\"")
+    buildConfigField("String", "CARNIVAL_GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
   }
 
   buildFeatures {
@@ -77,6 +81,7 @@ dependencies {
   implementation("io.coil-kt:coil-compose:2.7.0")
   implementation("io.coil-kt:coil-svg:2.7.0")
   implementation("com.airbnb.android:lottie-compose:6.4.0")
+  implementation("com.google.android.gms:play-services-auth:21.3.0")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

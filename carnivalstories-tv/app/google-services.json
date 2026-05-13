@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "763656183807",
+    "project_id": "carnivalshowcase-ec0d8",
+    "storage_bucket": "carnivalshowcase-ec0d8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763656183807:android:9bda0c7d496aefecf391ca",
+        "android_client_info": {
+          "package_name": "com.carnivalshowcase.tv"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "763656183807-4o5n31c41r9rkomliicujscf0q5k1qs3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXmFZ7j6hulurDxmUkpNRYZ2JK5cZM5uk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "763656183807-4o5n31c41r9rkomliicujscf0q5k1qs3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

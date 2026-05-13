@@ -1,6 +1,7 @@
 package com.carnivalshowcase.tv
 
 import android.app.DownloadManager
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -166,12 +167,16 @@ import java.util.Locale
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.net.URLEncoder
+import org.json.JSONObject
 import kotlin.math.absoluteValue
 
 private val AppBackground = Color(0xFFFFFFFF)
@@ -371,8 +376,25 @@ private fun MobileWebApp(
     val suffix = String.format(Locale.US, "%d-%d", BuildConfig.VERSION_CODE, System.currentTimeMillis())
     appendQueryParam(initialUrl, "v", suffix)
   }
+  val context = LocalContext.current
+  val googleWebClientId = remember {
+    BuildConfig.CARNIVAL_GOOGLE_WEB_CLIENT_ID.trim()
+  }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+  var googleSignInInFlight by remember { mutableStateOf(false) }
+  val googleSignInClient = remember(context, googleWebClientId) {
+    if (googleWebClientId.isBlank()) {
+      null
+    } else {
+      val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestEmail()
+        .requestProfile()
+        .requestIdToken(googleWebClientId)
+        .build()
+      GoogleSignIn.getClient(context, options)
+    }
+  }
   val filePickerLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.StartActivityForResult()
   ) { result ->
@@ -381,6 +403,45 @@ private fun MobileWebApp(
     callback?.onReceiveValue(
       WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
     )
+  }
+  val googleSignInLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.StartActivityForResult()
+  ) { result ->
+    val activeWebView = webView
+    googleSignInInFlight = false
+    val hasData = result.data != null
+    activeWebView?.let {
+      injectAndroidAuthStatus(
+        it,
+        "Google sign-in callback resultCode=${result.resultCode} data=$hasData",
+        false
+      )
+    }
+    if (result.resultCode != Activity.RESULT_OK) {
+      val message =
+        when (result.resultCode) {
+          Activity.RESULT_CANCELED -> "Google sign-in was cancelled or dismissed."
+          else -> "Google sign-in failed before completion (resultCode=${result.resultCode})."
+        }
+      activeWebView?.let { injectAndroidAuthStatus(it, message, true) }
+      return@rememberLauncherForActivityResult
+    }
+    try {
+      val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        .getResult(ApiException::class.java)
+      val idToken = account?.idToken.orEmpty()
+      if (idToken.isBlank()) {
+        val message = "Google sign-in did not return an ID token."
+        activeWebView?.let { injectAndroidAuthStatus(it, message, true) }
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        return@rememberLauncherForActivityResult
+      }
+      activeWebView?.let { completeAndroidGoogleSignIn(it, idToken) }
+    } catch (error: Exception) {
+      val message = googleSignInErrorMessage(error)
+      activeWebView?.let { injectAndroidAuthStatus(it, message, true) }
+      Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
   }
 
   BackHandler(enabled = webView != null) {
@@ -476,12 +537,12 @@ private fun MobileWebApp(
             request: WebResourceRequest?
           ): Boolean {
             val url = request?.url?.toString().orEmpty()
-            return handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, url)
+            return handleMobileWebNavigation(viewContext, view, initialUrlWithCacheBust, url)
           }
 
           @Deprecated("Deprecated in Android API 24")
           override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-            return handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, url.orEmpty())
+            return handleMobileWebNavigation(viewContext, view, initialUrlWithCacheBust, url.orEmpty())
           }
 
           override fun onReceivedError(
@@ -522,6 +583,7 @@ private fun MobileWebApp(
             injectGalleryTapTracer(view)
             injectSlideshowPaintRecovery(view)
             injectMobileDownloadBridge(view)
+            injectAndroidStudioAuthBridge(view)
             injectFacePickerPopupRecovery(view)
             injectMobileWebDebugPanel(view, "onPageFinished", "url=${url.orEmpty()}")
             scheduleDelayedMobileWebRecovery(view, url.orEmpty())
@@ -536,6 +598,7 @@ private fun MobileWebApp(
               injectGalleryCoverRecovery(view)
               injectSlideshowPaintRecovery(view)
               injectMobileDownloadBridge(view)
+              injectAndroidStudioAuthBridge(view)
               injectFacePickerPopupRecovery(view)
             }
             injectMobileWebDebugPanel(view, "onProgress", "progress=$newProgress")
@@ -560,7 +623,7 @@ private fun MobileWebApp(
                   }
                   val hostWebView = webView
                   if (hostWebView != null) {
-                    if (!handleMobileWebNavigation(viewContext, initialUrlWithCacheBust, resolvedUrl)) {
+                    if (!handleMobileWebNavigation(viewContext, hostWebView, initialUrlWithCacheBust, resolvedUrl)) {
                       hostWebView.loadUrl(resolvedUrl)
                     }
                   }
@@ -635,6 +698,30 @@ private fun MobileWebApp(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         addJavascriptInterface(MobileWebDownloadBridge(viewContext.applicationContext), "AndroidDownloader")
+        addJavascriptInterface(
+          MobileWebStudioAuthBridge(viewContext.applicationContext) {
+            val client = googleSignInClient
+            if (client == null) {
+              val message = "Google web client ID is missing in the Android build."
+              injectAndroidAuthStatus(this, message, true)
+              Toast.makeText(viewContext, message, Toast.LENGTH_LONG).show()
+            } else if (googleSignInInFlight) {
+              injectAndroidAuthStatus(this, "Google sign-in is already in progress...", false)
+            } else {
+              runCatching {
+                googleSignInInFlight = true
+                injectAndroidAuthStatus(this, "Opening Google sign in...", false)
+                googleSignInLauncher.launch(client.signInIntent)
+              }.onFailure { error ->
+                googleSignInInFlight = false
+                val message = error.message ?: "Could not open Google sign-in."
+                injectAndroidAuthStatus(this, message, true)
+                Toast.makeText(viewContext, message, Toast.LENGTH_LONG).show()
+              }
+            }
+          },
+          "AndroidStudioAuth"
+        )
         setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
           val started = enqueueMobileWebDownload(
             context = viewContext,
@@ -713,6 +800,7 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
       injectGalleryTapTracer(target)
       injectSlideshowPaintRecovery(target)
       injectMobileDownloadBridge(target)
+      injectAndroidStudioAuthBridge(target)
       injectFacePickerPopupRecovery(target)
       injectMobileWebDebugPanel(target, "tick", "url=$url delay=${delayMs}ms")
     }, delayMs)
@@ -819,6 +907,123 @@ private class MobileWebDownloadBridge(private val context: Context) {
       suggestedFilename = filename.orEmpty()
     )
   }
+}
+
+private class MobileWebStudioAuthBridge(
+  private val context: Context,
+  private val onStartGoogleSignIn: () -> Unit
+) {
+  @JavascriptInterface
+  fun startGoogleSignIn() {
+    Handler(Looper.getMainLooper()).post {
+      runCatching {
+        onStartGoogleSignIn()
+      }.onFailure { error ->
+        Toast.makeText(
+          context,
+          error.message ?: "Could not open Google sign-in.",
+          Toast.LENGTH_LONG
+        ).show()
+      }
+    }
+  }
+}
+
+private fun completeAndroidGoogleSignIn(view: WebView, idToken: String) {
+  val quotedToken = JSONObject.quote(idToken)
+  view.evaluateJavascript(
+    """
+      (async function() {
+        try {
+          var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+          var now = new Date().toISOString().slice(11, 23);
+          state.logs.unshift(now + ' [auth] native google token received');
+          state.logs = state.logs.slice(0, 80);
+          var token = $quotedToken;
+          window.__pendingAndroidGoogleIdToken = token;
+          try { window.dispatchEvent(new CustomEvent('carnival-android-google-token')); } catch (_) {}
+          var maxAttempts = 48;
+          var delayMs = 125;
+          var attempt = 0;
+          while (attempt < maxAttempts) {
+            if (window.CarnivalAndroidAuth && typeof window.CarnivalAndroidAuth.signInWithGoogleIdToken === 'function') {
+              await window.CarnivalAndroidAuth.signInWithGoogleIdToken(token);
+              window.__pendingAndroidGoogleIdToken = '';
+              break;
+            }
+            if (attempt === 0) {
+              state.logs.unshift(now + ' [auth] waiting for web auth bridge...');
+              state.logs = state.logs.slice(0, 80);
+            }
+            await new Promise(function(resolve) { window.setTimeout(resolve, delayMs); });
+            attempt += 1;
+          }
+          if (attempt >= maxAttempts) {
+            now = new Date().toISOString().slice(11, 23);
+            state.logs.unshift(now + ' [auth] web auth bridge still initializing; token queued');
+            state.logs = state.logs.slice(0, 80);
+            return 'queued';
+          }
+          now = new Date().toISOString().slice(11, 23);
+          state.logs.unshift(now + ' [auth] Firebase credential sign-in complete');
+          state.logs = state.logs.slice(0, 80);
+          if (location.pathname === '/login') {
+            history.replaceState({ studio: true }, '', '/studio');
+          }
+          return 'ok';
+        } catch (error) {
+          var message = error && error.message ? error.message : 'Google sign-in failed.';
+          var status = document.getElementById('studio-auth-status');
+          if (status) {
+            status.textContent = message;
+            status.classList.add('is-error');
+          }
+          var debugState = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+          var debugNow = new Date().toISOString().slice(11, 23);
+          debugState.logs.unshift(debugNow + ' [auth] error=' + message);
+          debugState.logs = debugState.logs.slice(0, 80);
+          return 'error:' + message;
+        }
+      })();
+    """.trimIndent(),
+    null
+  )
+}
+
+private fun injectAndroidAuthStatus(view: WebView, message: String, isError: Boolean) {
+  val quotedMessage = JSONObject.quote(message)
+  val errorFlag = if (isError) "true" else "false"
+  view.evaluateJavascript(
+    """
+      (function() {
+        var message = $quotedMessage;
+        var status = document.getElementById('studio-auth-status');
+        if (status) {
+          status.textContent = message;
+          status.classList.toggle('is-error', $errorFlag);
+        }
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [auth] ' + message);
+        state.logs = state.logs.slice(0, 80);
+      })();
+    """.trimIndent(),
+    null
+  )
+}
+
+private fun googleSignInErrorMessage(error: Exception): String {
+  if (error is ApiException) {
+    return when (error.statusCode) {
+      10 -> "Google sign-in config mismatch (DEVELOPER_ERROR 10). Check Firebase Android app package + SHA and Web client ID."
+      12500 -> "Google sign-in failed on this device. Check Google Play services and OAuth configuration."
+      12501 -> "Google sign-in was cancelled."
+      12502 -> "Google sign-in is already in progress."
+      7 -> "Network error during Google sign-in."
+      else -> "Google sign-in failed (code ${error.statusCode})."
+    }
+  }
+  return error.message ?: "Google sign-in failed."
 }
 
 private fun enqueueMobileWebDownload(
@@ -1353,6 +1558,62 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
   target.evaluateJavascript(script, null)
 }
 
+private fun injectAndroidStudioAuthBridge(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      function push(msg) {
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [auth] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+      }
+      if (!window.AndroidStudioAuth || typeof window.AndroidStudioAuth.startGoogleSignIn !== 'function') {
+        push('android bridge unavailable');
+        return;
+      }
+      function bind() {
+        var button = document.getElementById('google-login-button');
+        if (!button) {
+          return false;
+        }
+        if (button.dataset.androidNativeAuthBound === 'true') {
+          return true;
+        }
+        button.dataset.androidNativeAuthBound = 'true';
+        button.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.stopImmediatePropagation) {
+            event.stopImmediatePropagation();
+          }
+          var status = document.getElementById('studio-auth-status');
+          if (status) {
+            status.textContent = 'Opening Google sign in...';
+            status.classList.remove('is-error');
+          }
+          push('native google sign-in requested');
+          window.AndroidStudioAuth.startGoogleSignIn();
+        }, true);
+        push('native google button bound');
+        return true;
+      }
+      if (!bind() && !window.__androidStudioAuthObserverStarted) {
+        window.__androidStudioAuthObserverStarted = true;
+        try {
+          new MutationObserver(function() {
+            bind();
+          }).observe(document.documentElement || document.body, { childList: true, subtree: true });
+          push('button observer attached');
+        } catch (error) {
+          push('observer error=' + (error && error.message ? error.message : 'unknown'));
+        }
+      }
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
+}
+
 private fun injectGalleryTapTracer(view: WebView?) {
   val target = view ?: return
   val script = """
@@ -1656,6 +1917,14 @@ private fun injectGalleryCoverRecovery(view: WebView?) {
 
 private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: String = "") {
   val target = view ?: return
+  val appId = BuildConfig.APPLICATION_ID
+  val webClientIdRaw = BuildConfig.CARNIVAL_GOOGLE_WEB_CLIENT_ID.trim()
+  val webClientIdMasked =
+    when {
+      webClientIdRaw.isBlank() -> "missing"
+      webClientIdRaw.length <= 16 -> webClientIdRaw
+      else -> "${webClientIdRaw.take(8)}...${webClientIdRaw.takeLast(8)}"
+    }
   val script = """
     (function() {
       var phase = ${jsQuoted(phase)};
@@ -2044,6 +2313,10 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         'nativeView w/h=' + ${target.width} + 'x' + ${target.height} +
           ' measured=' + ${target.measuredWidth} + 'x' + ${target.measuredHeight} +
           ' contentHeightPx=' + ${target.contentHeight} + ' scale=' + ${target.scale},
+        'androidAuth appId=' + ${jsQuoted(appId)} +
+          ' webClientId=' + ${jsQuoted(webClientIdMasked)} +
+          ' hasBridge=' + (typeof window.AndroidStudioAuth) +
+          ' webAuth=' + (window.CarnivalAndroidAuth && typeof window.CarnivalAndroidAuth.signInWithGoogleIdToken),
         metric('.app-shell'),
         metric('#screen-direct-link'),
         metric('#screen-gallery'),
@@ -2110,7 +2383,12 @@ private fun getMobileDeepLinkTarget(intent: Intent?): String? {
   return data.getQueryParameter("returnTo")?.takeIf { it.isNotBlank() } ?: "/studio"
 }
 
-private fun handleMobileWebNavigation(context: Context, baseUrl: String, requestedUrl: String): Boolean {
+private fun handleMobileWebNavigation(
+  context: Context,
+  webView: WebView?,
+  baseUrl: String,
+  requestedUrl: String
+): Boolean {
   if (requestedUrl.isBlank()) {
     return false
   }
@@ -2125,7 +2403,17 @@ private fun handleMobileWebNavigation(context: Context, baseUrl: String, request
   }
 
   if (shouldOpenOutsideMobileWebView(baseUrl, uri)) {
-    openExternalBrowser(context, getExternalStudioAuthUrl(baseUrl, uri))
+    val host = uri.host.orEmpty().lowercase()
+    if (host.contains("accounts.google.com") || host.contains("googleusercontent.com")) {
+      val message = "Use the in-app Google sign-in button. External Chrome auth cannot complete from WebView."
+      webView?.let {
+        injectAndroidAuthStatus(it, message, true)
+        injectAndroidStudioAuthBridge(it)
+      }
+      Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    } else {
+      openExternalBrowser(context, getExternalStudioAuthUrl(baseUrl, uri))
+    }
     return true
   }
 
@@ -2134,7 +2422,6 @@ private fun handleMobileWebNavigation(context: Context, baseUrl: String, request
 
 private fun shouldOpenOutsideMobileWebView(baseUrl: String, uri: Uri): Boolean {
   val host = uri.host.orEmpty().lowercase()
-  val path = uri.path.orEmpty()
   if (host.contains("accounts.google.com") || host.contains("googleusercontent.com")) {
     return true
   }
@@ -2144,7 +2431,7 @@ private fun shouldOpenOutsideMobileWebView(baseUrl: String, uri: Uri): Boolean {
     return false
   }
 
-  return path == "/login" || path == "/studio" || path.startsWith("/studio/")
+  return false
 }
 
 private fun getExternalStudioAuthUrl(baseUrl: String, uri: Uri): String {
