@@ -7,19 +7,22 @@
     <script>
       (() => {
         const pathSegments = window.location.pathname.split("/").filter(Boolean);
-        const firstSegment = pathSegments[0] || "";
+        const isStagePrefixed = pathSegments[0] === "stage";
+        const routeSegments = isStagePrefixed ? pathSegments.slice(1) : pathSegments;
+        const firstSegment = routeSegments[0] || "";
         const reservedRoutes = new Set(["studio", "login", "privacy-policy", "terms-of-service", "remote", "remote-tv", "remote-firebase", "event", "e", "event-moderate"]);
+        window.CarnivalResolvedPathname = routeSegments.length ? `/${routeSegments.join("/")}` : "/";
         window.CarnivalEventPublicRoute =
-          (firstSegment === "event" || firstSegment === "e") && pathSegments.length >= 2
+          (firstSegment === "event" || firstSegment === "e") && routeSegments.length >= 2
             ? {
-                slug: decodeURIComponent(pathSegments[1]),
-                mode: pathSegments[2] === "present" ? "present" : "upload",
+                slug: decodeURIComponent(routeSegments[1]),
+                mode: routeSegments[2] === "present" ? "present" : "upload",
               }
             : null;
-        window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
+        window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && routeSegments.length >= 2 ? decodeURIComponent(routeSegments[1]) : "";
         window.CarnivalStudioPublicRoute =
           !reservedRoutes.has(firstSegment) &&
-          (pathSegments.length === 1 || pathSegments.length >= 2);
+          (routeSegments.length === 1 || routeSegments.length >= 2);
         window.CarnivalBootLoaderRoute = Boolean(window.CarnivalStudioPublicRoute);
       })();
       window.CarnivalDefaultFavicon = "/favicon.svg?v=20260424b";

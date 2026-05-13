@@ -382,6 +382,14 @@ function getCurrentPageShareUrl() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+function getResolvedPathname() {
+  const normalized = String(window.CarnivalResolvedPathname || "").trim();
+  if (normalized.startsWith("/")) {
+    return normalized || "/";
+  }
+  return window.location.pathname || "/";
+}
+
 function buildSlideShareUrl(photo = getCurrentSlidePhoto()) {
   const currentFolder = getSelectedFolder();
   if (!photo?.id) {
@@ -1019,7 +1027,7 @@ function getGalleryPath() {
     return `/${slug}`;
   }
 
-  const currentPath = window.location.pathname || "/";
+  const currentPath = getResolvedPathname();
   return currentPath !== "/" ? currentPath : "/";
 }
 
@@ -2053,7 +2061,7 @@ function resetGalleryLoadingShell() {
 
 function syncHistoryForStep(step, replaceState = false) {
   const nextPath = step === 1 ? "/" : getGalleryPath();
-  if (window.location.pathname === nextPath) {
+  if (getResolvedPathname() === nextPath) {
     return;
   }
 
@@ -3563,10 +3571,10 @@ if (
   !window.CarnivalStudioPublicRoute &&
   !window.CarnivalEventPublicRoute &&
   !window.CarnivalEventModerationRoute &&
-  window.location.pathname !== "/studio" &&
-  window.location.pathname !== "/login"
+  getResolvedPathname() !== "/studio" &&
+  getResolvedPathname() !== "/login"
 ) {
-  setActiveScreen(window.location.pathname === "/" ? 1 : 3, { replaceState: true });
+  setActiveScreen(getResolvedPathname() === "/" ? 1 : 3, { replaceState: true });
 }
 
 window.addEventListener("popstate", () => {
@@ -3575,13 +3583,13 @@ window.addEventListener("popstate", () => {
     window.CarnivalStudioPublicRoute ||
     window.CarnivalEventPublicRoute ||
     window.CarnivalEventModerationRoute ||
-    window.location.pathname === "/studio" ||
-    window.location.pathname === "/login"
+    getResolvedPathname() === "/studio" ||
+    getResolvedPathname() === "/login"
   ) {
     return;
   }
 
-  setActiveScreen(window.location.pathname === "/" ? 1 : 3, {
+  setActiveScreen(getResolvedPathname() === "/" ? 1 : 3, {
     skipHistory: true,
     replaceState: true,
   });
