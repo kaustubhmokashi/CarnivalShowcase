@@ -2304,21 +2304,26 @@ function renderGallery(photoItems, options = {}) {
 
   if (coverPhoto) {
     const coverSources = getPhotoSourceCandidates(coverPhoto);
-    const primaryCoverSource = coverSources[0] || "";
-    coverPhotoEl.style.setProperty("--cover-image", `url("${primaryCoverSource}")`);
+    const thumbSource = String(coverPhoto.thumbnailUrl || "").trim();
+    const initialCoverSource = thumbSource || coverSources[0] || "";
+    const fallbackCoverSources = [initialCoverSource, ...coverSources]
+      .filter(Boolean)
+      .filter((source, index, list) => list.indexOf(source) === index);
+    const preferredHighResSource = coverSources[0] || initialCoverSource;
+    coverPhotoEl.style.setProperty("--cover-image", `url("${initialCoverSource}")`);
     coverPhotoEl.classList.add("has-cover-image");
     const card = document.createElement("div");
     card.className = "photo-card photo-card-cover";
     const image = document.createElement("img");
     let coverSourceIndex = 0;
-    image.src = primaryCoverSource;
+    image.src = initialCoverSource;
     image.alt = coverPhoto.name;
     image.loading = "lazy";
     image.fetchPriority = "high";
     image.addEventListener("error", () => {
-      if (coverSourceIndex < coverSources.length - 1) {
+      if (coverSourceIndex < fallbackCoverSources.length - 1) {
         coverSourceIndex += 1;
-        const nextSource = coverSources[coverSourceIndex];
+        const nextSource = fallbackCoverSources[coverSourceIndex];
         coverPhotoEl.style.setProperty("--cover-image", `url("${nextSource}")`);
         image.src = nextSource;
         return;
@@ -2333,6 +2338,18 @@ function renderGallery(photoItems, options = {}) {
     });
     image.addEventListener("load", () => {
       markGalleryVisualReady();
+      if (
+        preferredHighResSource &&
+        preferredHighResSource !== image.currentSrc &&
+        preferredHighResSource !== image.src
+      ) {
+        const highResImage = new Image();
+        highResImage.onload = () => {
+          coverPhotoEl.style.setProperty("--cover-image", `url("${preferredHighResSource}")`);
+          image.src = preferredHighResSource;
+        };
+        highResImage.src = preferredHighResSource;
+      }
     });
     card.appendChild(image);
     coverPhotoEl.appendChild(card);
