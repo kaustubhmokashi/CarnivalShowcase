@@ -522,6 +522,7 @@ private fun MobileWebApp(
             injectGalleryTapTracer(view)
             injectSlideshowPaintRecovery(view)
             injectMobileDownloadBridge(view)
+            injectFacePickerPopupRecovery(view)
             injectMobileWebDebugPanel(view, "onPageFinished", "url=${url.orEmpty()}")
             scheduleDelayedMobileWebRecovery(view, url.orEmpty())
           }
@@ -535,6 +536,7 @@ private fun MobileWebApp(
               injectGalleryCoverRecovery(view)
               injectSlideshowPaintRecovery(view)
               injectMobileDownloadBridge(view)
+              injectFacePickerPopupRecovery(view)
             }
             injectMobileWebDebugPanel(view, "onProgress", "progress=$newProgress")
           }
@@ -711,9 +713,98 @@ private fun scheduleDelayedMobileWebRecovery(view: WebView?, url: String) {
       injectGalleryTapTracer(target)
       injectSlideshowPaintRecovery(target)
       injectMobileDownloadBridge(target)
+      injectFacePickerPopupRecovery(target)
       injectMobileWebDebugPanel(target, "tick", "url=$url delay=${delayMs}ms")
     }, delayMs)
   }
+}
+
+private fun injectFacePickerPopupRecovery(view: WebView?) {
+  val target = view ?: return
+  val script = """
+    (function() {
+      function push(msg) {
+        var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
+        var now = new Date().toISOString().slice(11, 23);
+        state.logs.unshift(now + ' [face-popup] ' + msg);
+        state.logs = state.logs.slice(0, 80);
+      }
+      window.__mobilePromoteFacePickerPopup = function(reason) {
+        try {
+          var backdrop = document.getElementById('face-picker-popup');
+          if (!backdrop) return false;
+          var dialog = backdrop.querySelector('.face-picker-popup');
+          var vh = Math.max(
+            window.innerHeight || 0,
+            window.visualViewport ? Math.round(window.visualViewport.height) : 0,
+            document.documentElement ? document.documentElement.clientHeight : 0
+          ) || 1;
+          var vw = Math.max(
+            window.innerWidth || 0,
+            window.visualViewport ? Math.round(window.visualViewport.width) : 0,
+            document.documentElement ? document.documentElement.clientWidth : 0
+          ) || 1;
+          if (backdrop.parentNode !== document.body) {
+            document.body.appendChild(backdrop);
+          }
+          backdrop.style.setProperty('position', 'fixed', 'important');
+          backdrop.style.setProperty('inset', '0px', 'important');
+          backdrop.style.setProperty('width', vw + 'px', 'important');
+          backdrop.style.setProperty('height', vh + 'px', 'important');
+          backdrop.style.setProperty('min-height', vh + 'px', 'important');
+          backdrop.style.setProperty('z-index', '2147483647', 'important');
+          backdrop.style.setProperty('display', 'grid', 'important');
+          backdrop.style.setProperty('place-items', 'center', 'important');
+          backdrop.style.setProperty('padding', '18px', 'important');
+          backdrop.style.setProperty('overflow', 'hidden', 'important');
+          backdrop.style.setProperty('box-sizing', 'border-box', 'important');
+          backdrop.style.setProperty('transform', 'none', 'important');
+          backdrop.style.setProperty('pointer-events', 'auto', 'important');
+          if (dialog) {
+            dialog.style.setProperty('width', Math.min(720, Math.max(1, vw - 36)) + 'px', 'important');
+            dialog.style.setProperty('max-width', 'calc(100vw - 36px)', 'important');
+            dialog.style.setProperty('max-height', Math.max(1, vh - 36) + 'px', 'important');
+            dialog.style.setProperty('overflow', 'auto', 'important');
+            dialog.style.setProperty('box-sizing', 'border-box', 'important');
+            dialog.style.setProperty('position', 'relative', 'important');
+            dialog.style.setProperty('z-index', '1', 'important');
+            dialog.style.setProperty('transform', 'none', 'important');
+          }
+          push('promoted reason=' + (reason || 'manual') + ' size=' + vw + 'x' + vh + ' dialog=' + (dialog ? 'yes' : 'no'));
+          return true;
+        } catch (error) {
+          push('error=' + (error && error.message ? error.message : 'unknown'));
+          return false;
+        }
+      };
+
+      if (!window.__mobileFacePickerObserverStarted) {
+        window.__mobileFacePickerObserverStarted = true;
+        try {
+          new MutationObserver(function(records) {
+            records.forEach(function(record) {
+              Array.prototype.slice.call(record.addedNodes || []).forEach(function(node) {
+                if (!node || node.nodeType !== 1) return;
+                if (node.id === 'face-picker-popup' || (node.querySelector && node.querySelector('#face-picker-popup'))) {
+                  window.setTimeout(function() {
+                    window.__mobilePromoteFacePickerPopup && window.__mobilePromoteFacePickerPopup('added');
+                  }, 0);
+                  window.setTimeout(function() {
+                    window.__mobilePromoteFacePickerPopup && window.__mobilePromoteFacePickerPopup('added-late');
+                  }, 120);
+                }
+              });
+            });
+          }).observe(document.body, { childList: true, subtree: true });
+          push('observer attached');
+        } catch (error) {
+          push('observer error=' + (error && error.message ? error.message : 'unknown'));
+        }
+      }
+      window.__mobilePromoteFacePickerPopup('tick');
+    })();
+  """.trimIndent()
+  target.evaluateJavascript(script, null)
 }
 
 private class MobileWebDownloadBridge(private val context: Context) {
@@ -919,6 +1010,7 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
             push('missing nodes reason=' + (reason || 'manual'));
             return false;
           }
+          var isAlbumPresentation = slideshow.classList.contains('slideshow-album-presentation');
 
           var open = !slideshow.classList.contains('hidden') || getComputedStyle(slideshow).display !== 'none';
           if (!open) {
@@ -958,7 +1050,11 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
           slideshow.style.height = pxHeight;
           slideshow.style.minHeight = pxHeight;
           slideshow.style.zIndex = '2147483600';
-          slideshow.style.background = slideshow.style.background || '#ffffff';
+          if (isAlbumPresentation) {
+            slideshow.style.removeProperty('background');
+          } else {
+            slideshow.style.background = slideshow.style.background || '#ffffff';
+          }
           slideshow.style.overflow = 'hidden';
           slideshow.setAttribute('aria-hidden', 'false');
 
@@ -971,37 +1067,89 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
             frame.style.overflow = 'hidden';
           }
 
-          card.classList.remove('hidden', 'is-leaving');
-          card.classList.add('is-active');
-          card.style.position = 'absolute';
-          card.style.top = Math.round(vh / 2) + 'px';
-          card.style.left = Math.round(vw / 2) + 'px';
-          card.style.zIndex = '20';
-          card.style.display = 'grid';
-          card.style.placeItems = 'center';
-          card.style.width = pxWidth;
-          card.style.height = pxHeight;
-          card.style.maxWidth = pxWidth;
-          card.style.maxHeight = pxHeight;
-          card.style.minHeight = '0';
-          card.style.opacity = '1';
-          card.style.visibility = 'visible';
-          card.style.transform = 'translate(-50%, -50%)';
-          card.setAttribute('aria-hidden', 'false');
+          if (isAlbumPresentation) {
+            var entries = [
+              { card: document.getElementById('slide-card-a'), image: document.getElementById('slide-image') },
+              { card: document.getElementById('slide-card-b'), image: document.getElementById('slide-image-full') }
+            ];
+            var presentationMaxWidth = Math.max(1, Math.round(vw * 0.82)) + 'px';
+            var presentationMaxHeight = Math.max(1, Math.round(vh * 0.80)) + 'px';
+            var presentationMat = 14;
+            var presentationImageMaxWidth = Math.max(1, Math.round(vw * 0.82) - (presentationMat * 2)) + 'px';
+            var presentationImageMaxHeight = Math.max(1, Math.round(vh * 0.80) - (presentationMat * 2)) + 'px';
+            entries.forEach(function(entry) {
+              if (entry.card) {
+                [
+                  'min-height', 'place-items', 'opacity', 'visibility', 'transform'
+                ].forEach(function(prop) { entry.card.style.removeProperty(prop); });
+                entry.card.style.position = 'absolute';
+                entry.card.style.top = '50%';
+                entry.card.style.left = '50%';
+                entry.card.style.display = 'grid';
+                entry.card.style.placeItems = 'center';
+                entry.card.style.width = 'auto';
+                entry.card.style.height = 'auto';
+                entry.card.style.maxWidth = presentationMaxWidth;
+                entry.card.style.maxHeight = presentationMaxHeight;
+                entry.card.style.padding = presentationMat + 'px';
+                entry.card.style.boxSizing = 'border-box';
+                entry.card.style.overflow = 'hidden';
+                entry.card.style.background = '#ffffff';
+              }
+              if (entry.image) {
+                [
+                  'visibility', 'opacity', 'margin', 'background'
+                ].forEach(function(prop) { entry.image.style.removeProperty(prop); });
+                entry.image.style.display = 'block';
+                entry.image.style.width = 'auto';
+                entry.image.style.height = 'auto';
+                entry.image.style.maxWidth = presentationImageMaxWidth;
+                entry.image.style.maxHeight = presentationImageMaxHeight;
+                entry.image.style.objectFit = 'contain';
+                entry.image.style.boxSizing = 'border-box';
+                entry.image.style.borderRadius = '10px';
+                entry.image.style.clipPath = 'inset(0 round 10px)';
+                if (entry.image === img) {
+                  entry.image.classList.remove('hidden');
+                  if (source && !entry.image.src) {
+                    entry.image.src = source;
+                  }
+                }
+              }
+            });
+          } else {
+            card.classList.remove('hidden', 'is-leaving');
+            card.classList.add('is-active');
+            card.style.position = 'absolute';
+            card.style.top = Math.round(vh / 2) + 'px';
+            card.style.left = Math.round(vw / 2) + 'px';
+            card.style.zIndex = '20';
+            card.style.display = 'grid';
+            card.style.placeItems = 'center';
+            card.style.width = pxWidth;
+            card.style.height = pxHeight;
+            card.style.maxWidth = pxWidth;
+            card.style.maxHeight = pxHeight;
+            card.style.minHeight = '0';
+            card.style.opacity = '1';
+            card.style.visibility = 'visible';
+            card.style.transform = 'translate(-50%, -50%)';
+            card.setAttribute('aria-hidden', 'false');
 
-          img.classList.remove('hidden');
-          img.style.display = 'block';
-          img.style.visibility = 'visible';
-          img.style.opacity = '1';
-          img.style.width = 'auto';
-          img.style.height = 'auto';
-          img.style.maxWidth = pxWidth;
-          img.style.maxHeight = pxHeight;
-          img.style.objectFit = 'contain';
-          img.style.margin = '0 auto';
-          img.style.background = 'transparent';
-          if (source && !img.src) {
-            img.src = source;
+            img.classList.remove('hidden');
+            img.style.display = 'block';
+            img.style.visibility = 'visible';
+            img.style.opacity = '1';
+            img.style.width = 'auto';
+            img.style.height = 'auto';
+            img.style.maxWidth = pxWidth;
+            img.style.maxHeight = pxHeight;
+            img.style.objectFit = 'contain';
+            img.style.margin = '0 auto';
+            img.style.background = 'transparent';
+            if (source && !img.src) {
+              img.src = source;
+            }
           }
 
           var loader = document.getElementById('slideshow-loader');
@@ -1011,7 +1159,7 @@ private fun injectSlideshowPaintRecovery(view: WebView?) {
 
           window.__mobilePromoteSettingsPanel && window.__mobilePromoteSettingsPanel('paint');
 
-          push('applied reason=' + (reason || 'manual') + ' size=' + pxWidth + 'x' + pxHeight + ' src=' + (source || 'na'));
+          push('applied reason=' + (reason || 'manual') + ' mode=' + (isAlbumPresentation ? 'presentation' : 'standard') + ' size=' + pxWidth + 'x' + pxHeight + ' src=' + (source || 'na'));
           return true;
         } catch (error) {
           push('error=' + (error && error.message ? error.message : 'unknown'));
@@ -1573,10 +1721,12 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
       }
       function slideshowDebugLine() {
         var state = window.__mobileSlideshowDebug;
+        var slideshow = document.getElementById('slideshow');
+        var mode = slideshow && slideshow.classList.contains('slideshow-album-presentation') ? 'presentation' : 'standard';
         if (!state || !Array.isArray(state.logs) || !state.logs.length) {
-          return 'slideshowDebug=none';
+          return 'slideshowDebug=none mode=' + mode;
         }
-        return 'slideshowDebug=' + state.logs.slice(0, 4).join(' || ');
+        return 'slideshowDebug mode=' + mode + ' ' + state.logs.slice(0, 4).join(' || ');
       }
       function classLine(sel) {
         var el = null;
@@ -1659,6 +1809,20 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
           ' sideParent=' + (side.parentNode === document.body ? 'body' : '#screen-gallery') +
           ' promoted=' + (side.dataset && side.dataset.mobileSettingsPromoted === 'true') +
           ' panelRect=' + r(panelRect.width) + 'x' + r(panelRect.height);
+      }
+      function facePopupLine() {
+        var popup = document.getElementById('face-picker-popup');
+        if (!popup) return 'facePopup=missing';
+        var dialog = popup.querySelector('.face-picker-popup');
+        var cs = getComputedStyle(popup);
+        var rect = popup.getBoundingClientRect();
+        var dialogRect = dialog ? dialog.getBoundingClientRect() : { width: 0, height: 0, top: 0 };
+        return 'facePopup rect=' + r(rect.width) + 'x' + r(rect.height) +
+          ' top=' + r(rect.top) +
+          ' disp=' + cs.display +
+          ' pos=' + cs.position +
+          ' z=' + cs.zIndex +
+          ' dialog=' + r(dialogRect.width) + 'x' + r(dialogRect.height) + '@' + r(dialogRect.top);
       }
       var state = window.__mobileUiDebugState || (window.__mobileUiDebugState = { logs: [] });
       var now = new Date().toISOString().slice(11, 23);
@@ -1909,6 +2073,7 @@ private fun injectMobileWebDebugPanel(view: WebView?, phase: String, note: Strin
         openerLine(),
         downloadLine(),
         settingsLine(),
+        facePopupLine(),
         hitTestLine(),
         metric('.link-stage'),
         metric('.home-footer'),
