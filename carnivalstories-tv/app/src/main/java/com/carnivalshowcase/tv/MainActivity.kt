@@ -26,6 +26,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.URLUtil
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -786,21 +787,52 @@ private fun MobileWebApp(
         clearCache(true)
         clearHistory()
         setInitialScale(1)
+        val touchSlopPx = ViewConfiguration.get(viewContext).scaledTouchSlop.toFloat()
+        var downX = 0f
+        var downY = 0f
+        var movedBeyondTapSlop = false
         setOnTouchListener { _, motionEvent ->
-          if (motionEvent?.actionMasked == MotionEvent.ACTION_UP) {
-            val density = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
-            val cssX = motionEvent.x / density
-            val cssY = motionEvent.y / density
-            val bridgeScript = """
-              (function() {
-                try {
-                  if (typeof window.__androidBridgeTap === 'function') {
-                    window.__androidBridgeTap(${String.format(Locale.US, "%.2f", cssX)}, ${String.format(Locale.US, "%.2f", cssY)});
-                  }
-                } catch (_) {}
-              })();
-            """.trimIndent()
-            evaluateJavascript(bridgeScript, null)
+          when (motionEvent?.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+              downX = motionEvent.x
+              downY = motionEvent.y
+              movedBeyondTapSlop = false
+              return@setOnTouchListener false
+            }
+            MotionEvent.ACTION_MOVE -> {
+              if (!movedBeyondTapSlop) {
+                val dx = motionEvent.x - downX
+                val dy = motionEvent.y - downY
+                if ((dx * dx + dy * dy) > (touchSlopPx * touchSlopPx)) {
+                  movedBeyondTapSlop = true
+                }
+              }
+              return@setOnTouchListener false
+            }
+            MotionEvent.ACTION_UP -> {
+              if (!movedBeyondTapSlop) {
+                val density = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+                val cssX = motionEvent.x / density
+                val cssY = motionEvent.y / density
+                val bridgeScript = """
+                  (function() {
+                    try {
+                      if (typeof window.__androidBridgeTap === 'function') {
+                        window.__androidBridgeTap(${String.format(Locale.US, "%.2f", cssX)}, ${String.format(Locale.US, "%.2f", cssY)});
+                      }
+                    } catch (_) {}
+                  })();
+                """.trimIndent()
+                evaluateJavascript(bridgeScript, null)
+                return@setOnTouchListener false
+              }
+              // Consume ACTION_UP for scroll gestures so WebView does not turn them into clicks.
+              return@setOnTouchListener true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+              movedBeyondTapSlop = true
+              return@setOnTouchListener false
+            }
           }
           false
         }
