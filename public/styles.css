@@ -4283,6 +4283,22 @@ input[type="checkbox"]:checked {
   margin-top: 2px;
 }
 
+.studio-danger-zone {
+  border-top: 1px solid rgba(0, 0, 0, 0.14);
+  padding-top: 20px;
+}
+
+.studio-danger-button {
+  border-color: #a40000;
+  color: #a40000;
+}
+
+.studio-danger-button:hover,
+.studio-danger-button:focus-visible {
+  border-color: #7e0000;
+  color: #7e0000;
+}
+
 .studio-domain-form {
   gap: 28px;
 }

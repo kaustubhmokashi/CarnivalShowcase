@@ -86,6 +86,8 @@ const accountStudioName = document.getElementById("account-studio-name");
 const studioDriveCopy = document.getElementById("studio-drive-copy");
 const accountRemoveDriveButton = document.getElementById("account-remove-drive");
 const accountConnectDomainButton = document.getElementById("account-connect-domain");
+const accountDeleteConfirmationInput = document.getElementById("account-delete-confirmation");
+const accountDeleteButton = document.getElementById("account-delete-button");
 const studioDomainCopy = document.getElementById("studio-domain-copy");
 const studioAccountStatus = document.getElementById("studio-account-status");
 const connectDomainPanel = document.getElementById("connect-domain-panel");
@@ -4211,6 +4213,22 @@ async function saveBrandingSettings(branding) {
   });
 }
 
+async function deleteStudioAccount() {
+  const response = await fetch("/api/account/delete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAdminAuthHeaders()),
+    },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not delete account.");
+  }
+  return payload;
+}
+
 function flattenDriveMedia(node, folderPath = "") {
   if (!node) {
     return [];
@@ -5481,6 +5499,45 @@ studioAccountForm?.addEventListener("submit", async (event) => {
     setStudioStatus(studioAccountStatus, "Studio name updated.");
   } catch (error) {
     setStudioStatus(studioAccountStatus, error.message || "Could not update studio name.", true);
+  }
+});
+
+accountDeleteButton?.addEventListener("click", async () => {
+  try {
+    const confirmationValue = String(accountDeleteConfirmationInput?.value || "").trim();
+    if (confirmationValue !== "DELETE") {
+      setStudioStatus(studioAccountStatus, "Type DELETE in all caps to confirm.", true);
+      accountDeleteConfirmationInput?.focus();
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "This will permanently delete your studio account data and sign you out. This cannot be undone. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    accountDeleteButton.disabled = true;
+    setStudioStatus(studioAccountStatus, "Deleting your account...");
+    await deleteStudioAccount();
+    await signOut(auth);
+    currentProfile = null;
+    savedPages = [];
+    savedEvents = [];
+    studioUserLabel.textContent = "";
+    if (accountDeleteConfirmationInput) {
+      accountDeleteConfirmationInput.value = "";
+    }
+    setStudioStatus(studioAccountStatus, "Account deleted.");
+    showStudioView("auth");
+    setStudioScreen(true, "/login");
+  } catch (error) {
+    setStudioStatus(studioAccountStatus, error.message || "Could not delete account.", true);
+  } finally {
+    if (accountDeleteButton) {
+      accountDeleteButton.disabled = false;
+    }
   }
 });
 
