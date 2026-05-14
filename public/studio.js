@@ -5505,8 +5505,13 @@ studioAccountForm?.addEventListener("submit", async (event) => {
 accountDeleteButton?.addEventListener("click", async () => {
   try {
     const confirmationValue = String(accountDeleteConfirmationInput?.value || "").trim();
-    if (confirmationValue !== "DELETE") {
-      setStudioStatus(studioAccountStatus, "Type DELETE in all caps to confirm.", true);
+    const expectedStudioName = String(currentProfile?.studioName || accountStudioName?.value || "").trim();
+    if (!expectedStudioName) {
+      setStudioStatus(studioAccountStatus, "Studio name is unavailable. Refresh and try again.", true);
+      return;
+    }
+    if (confirmationValue !== expectedStudioName) {
+      setStudioStatus(studioAccountStatus, `Type your exact studio name (${expectedStudioName}) to confirm.`, true);
       accountDeleteConfirmationInput?.focus();
       return;
     }
