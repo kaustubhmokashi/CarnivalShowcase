@@ -20,11 +20,13 @@ let initializeFirebaseApp = null;
 let getFirebaseApps = null;
 let firebaseCert = null;
 let getFirebaseFirestore = null;
+let getFirebaseAuth = null;
 
 try {
   ({ initializeApp: initializeFirebaseApp, getApps: getFirebaseApps, cert: firebaseCert } =
     require("firebase-admin/app"));
   ({ getFirestore: getFirebaseFirestore } = require("firebase-admin/firestore"));
+  ({ getAuth: getFirebaseAuth } = require("firebase-admin/auth"));
 } catch (error) {
   // Firebase is optional during local setup until dependencies and credentials are provided.
 }
@@ -1702,6 +1704,31 @@ function getFirestoreDb() {
   return firestoreDb;
 }
 
+function getFirebaseAdminAuth() {
+  if (!initializeFirebaseApp || !getFirebaseApps || !getFirebaseAuth) {
+    return null;
+  }
+
+  if (!getFirebaseApps().length) {
+    const serviceAccount = getFirebaseServiceAccount();
+
+    if (serviceAccount) {
+      initializeFirebaseApp({
+        credential: firebaseCert(serviceAccount),
+        projectId: serviceAccount.project_id || process.env.FIREBASE_PROJECT_ID,
+      });
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      initializeFirebaseApp({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+      });
+    } else {
+      return null;
+    }
+  }
+
+  return getFirebaseAuth();
+}
+
 async function getDriveServiceAccessToken() {
   const serviceAccount = getDriveServiceAccount();
   if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
@@ -2958,6 +2985,162 @@ async function deletePermanentLinkByAdmin(payload) {
 
   await batch.commit();
   return { deleted: true, source: "permanent" };
+}
+
+async function deleteDocumentRefsInBatches(db, refs) {
+  const uniqueRefs = [];
+  const seen = new Set();
+  for (const ref of refs) {
+    if (!ref?.path || seen.has(ref.path)) {
+      continue;
+    }
+    seen.add(ref.path);
+    uniqueRefs.push(ref);
+  }
+
+  let deleted = 0;
+  for (let index = 0; index < uniqueRefs.length; index += 400) {
+    const slice = uniqueRefs.slice(index, index + 400);
+    const batch = db.batch();
+    slice.forEach((ref) => batch.delete(ref));
+    await batch.commit();
+    deleted += slice.length;
+  }
+  return deleted;
+}
+
+async function handleDeleteAccount(req, res) {
+  const account = await requireAuthenticatedRequest(req, res);
+  if (!account) {
+    return;
+  }
+
+  const db = getFirestoreDb();
+  const adminAuth = getFirebaseAdminAuth();
+  if (!db || !adminAuth) {
+    sendJson(res, 503, { error: "Account deletion requires Firebase admin credentials on the server." });
+    return;
+  }
+
+  const uid = String(account.localId || "").trim();
+  if (!uid) {
+    sendJson(res, 400, { error: "Invalid account identifier." });
+    return;
+  }
+
+  const refsToDelete = [];
+  const userRef = db.collection(FIREBASE_COLLECTIONS.users).doc(uid);
+  refsToDelete.push(userRef);
+
+  const userSnapshot = await userRef.get().catch(() => null);
+  const studioSlug = String(userSnapshot?.data?.()?.studioSlug || "").trim();
+
+  const pagesSnapshot = await userRef.collection("pages").get().catch(() => null);
+  const ownedPageIds = new Set();
+  if (pagesSnapshot) {
+    for (const pageDoc of pagesSnapshot.docs) {
+      refsToDelete.push(pageDoc.ref);
+      const pageData = pageDoc.data() || {};
+      const pageId = String(pageDoc.id || "").trim();
+      const pageSlug = String(pageData.pageSlug || "").trim();
+      const customDomain = normalizeHostname(pageData.customDomain || "");
+      if (pageId) {
+        ownedPageIds.add(pageId);
+      }
+      if (studioSlug && pageSlug) {
+        refsToDelete.push(db.collection(FIREBASE_COLLECTIONS.publicPages).doc(`${studioSlug}__${pageSlug}`));
+      }
+      if (customDomain && pageSlug) {
+        refsToDelete.push(db.collection(FIREBASE_COLLECTIONS.publicPages).doc(`${customDomain}__${pageSlug}`));
+      }
+    }
+  }
+
+  for (const pageId of ownedPageIds) {
+    const siblingPublicPageSnapshots = await db
+      .collection(FIREBASE_COLLECTIONS.publicPages)
+      .where("pageId", "==", pageId)
+      .get()
+      .catch(() => null);
+    if (siblingPublicPageSnapshots) {
+      siblingPublicPageSnapshots.docs.forEach((docSnapshot) => refsToDelete.push(docSnapshot.ref));
+    }
+  }
+
+  const publicPagesByOwner = await db
+    .collection(FIREBASE_COLLECTIONS.publicPages)
+    .where("ownerUid", "==", uid)
+    .get()
+    .catch(() => null);
+  if (publicPagesByOwner) {
+    publicPagesByOwner.docs.forEach((docSnapshot) => refsToDelete.push(docSnapshot.ref));
+  }
+
+  if (studioSlug) {
+    refsToDelete.push(db.collection(FIREBASE_COLLECTIONS.studioNames).doc(studioSlug));
+    const publicPagesByStudioSlug = await db
+      .collection(FIREBASE_COLLECTIONS.publicPages)
+      .where("studioSlug", "==", studioSlug)
+      .get()
+      .catch(() => null);
+    if (publicPagesByStudioSlug) {
+      publicPagesByStudioSlug.docs.forEach((docSnapshot) => refsToDelete.push(docSnapshot.ref));
+    }
+  }
+
+  const pairingCodesSnapshot = await db
+    .collection(FIREBASE_COLLECTIONS.pairingCodes)
+    .where("ownerUid", "==", uid)
+    .get()
+    .catch(() => null);
+  if (pairingCodesSnapshot) {
+    pairingCodesSnapshot.docs.forEach((docSnapshot) => refsToDelete.push(docSnapshot.ref));
+  }
+
+  const customDomainsSnapshot = await db
+    .collection(FIREBASE_COLLECTIONS.customDomains)
+    .where("uid", "==", uid)
+    .get()
+    .catch(() => null);
+  if (customDomainsSnapshot) {
+    customDomainsSnapshot.docs.forEach((docSnapshot) => refsToDelete.push(docSnapshot.ref));
+  }
+
+  const deletedDocuments = await deleteDocumentRefsInBatches(db, refsToDelete);
+
+  const driveStore = readDriveConnectionsStore();
+  if (driveStore.connections && driveStore.connections[uid]) {
+    delete driveStore.connections[uid];
+    writeDriveConnectionsStore(driveStore);
+  }
+
+  await withEventsStoreMutation(async () => {
+    const store = readEventsStore();
+    const nextEvents = (store.events || []).filter((event) => String(event?.ownerUid || "").trim() !== uid);
+    if (nextEvents.length !== (store.events || []).length) {
+      writeEventsStore({ events: nextEvents });
+    }
+  }).catch(() => {});
+
+  let authAccountDeleted = false;
+  try {
+    await adminAuth.deleteUser(uid);
+    authAccountDeleted = true;
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "auth/user-not-found") {
+      authAccountDeleted = true;
+    } else {
+      sendJson(res, 500, { error: "Could not delete Firebase auth user for this account." });
+      return;
+    }
+  }
+
+  sendJson(res, 200, {
+    success: true,
+    deletedDocuments,
+    authAccountDeleted,
+  });
 }
 
 async function incrementPublicPagePhotoLike(publicPageId, photoId) {
@@ -5485,6 +5668,11 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/drive/connection/remove" && req.method === "POST") {
     await handleRemoveDriveConnection(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/delete" && req.method === "POST") {
+    await handleDeleteAccount(req, res);
     return;
   }
 

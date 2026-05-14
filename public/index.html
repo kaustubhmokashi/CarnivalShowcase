@@ -7,19 +7,22 @@
     <script>
       (() => {
         const pathSegments = window.location.pathname.split("/").filter(Boolean);
-        const firstSegment = pathSegments[0] || "";
+        const isStagePrefixed = pathSegments[0] === "stage";
+        const routeSegments = isStagePrefixed ? pathSegments.slice(1) : pathSegments;
+        const firstSegment = routeSegments[0] || "";
         const reservedRoutes = new Set(["studio", "login", "privacy-policy", "terms-of-service", "remote", "remote-tv", "remote-firebase", "event", "e", "event-moderate"]);
+        window.CarnivalResolvedPathname = routeSegments.length ? `/${routeSegments.join("/")}` : "/";
         window.CarnivalEventPublicRoute =
-          (firstSegment === "event" || firstSegment === "e") && pathSegments.length >= 2
+          (firstSegment === "event" || firstSegment === "e") && routeSegments.length >= 2
             ? {
-                slug: decodeURIComponent(pathSegments[1]),
-                mode: pathSegments[2] === "present" ? "present" : "upload",
+                slug: decodeURIComponent(routeSegments[1]),
+                mode: routeSegments[2] === "present" ? "present" : "upload",
               }
             : null;
-        window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && pathSegments.length >= 2 ? decodeURIComponent(pathSegments[1]) : "";
+        window.CarnivalEventModerationRoute = firstSegment === "event-moderate" && routeSegments.length >= 2 ? decodeURIComponent(routeSegments[1]) : "";
         window.CarnivalStudioPublicRoute =
           !reservedRoutes.has(firstSegment) &&
-          (pathSegments.length === 1 || pathSegments.length >= 2);
+          (routeSegments.length === 1 || routeSegments.length >= 2);
         window.CarnivalBootLoaderRoute = Boolean(window.CarnivalStudioPublicRoute);
       })();
       window.CarnivalDefaultFavicon = "/favicon.svg?v=20260424b";
@@ -281,6 +284,19 @@
                     <p id="studio-domain-copy" class="studio-domain-copy"></p>
                     <button id="account-connect-domain" type="button" class="studio-primary-button studio-domain-connect-button">
                       Connect your domain
+                    </button>
+                  </section>
+                  <section class="studio-domain-summary studio-danger-zone" aria-labelledby="studio-delete-title">
+                    <p id="studio-delete-title" class="studio-domain-title">Delete account</p>
+                    <p class="studio-domain-copy">
+                      This permanently deletes your studio profile, albums, events, pairing codes, and connected domains.
+                    </p>
+                    <label>
+                      <span>Type your studio name to confirm</span>
+                      <input id="account-delete-confirmation" type="text" placeholder="STUDIO NAME" autocomplete="off" />
+                    </label>
+                    <button id="account-delete-button" type="button" class="studio-secondary-button studio-danger-button">
+                      Delete account permanently
                     </button>
                   </section>
                   <p id="studio-account-status" class="studio-status" aria-live="polite"></p>
@@ -689,7 +705,7 @@
 
     <script src="/qr.js?v=20260429a"></script>
     <script src="/firebase-config.js?v=20260424b"></script>
-    <script src="/app.js?v=20260428c"></script>
-    <script type="module" src="/studio.js?v=20260513b"></script>
+    <script src="/app.js?v=20260514a"></script>
+    <script type="module" src="/studio.js?v=20260514a"></script>
   </body>
 </html>
