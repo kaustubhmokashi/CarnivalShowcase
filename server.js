@@ -20,11 +20,13 @@ let initializeFirebaseApp = null;
 let getFirebaseApps = null;
 let firebaseCert = null;
 let getFirebaseFirestore = null;
+let getFirebaseAuth = null;
 
 try {
   ({ initializeApp: initializeFirebaseApp, getApps: getFirebaseApps, cert: firebaseCert } =
     require("firebase-admin/app"));
   ({ getFirestore: getFirebaseFirestore } = require("firebase-admin/firestore"));
+  ({ getAuth: getFirebaseAuth } = require("firebase-admin/auth"));
 } catch (error) {
   // Firebase is optional during local setup until dependencies and credentials are provided.
 }
@@ -1702,6 +1704,31 @@ function getFirestoreDb() {
   return firestoreDb;
 }
 
+function getFirebaseAdminAuth() {
+  if (!initializeFirebaseApp || !getFirebaseApps || !getFirebaseAuth) {
+    return null;
+  }
+
+  if (!getFirebaseApps().length) {
+    const serviceAccount = getFirebaseServiceAccount();
+
+    if (serviceAccount) {
+      initializeFirebaseApp({
+        credential: firebaseCert(serviceAccount),
+        projectId: serviceAccount.project_id || process.env.FIREBASE_PROJECT_ID,
+      });
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      initializeFirebaseApp({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+      });
+    } else {
+      return null;
+    }
+  }
+
+  return getFirebaseAuth();
+}
+
 async function getDriveServiceAccessToken() {
   const serviceAccount = getDriveServiceAccount();
   if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
@@ -2664,26 +2691,6 @@ async function lookupFirebaseAccountByIdToken(idToken) {
   return payload?.users?.[0] || null;
 }
 
-async function deleteFirebaseAccountByIdToken(idToken) {
-  const token = String(idToken || "").trim();
-  if (!token || !FIREBASE_WEB_CONFIG.apiKey) {
-    return false;
-  }
-
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(FIREBASE_WEB_CONFIG.apiKey)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ idToken: token }),
-    }
-  );
-
-  return response.ok;
-}
-
 async function requireAdminRequest(req, res) {
   const authorization = String(req.headers.authorization || "");
   const match = authorization.match(/^Bearer\s+(.+)$/i);
@@ -3009,7 +3016,8 @@ async function handleDeleteAccount(req, res) {
   }
 
   const db = getFirestoreDb();
-  if (!db) {
+  const adminAuth = getFirebaseAdminAuth();
+  if (!db || !adminAuth) {
     sendJson(res, 503, { error: "Account deletion requires Firebase admin credentials on the server." });
     return;
   }
@@ -3114,10 +3122,19 @@ async function handleDeleteAccount(req, res) {
     }
   }).catch(() => {});
 
-  const authorization = String(req.headers.authorization || "");
-  const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
-  const idToken = tokenMatch?.[1]?.trim() || "";
-  const authAccountDeleted = await deleteFirebaseAccountByIdToken(idToken).catch(() => false);
+  let authAccountDeleted = false;
+  try {
+    await adminAuth.deleteUser(uid);
+    authAccountDeleted = true;
+  } catch (error) {
+    const code = String(error?.code || "");
+    if (code === "auth/user-not-found") {
+      authAccountDeleted = true;
+    } else {
+      sendJson(res, 500, { error: "Could not delete Firebase auth user for this account." });
+      return;
+    }
+  }
 
   sendJson(res, 200, {
     success: true,
