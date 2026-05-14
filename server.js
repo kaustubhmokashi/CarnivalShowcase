@@ -2664,6 +2664,26 @@ async function lookupFirebaseAccountByIdToken(idToken) {
   return payload?.users?.[0] || null;
 }
 
+async function deleteFirebaseAccountByIdToken(idToken) {
+  const token = String(idToken || "").trim();
+  if (!token || !FIREBASE_WEB_CONFIG.apiKey) {
+    return false;
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(FIREBASE_WEB_CONFIG.apiKey)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ idToken: token }),
+    }
+  );
+
+  return response.ok;
+}
+
 async function requireAdminRequest(req, res) {
   const authorization = String(req.headers.authorization || "");
   const match = authorization.match(/^Bearer\s+(.+)$/i);
@@ -3094,9 +3114,15 @@ async function handleDeleteAccount(req, res) {
     }
   }).catch(() => {});
 
+  const authorization = String(req.headers.authorization || "");
+  const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
+  const idToken = tokenMatch?.[1]?.trim() || "";
+  const authAccountDeleted = await deleteFirebaseAccountByIdToken(idToken).catch(() => false);
+
   sendJson(res, 200, {
     success: true,
     deletedDocuments,
+    authAccountDeleted,
   });
 }
 
