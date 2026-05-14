@@ -5510,7 +5510,9 @@ accountDeleteButton?.addEventListener("click", async () => {
       setStudioStatus(studioAccountStatus, "Studio name is unavailable. Refresh and try again.", true);
       return;
     }
-    if (confirmationValue !== expectedStudioName) {
+    const normalizedConfirmationValue = confirmationValue.toLocaleLowerCase();
+    const normalizedExpectedStudioName = expectedStudioName.toLocaleLowerCase();
+    if (normalizedConfirmationValue !== normalizedExpectedStudioName) {
       setStudioStatus(studioAccountStatus, `Type your exact studio name (${expectedStudioName}) to confirm.`, true);
       accountDeleteConfirmationInput?.focus();
       return;
