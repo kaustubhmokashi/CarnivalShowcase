@@ -4011,6 +4011,127 @@ async function driveGetFile(fileId) {
   return response.json();
 }
 
+async function driveDownloadFileBuffer(fileId) {
+  const driveUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+  driveUrl.searchParams.set("key", API_KEY);
+  driveUrl.searchParams.set("alt", "media");
+  driveUrl.searchParams.set("supportsAllDrives", "true");
+
+  const response = await fetch(driveUrl);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Drive media request failed (${response.status}): ${text}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function sanitizeZipPathSegment(value) {
+  const normalized = String(value || "").replace(/[<>:"\\|?*\u0000-\u001f]/g, "-");
+  const collapsed = normalized.replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "");
+  return collapsed || "item";
+}
+
+function buildZipEntryName(pathValue, fileName) {
+  const safeName = sanitizeZipPathSegment(fileName);
+  const safeParts = String(pathValue || "")
+    .split("/")
+    .map((part) => sanitizeZipPathSegment(part))
+    .filter(Boolean);
+  return [...safeParts, safeName].join("/");
+}
+
+function buildCrc32Table() {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+}
+
+const CRC32_TABLE = buildCrc32Table();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buffer.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function toDosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const month = Math.max(1, Math.min(12, date.getMonth() + 1));
+  const day = Math.max(1, Math.min(31, date.getDate()));
+  const hours = Math.max(0, Math.min(23, date.getHours()));
+  const minutes = Math.max(0, Math.min(59, date.getMinutes()));
+  const seconds = Math.max(0, Math.min(59, date.getSeconds()));
+  const dosTime = ((hours & 0x1f) << 11) | ((minutes & 0x3f) << 5) | ((Math.floor(seconds / 2)) & 0x1f);
+  const dosDate = (((year - 1980) & 0x7f) << 9) | ((month & 0x0f) << 5) | (day & 0x1f);
+  return { dosTime, dosDate };
+}
+
+function createZipLocalFileHeader({ nameBuffer, crc, size, dosTime, dosDate }) {
+  const header = Buffer.alloc(30 + nameBuffer.length);
+  let offset = 0;
+  header.writeUInt32LE(0x04034b50, offset); offset += 4;
+  header.writeUInt16LE(20, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  header.writeUInt16LE(dosTime, offset); offset += 2;
+  header.writeUInt16LE(dosDate, offset); offset += 2;
+  header.writeUInt32LE(crc >>> 0, offset); offset += 4;
+  header.writeUInt32LE(size >>> 0, offset); offset += 4;
+  header.writeUInt32LE(size >>> 0, offset); offset += 4;
+  header.writeUInt16LE(nameBuffer.length, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  nameBuffer.copy(header, offset);
+  return header;
+}
+
+function createZipCentralDirectoryHeader({ nameBuffer, crc, size, dosTime, dosDate, offset }) {
+  const header = Buffer.alloc(46 + nameBuffer.length);
+  let cursor = 0;
+  header.writeUInt32LE(0x02014b50, cursor); cursor += 4;
+  header.writeUInt16LE(20, cursor); cursor += 2;
+  header.writeUInt16LE(20, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(dosTime, cursor); cursor += 2;
+  header.writeUInt16LE(dosDate, cursor); cursor += 2;
+  header.writeUInt32LE(crc >>> 0, cursor); cursor += 4;
+  header.writeUInt32LE(size >>> 0, cursor); cursor += 4;
+  header.writeUInt32LE(size >>> 0, cursor); cursor += 4;
+  header.writeUInt16LE(nameBuffer.length, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt32LE(0, cursor); cursor += 4;
+  header.writeUInt32LE(offset >>> 0, cursor); cursor += 4;
+  nameBuffer.copy(header, cursor);
+  return header;
+}
+
+function createZipEndOfCentralDirectory(entryCount, centralSize, centralOffset) {
+  const end = Buffer.alloc(22);
+  let offset = 0;
+  end.writeUInt32LE(0x06054b50, offset); offset += 4;
+  end.writeUInt16LE(0, offset); offset += 2;
+  end.writeUInt16LE(0, offset); offset += 2;
+  end.writeUInt16LE(entryCount, offset); offset += 2;
+  end.writeUInt16LE(entryCount, offset); offset += 2;
+  end.writeUInt32LE(centralSize >>> 0, offset); offset += 4;
+  end.writeUInt32LE(centralOffset >>> 0, offset); offset += 4;
+  end.writeUInt16LE(0, offset);
+  return end;
+}
+
 function formatDriveAccessError(error) {
   const message = String(error?.message || "");
   if (
@@ -4334,6 +4455,115 @@ async function handleApiFolder(req, res) {
     sendJson(res, 500, {
       error: formatDriveAccessError(error),
     });
+  }
+}
+
+async function handlePublicPageDownloadAll(req, res) {
+  if (!API_KEY) {
+    sendJson(res, 500, { error: "Missing Google Drive API key on server." });
+    return;
+  }
+
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
+  if (!publicPageId) {
+    sendJson(res, 400, { error: "publicPageId is required." });
+    return;
+  }
+
+  try {
+    const pageRecord = await getPublicPageRecordById(publicPageId);
+    if (!pageRecord) {
+      sendJson(res, 404, { error: "Public page not found." });
+      return;
+    }
+
+    const folderUrl = String(pageRecord.driveLink || "").trim();
+    const folderId = extractFolderId(folderUrl);
+    if (!folderId) {
+      sendJson(res, 400, { error: "This album is not connected to a valid Google Drive folder." });
+      return;
+    }
+
+    const { result } = await getFolderResultWithCache(folderId, false);
+    const sourceImages = Array.isArray(result?.images) ? result.images : [];
+    const images = sourceImages.filter((entry) => String(entry?.mimeType || "").startsWith(IMAGE_MIME_PREFIX));
+    if (!images.length) {
+      sendJson(res, 404, { error: "No photos found in this album." });
+      return;
+    }
+
+    const baseName = slugifyValue(String(pageRecord.pageName || pageRecord.tagline || "album").trim()) || "album";
+    const zipFileName = `${baseName}-photos.zip`;
+    res.writeHead(200, {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename=\"${zipFileName}\"`,
+      "Cache-Control": "no-store",
+    });
+
+    const usedNames = new Set();
+    const centralEntries = [];
+    let offset = 0;
+    const now = new Date();
+    const { dosTime, dosDate } = toDosDateTime(now);
+
+    for (const image of images) {
+      const imageId = String(image?.id || "").trim();
+      if (!imageId) {
+        continue;
+      }
+      const rawName = buildZipEntryName(image?.path || "", image?.name || `${imageId}.jpg`);
+      let uniqueName = rawName;
+      let suffix = 2;
+      while (usedNames.has(uniqueName)) {
+        const dotIndex = rawName.lastIndexOf(".");
+        if (dotIndex > 0) {
+          uniqueName = `${rawName.slice(0, dotIndex)}-${suffix}${rawName.slice(dotIndex)}`;
+        } else {
+          uniqueName = `${rawName}-${suffix}`;
+        }
+        suffix += 1;
+      }
+      usedNames.add(uniqueName);
+
+      const fileBuffer = await driveDownloadFileBuffer(imageId);
+      const nameBuffer = Buffer.from(uniqueName, "utf8");
+      const crc = crc32(fileBuffer);
+      const size = fileBuffer.length;
+      const localOffset = offset;
+
+      const localHeader = createZipLocalFileHeader({ nameBuffer, crc, size, dosTime, dosDate });
+      res.write(localHeader);
+      offset += localHeader.length;
+      res.write(fileBuffer);
+      offset += fileBuffer.length;
+
+      centralEntries.push({
+        nameBuffer,
+        crc,
+        size,
+        dosTime,
+        dosDate,
+        offset: localOffset,
+      });
+    }
+
+    const centralOffset = offset;
+    for (const entry of centralEntries) {
+      const header = createZipCentralDirectoryHeader(entry);
+      res.write(header);
+      offset += header.length;
+    }
+    const centralSize = offset - centralOffset;
+    const endRecord = createZipEndOfCentralDirectory(centralEntries.length, centralSize, centralOffset);
+    res.write(endRecord);
+    res.end();
+  } catch (error) {
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: error?.message || "Could not download album photos." });
+      return;
+    }
+    res.end();
   }
 }
 
@@ -5615,6 +5845,11 @@ const server = http.createServer(async (req, res) => {
 
   if ((requestUrl.pathname === "/api/public-page/face-photos" || requestUrl.pathname === "/api/public-page/face-matches") && req.method === "GET") {
     await handlePublicPageFaceMatches(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/download-all" && req.method === "GET") {
+    await handlePublicPageDownloadAll(req, res);
     return;
   }
 

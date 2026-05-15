@@ -149,6 +149,9 @@ let currentShareContext = {
   pageUrl: "",
   pairingCode: "",
 };
+let downloadAllProgressBannerEl = null;
+let downloadAllProgressTimer = null;
+let downloadAllProgressVisible = false;
 let pendingSharedFolderId = "";
 let pendingSharedPhotoId = "";
 let pendingAlbumPresentationFromUrl = false;
@@ -1625,6 +1628,9 @@ function renderCoverChrome() {
       <button id="cover-share-button" type="button" class="cover-action-button" aria-label="Share album">
         <img class="cover-action-image" src="/assets/icons/Share.svg?v=20260424b" alt="" aria-hidden="true" />
       </button>
+      <button id="cover-download-all-button" type="button" class="cover-action-button cover-action-desktop-only" aria-label="Download all photos">
+        <img class="cover-action-image" src="/assets/icons/Download.svg?v=20260424b" alt="" aria-hidden="true" />
+      </button>
     </div>
   `;
 
@@ -1638,6 +1644,7 @@ function renderCoverChrome() {
   const coverFaceButton = document.getElementById("cover-face-button");
   const coverPresentationButton = document.getElementById("cover-presentation-button");
   const coverShareButton = document.getElementById("cover-share-button");
+  const coverDownloadAllButton = document.getElementById("cover-download-all-button");
   if (coverFaceButton && coverFaceButton.dataset.bound !== "true") {
     coverFaceButton.addEventListener("click", () => {
       void openFacePickerPopup();
@@ -1653,6 +1660,12 @@ function renderCoverChrome() {
       void shareAlbumFromCover();
     });
     coverShareButton.dataset.bound = "true";
+  }
+  if (coverDownloadAllButton && coverDownloadAllButton.dataset.bound !== "true") {
+    coverDownloadAllButton.addEventListener("click", () => {
+      void downloadAllAlbumPhotos();
+    });
+    coverDownloadAllButton.dataset.bound = "true";
   }
   window.requestAnimationFrame(() => {
     updateCoverStoryLayout();
@@ -1881,6 +1894,118 @@ function getShuffledPhotos(list) {
 
 function openAlbumPresentationFromCover() {
   window.open(getAlbumPresentationUrl(), "_blank", "noreferrer");
+}
+
+function ensureDownloadAllProgressBanner() {
+  if (downloadAllProgressBannerEl) {
+    return downloadAllProgressBannerEl;
+  }
+  const banner = document.createElement("div");
+  banner.id = "download-all-progress-banner";
+  banner.className = "download-all-progress-banner hidden";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.textContent = "";
+  document.body.appendChild(banner);
+  downloadAllProgressBannerEl = banner;
+  return banner;
+}
+
+function showDownloadAllProgress(message) {
+  const banner = ensureDownloadAllProgressBanner();
+  banner.textContent = String(message || "").trim();
+  banner.classList.remove("hidden");
+  downloadAllProgressVisible = true;
+}
+
+function hideDownloadAllProgress() {
+  if (downloadAllProgressTimer) {
+    window.clearTimeout(downloadAllProgressTimer);
+    downloadAllProgressTimer = null;
+  }
+  if (!downloadAllProgressBannerEl) {
+    return;
+  }
+  downloadAllProgressBannerEl.classList.add("hidden");
+  downloadAllProgressBannerEl.textContent = "";
+  downloadAllProgressVisible = false;
+}
+
+function scheduleDownloadAllProgressMessages() {
+  const stages = [
+    { delayMs: 0, text: "Collecting all your photos from the albums" },
+    { delayMs: 1300, text: "Compressing them in a zip file" },
+    { delayMs: 3000, text: "Prepaparing your file" },
+    { delayMs: 4700, text: "Almost complete" },
+  ];
+  let index = 0;
+  const runStage = () => {
+    if (index >= stages.length) {
+      return;
+    }
+    const stage = stages[index];
+    showDownloadAllProgress(stage.text);
+    index += 1;
+    if (index < stages.length) {
+      const next = stages[index];
+      downloadAllProgressTimer = window.setTimeout(runStage, Math.max(400, next.delayMs - stage.delayMs));
+    } else {
+      downloadAllProgressTimer = null;
+    }
+  };
+  runStage();
+}
+
+async function downloadAllAlbumPhotos() {
+  if (!currentPublicPageId) {
+    setStatus("Download all is unavailable for this view.", true);
+    return;
+  }
+
+  if (downloadAllProgressTimer) {
+    window.clearTimeout(downloadAllProgressTimer);
+    downloadAllProgressTimer = null;
+  }
+  scheduleDownloadAllProgressMessages();
+
+  try {
+    const response = await fetch(`/api/public-page/download-all?publicPageId=${encodeURIComponent(currentPublicPageId)}`);
+    if (!response.ok) {
+      let errorMessage = "Could not prepare the album download.";
+      try {
+        const payload = await response.json();
+        if (payload?.error) {
+          errorMessage = String(payload.error);
+        }
+      } catch (_) {}
+      throw new Error(errorMessage);
+    }
+
+    showDownloadAllProgress("Starting download");
+    const blob = await response.blob();
+    const disposition = String(response.headers.get("content-disposition") || "");
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+    const fallbackName = `${slugifyFolderName(currentShareContext.tagline || "album") || "album"}-photos.zip`;
+    const filename = decodeURIComponent((filenameMatch?.[1] || "").replace(/"/g, "").trim() || fallbackName);
+
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 4000);
+
+    setStatus("Album ZIP is downloading.");
+    window.setTimeout(() => {
+      hideDownloadAllProgress();
+    }, 2200);
+  } catch (error) {
+    hideDownloadAllProgress();
+    setStatus(error?.message || "Could not download all photos.", true);
+  }
 }
 
 async function shareAlbumFromCover() {
