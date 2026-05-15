@@ -152,6 +152,7 @@ let currentShareContext = {
 let downloadAllProgressBannerEl = null;
 let downloadAllProgressTimer = null;
 let downloadAllProgressVisible = false;
+let activeDownloadAllJobId = "";
 let pendingSharedFolderId = "";
 let pendingSharedPhotoId = "";
 let pendingAlbumPresentationFromUrl = false;
@@ -1931,29 +1932,61 @@ function hideDownloadAllProgress() {
   downloadAllProgressVisible = false;
 }
 
-function scheduleDownloadAllProgressMessages() {
-  const stages = [
-    { delayMs: 0, text: "Collecting all your photos from the albums" },
-    { delayMs: 1300, text: "Compressing them in a zip file" },
-    { delayMs: 3000, text: "Prepaparing your file" },
-    { delayMs: 4700, text: "Almost complete" },
-  ];
-  let index = 0;
-  const runStage = () => {
-    if (index >= stages.length) {
+function getDownloadAllStageMessage(stage, completedFiles, totalFiles) {
+  const normalizedStage = String(stage || "").trim().toLowerCase();
+  if (normalizedStage === "collecting") {
+    return "Collecting all your photos from the albums";
+  }
+  if (normalizedStage === "compressing") {
+    return `Compressing them in a zip file${totalFiles > 0 ? ` (${Math.max(0, completedFiles)}/${totalFiles})` : ""}`;
+  }
+  if (normalizedStage === "preparing") {
+    return "Prepaparing your file";
+  }
+  if (normalizedStage === "almost-complete") {
+    return "Almost complete";
+  }
+  if (normalizedStage === "ready") {
+    return "Starting download";
+  }
+  return "Collecting all your photos from the albums";
+}
+
+async function pollDownloadAllStatus(jobId) {
+  while (activeDownloadAllJobId === jobId) {
+    const response = await fetch(`/api/public-page/download-all/status?jobId=${encodeURIComponent(jobId)}`);
+    if (!response.ok) {
+      let errorMessage = "Could not track download progress.";
+      try {
+        const payload = await response.json();
+        if (payload?.error) {
+          errorMessage = String(payload.error);
+        }
+      } catch (_) {}
+      throw new Error(errorMessage);
+    }
+
+    const payload = await response.json();
+    showDownloadAllProgress(
+      getDownloadAllStageMessage(
+        payload?.stage,
+        Number(payload?.completedFiles || 0),
+        Number(payload?.totalFiles || 0)
+      )
+    );
+
+    if (String(payload?.stage || "").trim().toLowerCase() === "error") {
+      throw new Error(String(payload?.error || payload?.message || "Could not prepare album download."));
+    }
+    if (payload?.ready) {
       return;
     }
-    const stage = stages[index];
-    showDownloadAllProgress(stage.text);
-    index += 1;
-    if (index < stages.length) {
-      const next = stages[index];
-      downloadAllProgressTimer = window.setTimeout(runStage, Math.max(400, next.delayMs - stage.delayMs));
-    } else {
-      downloadAllProgressTimer = null;
-    }
-  };
-  runStage();
+
+    await new Promise((resolve) => {
+      downloadAllProgressTimer = window.setTimeout(resolve, 650);
+    });
+  }
+  throw new Error("Download canceled.");
 }
 
 async function downloadAllAlbumPhotos() {
@@ -1966,10 +1999,13 @@ async function downloadAllAlbumPhotos() {
     window.clearTimeout(downloadAllProgressTimer);
     downloadAllProgressTimer = null;
   }
-  scheduleDownloadAllProgressMessages();
+  activeDownloadAllJobId = "";
+  showDownloadAllProgress("Collecting all your photos from the albums");
 
   try {
-    const response = await fetch(`/api/public-page/download-all?publicPageId=${encodeURIComponent(currentPublicPageId)}`);
+    const response = await fetch(`/api/public-page/download-all/start?publicPageId=${encodeURIComponent(currentPublicPageId)}`, {
+      method: "POST",
+    });
     if (!response.ok) {
       let errorMessage = "Could not prepare the album download.";
       try {
@@ -1980,10 +2016,28 @@ async function downloadAllAlbumPhotos() {
       } catch (_) {}
       throw new Error(errorMessage);
     }
+    const startPayload = await response.json();
+    const jobId = String(startPayload?.jobId || "").trim();
+    if (!jobId) {
+      throw new Error("Could not initialize album download.");
+    }
+    activeDownloadAllJobId = jobId;
+    await pollDownloadAllStatus(jobId);
 
     showDownloadAllProgress("Starting download");
-    const blob = await response.blob();
-    const disposition = String(response.headers.get("content-disposition") || "");
+    const fileResponse = await fetch(`/api/public-page/download-all/file?jobId=${encodeURIComponent(jobId)}`);
+    if (!fileResponse.ok) {
+      let errorMessage = "Could not start album download.";
+      try {
+        const payload = await fileResponse.json();
+        if (payload?.error) {
+          errorMessage = String(payload.error);
+        }
+      } catch (_) {}
+      throw new Error(errorMessage);
+    }
+    const blob = await fileResponse.blob();
+    const disposition = String(fileResponse.headers.get("content-disposition") || "");
     const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
     const fallbackName = `${slugifyFolderName(currentShareContext.tagline || "album") || "album"}-photos.zip`;
     const filename = decodeURIComponent((filenameMatch?.[1] || "").replace(/"/g, "").trim() || fallbackName);
@@ -1998,11 +2052,13 @@ async function downloadAllAlbumPhotos() {
     link.remove();
     window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 4000);
 
+    activeDownloadAllJobId = "";
     setStatus("Album ZIP is downloading.");
     window.setTimeout(() => {
       hideDownloadAllProgress();
     }, 2200);
   } catch (error) {
+    activeDownloadAllJobId = "";
     hideDownloadAllProgress();
     setStatus(error?.message || "Could not download all photos.", true);
   }
