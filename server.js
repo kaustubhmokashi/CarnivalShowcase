@@ -138,6 +138,7 @@ let driveServiceTokenCache = null;
 const folderTreeCache = new Map();
 const mediaResponseCache = new Map();
 const mediaInflightRequests = new Map();
+const downloadAllJobs = new Map();
 let mediaCacheSizeBytes = 0;
 let eventsStoreMutationChain = Promise.resolve();
 let faceMergeStoreMutationChain = Promise.resolve();
@@ -146,6 +147,7 @@ let faceResultsStoreMutationChain = Promise.resolve();
 
 const DRIVE_LINK_ACCESS_ERROR =
   "We couldn’t open that Google Drive folder. Make sure the link is correct and the folder is shared as 'Anyone with the link' with Viewer access, then try again.";
+const DOWNLOAD_ALL_JOB_TTL_MS = Number(process.env.DOWNLOAD_ALL_JOB_TTL_MS || 30 * 60 * 1000);
 
 function buildMediaCacheKey(fileId, mode) {
   return `${fileId}:${mode}`;
@@ -4011,6 +4013,276 @@ async function driveGetFile(fileId) {
   return response.json();
 }
 
+async function driveDownloadFileBuffer(fileId) {
+  const driveUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+  driveUrl.searchParams.set("key", API_KEY);
+  driveUrl.searchParams.set("alt", "media");
+  driveUrl.searchParams.set("supportsAllDrives", "true");
+
+  const response = await fetch(driveUrl);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Drive media request failed (${response.status}): ${text}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function sanitizeZipPathSegment(value) {
+  const normalized = String(value || "").replace(/[<>:"\\|?*\u0000-\u001f]/g, "-");
+  const collapsed = normalized.replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "");
+  return collapsed || "item";
+}
+
+function buildZipEntryName(pathValue, fileName) {
+  const safeName = sanitizeZipPathSegment(fileName);
+  const safeParts = String(pathValue || "")
+    .split("/")
+    .map((part) => sanitizeZipPathSegment(part))
+    .filter(Boolean);
+  return [...safeParts, safeName].join("/");
+}
+
+function buildCrc32Table() {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+}
+
+const CRC32_TABLE = buildCrc32Table();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buffer.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function toDosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const month = Math.max(1, Math.min(12, date.getMonth() + 1));
+  const day = Math.max(1, Math.min(31, date.getDate()));
+  const hours = Math.max(0, Math.min(23, date.getHours()));
+  const minutes = Math.max(0, Math.min(59, date.getMinutes()));
+  const seconds = Math.max(0, Math.min(59, date.getSeconds()));
+  const dosTime = ((hours & 0x1f) << 11) | ((minutes & 0x3f) << 5) | ((Math.floor(seconds / 2)) & 0x1f);
+  const dosDate = (((year - 1980) & 0x7f) << 9) | ((month & 0x0f) << 5) | (day & 0x1f);
+  return { dosTime, dosDate };
+}
+
+function createZipLocalFileHeader({ nameBuffer, crc, size, dosTime, dosDate }) {
+  const header = Buffer.alloc(30 + nameBuffer.length);
+  let offset = 0;
+  header.writeUInt32LE(0x04034b50, offset); offset += 4;
+  header.writeUInt16LE(20, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  header.writeUInt16LE(dosTime, offset); offset += 2;
+  header.writeUInt16LE(dosDate, offset); offset += 2;
+  header.writeUInt32LE(crc >>> 0, offset); offset += 4;
+  header.writeUInt32LE(size >>> 0, offset); offset += 4;
+  header.writeUInt32LE(size >>> 0, offset); offset += 4;
+  header.writeUInt16LE(nameBuffer.length, offset); offset += 2;
+  header.writeUInt16LE(0, offset); offset += 2;
+  nameBuffer.copy(header, offset);
+  return header;
+}
+
+function createZipCentralDirectoryHeader({ nameBuffer, crc, size, dosTime, dosDate, offset }) {
+  const header = Buffer.alloc(46 + nameBuffer.length);
+  let cursor = 0;
+  header.writeUInt32LE(0x02014b50, cursor); cursor += 4;
+  header.writeUInt16LE(20, cursor); cursor += 2;
+  header.writeUInt16LE(20, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(dosTime, cursor); cursor += 2;
+  header.writeUInt16LE(dosDate, cursor); cursor += 2;
+  header.writeUInt32LE(crc >>> 0, cursor); cursor += 4;
+  header.writeUInt32LE(size >>> 0, cursor); cursor += 4;
+  header.writeUInt32LE(size >>> 0, cursor); cursor += 4;
+  header.writeUInt16LE(nameBuffer.length, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt16LE(0, cursor); cursor += 2;
+  header.writeUInt32LE(0, cursor); cursor += 4;
+  header.writeUInt32LE(offset >>> 0, cursor); cursor += 4;
+  nameBuffer.copy(header, cursor);
+  return header;
+}
+
+function createZipEndOfCentralDirectory(entryCount, centralSize, centralOffset) {
+  const end = Buffer.alloc(22);
+  let offset = 0;
+  end.writeUInt32LE(0x06054b50, offset); offset += 4;
+  end.writeUInt16LE(0, offset); offset += 2;
+  end.writeUInt16LE(0, offset); offset += 2;
+  end.writeUInt16LE(entryCount, offset); offset += 2;
+  end.writeUInt16LE(entryCount, offset); offset += 2;
+  end.writeUInt32LE(centralSize >>> 0, offset); offset += 4;
+  end.writeUInt32LE(centralOffset >>> 0, offset); offset += 4;
+  end.writeUInt16LE(0, offset);
+  return end;
+}
+
+function cleanupDownloadAllJobs() {
+  const now = Date.now();
+  for (const [jobId, job] of downloadAllJobs.entries()) {
+    const updatedAt = Number(job?.updatedAt || job?.createdAt || 0);
+    if (!updatedAt || now - updatedAt > DOWNLOAD_ALL_JOB_TTL_MS) {
+      downloadAllJobs.delete(jobId);
+    }
+  }
+}
+
+function setDownloadAllJobStage(job, stage, message) {
+  job.stage = stage;
+  job.message = message;
+  job.updatedAt = Date.now();
+}
+
+function getDownloadAllJobProgressPayload(job) {
+  return {
+    jobId: job.id,
+    stage: String(job.stage || "").trim(),
+    message: String(job.message || "").trim(),
+    totalFiles: Number(job.totalFiles || 0),
+    completedFiles: Number(job.completedFiles || 0),
+    ready: job.stage === "ready",
+    error: String(job.error || "").trim(),
+  };
+}
+
+async function buildZipBufferForImages(images, onProgress) {
+  const chunks = [];
+  const usedNames = new Set();
+  const centralEntries = [];
+  let offset = 0;
+  const now = new Date();
+  const { dosTime, dosDate } = toDosDateTime(now);
+
+  for (let index = 0; index < images.length; index += 1) {
+    const image = images[index];
+    const imageId = String(image?.id || "").trim();
+    if (!imageId) {
+      continue;
+    }
+
+    const rawName = buildZipEntryName(image?.path || "", image?.name || `${imageId}.jpg`);
+    let uniqueName = rawName;
+    let suffix = 2;
+    while (usedNames.has(uniqueName)) {
+      const dotIndex = rawName.lastIndexOf(".");
+      if (dotIndex > 0) {
+        uniqueName = `${rawName.slice(0, dotIndex)}-${suffix}${rawName.slice(dotIndex)}`;
+      } else {
+        uniqueName = `${rawName}-${suffix}`;
+      }
+      suffix += 1;
+    }
+    usedNames.add(uniqueName);
+
+    const fileBuffer = await driveDownloadFileBuffer(imageId);
+    const nameBuffer = Buffer.from(uniqueName, "utf8");
+    const crc = crc32(fileBuffer);
+    const size = fileBuffer.length;
+    const localOffset = offset;
+
+    const localHeader = createZipLocalFileHeader({ nameBuffer, crc, size, dosTime, dosDate });
+    chunks.push(localHeader);
+    offset += localHeader.length;
+    chunks.push(fileBuffer);
+    offset += fileBuffer.length;
+
+    centralEntries.push({
+      nameBuffer,
+      crc,
+      size,
+      dosTime,
+      dosDate,
+      offset: localOffset,
+    });
+
+    if (typeof onProgress === "function") {
+      onProgress(index + 1, images.length);
+    }
+  }
+
+  const centralOffset = offset;
+  for (const entry of centralEntries) {
+    const header = createZipCentralDirectoryHeader(entry);
+    chunks.push(header);
+    offset += header.length;
+  }
+  const centralSize = offset - centralOffset;
+  chunks.push(createZipEndOfCentralDirectory(centralEntries.length, centralSize, centralOffset));
+
+  return Buffer.concat(chunks);
+}
+
+async function runDownloadAllJob(jobId, publicPageId) {
+  const job = downloadAllJobs.get(jobId);
+  if (!job) {
+    return;
+  }
+
+  try {
+    setDownloadAllJobStage(job, "collecting", "Collecting all your photos from the albums");
+    const pageRecord = await getPublicPageRecordById(publicPageId);
+    if (!pageRecord) {
+      throw new Error("Public page not found.");
+    }
+
+    const folderUrl = String(pageRecord.driveLink || "").trim();
+    const folderId = extractFolderId(folderUrl);
+    if (!folderId) {
+      throw new Error("This album is not connected to a valid Google Drive folder.");
+    }
+
+    const { result } = await getFolderResultWithCache(folderId, false);
+    const sourceImages = Array.isArray(result?.images) ? result.images : [];
+    const images = sourceImages.filter((entry) => String(entry?.mimeType || "").startsWith(IMAGE_MIME_PREFIX));
+    if (!images.length) {
+      throw new Error("No photos found in this album.");
+    }
+
+    job.totalFiles = images.length;
+    job.completedFiles = 0;
+
+    setDownloadAllJobStage(job, "compressing", "Compressing them in a zip file");
+    const zipBuffer = await buildZipBufferForImages(images, (completed, total) => {
+      job.completedFiles = completed;
+      job.totalFiles = total;
+      if (completed >= Math.max(1, total - 1)) {
+        setDownloadAllJobStage(job, "almost-complete", "Almost complete");
+        return;
+      }
+      if (completed >= Math.max(1, Math.floor(total * 0.35))) {
+        setDownloadAllJobStage(job, "preparing", "Prepaparing your file");
+      } else {
+        setDownloadAllJobStage(job, "compressing", "Compressing them in a zip file");
+      }
+    });
+
+    const baseName = slugifyValue(String(pageRecord.pageName || pageRecord.tagline || "album").trim()) || "album";
+    job.zipFileName = `${baseName}-photos.zip`;
+    job.zipBuffer = zipBuffer;
+    setDownloadAllJobStage(job, "ready", "Starting download");
+  } catch (error) {
+    job.error = error?.message || "Could not prepare album download.";
+    setDownloadAllJobStage(job, "error", job.error);
+  }
+}
+
 function formatDriveAccessError(error) {
   const message = String(error?.message || "");
   if (
@@ -4335,6 +4607,96 @@ async function handleApiFolder(req, res) {
       error: formatDriveAccessError(error),
     });
   }
+}
+
+async function handlePublicPageDownloadAllStart(req, res) {
+  if (!API_KEY) {
+    sendJson(res, 500, { error: "Missing Google Drive API key on server." });
+    return;
+  }
+
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const publicPageId = String(requestUrl.searchParams.get("publicPageId") || "").trim();
+  if (!publicPageId) {
+    sendJson(res, 400, { error: "publicPageId is required." });
+    return;
+  }
+
+  cleanupDownloadAllJobs();
+  const jobId = crypto.randomUUID();
+  const job = {
+    id: jobId,
+    publicPageId,
+    stage: "collecting",
+    message: "Collecting all your photos from the albums",
+    totalFiles: 0,
+    completedFiles: 0,
+    zipFileName: "",
+    zipBuffer: null,
+    error: "",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  downloadAllJobs.set(jobId, job);
+  runDownloadAllJob(jobId, publicPageId).catch((error) => {
+    const activeJob = downloadAllJobs.get(jobId);
+    if (!activeJob) {
+      return;
+    }
+    activeJob.error = error?.message || "Could not prepare album download.";
+    setDownloadAllJobStage(activeJob, "error", activeJob.error);
+  });
+
+  sendJson(res, 200, { jobId });
+}
+
+async function handlePublicPageDownloadAllStatus(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const jobId = String(requestUrl.searchParams.get("jobId") || "").trim();
+  if (!jobId) {
+    sendJson(res, 400, { error: "jobId is required." });
+    return;
+  }
+  cleanupDownloadAllJobs();
+  const job = downloadAllJobs.get(jobId);
+  if (!job) {
+    sendJson(res, 404, { error: "Download job not found or expired." });
+    return;
+  }
+  sendJson(res, 200, getDownloadAllJobProgressPayload(job));
+}
+
+async function handlePublicPageDownloadAllFile(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const jobId = String(requestUrl.searchParams.get("jobId") || "").trim();
+  if (!jobId) {
+    sendJson(res, 400, { error: "jobId is required." });
+    return;
+  }
+  cleanupDownloadAllJobs();
+  const job = downloadAllJobs.get(jobId);
+  if (!job) {
+    sendJson(res, 404, { error: "Download job not found or expired." });
+    return;
+  }
+  if (job.stage === "error") {
+    sendJson(res, 400, { error: job.error || "Could not prepare album download." });
+    return;
+  }
+  if (job.stage !== "ready" || !Buffer.isBuffer(job.zipBuffer)) {
+    sendJson(res, 409, { error: "Download is not ready yet." });
+    return;
+  }
+
+  const zipFileName = String(job.zipFileName || "").trim() || "album-photos.zip";
+  res.writeHead(200, {
+    "Content-Type": "application/zip",
+    "Content-Disposition": `attachment; filename=\"${zipFileName}\"`,
+    "Content-Length": String(job.zipBuffer.length),
+    "Cache-Control": "no-store",
+  });
+  res.end(job.zipBuffer);
+  downloadAllJobs.delete(jobId);
 }
 
 async function handleApiFolderMeta(req, res) {
@@ -5615,6 +5977,21 @@ const server = http.createServer(async (req, res) => {
 
   if ((requestUrl.pathname === "/api/public-page/face-photos" || requestUrl.pathname === "/api/public-page/face-matches") && req.method === "GET") {
     await handlePublicPageFaceMatches(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/download-all/start" && req.method === "POST") {
+    await handlePublicPageDownloadAllStart(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/download-all/status" && req.method === "GET") {
+    await handlePublicPageDownloadAllStatus(req, res);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public-page/download-all/file" && req.method === "GET") {
+    await handlePublicPageDownloadAllFile(req, res);
     return;
   }
 

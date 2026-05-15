@@ -1215,6 +1215,31 @@ label:focus-within {
   padding: 0;
 }
 
+.cover-action-desktop-only {
+  display: inline-grid;
+}
+
+.download-all-progress-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 12020;
+  width: min(760px, calc(100vw - 32px));
+  padding: 11px 16px;
+  border: 1px solid var(--template-accent-line);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--bg);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
 .face-picker-popup-backdrop {
   position: fixed;
   inset: 0;
@@ -2545,6 +2570,14 @@ input[type="checkbox"]:checked {
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     flex-direction: column;
     gap: 10px;
+  }
+
+  .cover-action-desktop-only {
+    display: none;
+  }
+
+  .download-all-progress-banner {
+    display: none;
   }
 }
 
