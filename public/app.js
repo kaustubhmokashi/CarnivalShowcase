@@ -734,6 +734,21 @@ function applyPublicTemplate() {
   }
 }
 
+function isTemplateTwoActive() {
+  return normalizePublicTemplateId(currentPublicTemplate) === "template-2";
+}
+
+const TEMPLATE_TWO_RATIOS = ["3 / 4", "4 / 5", "1 / 1", "4 / 3", "3 / 2", "2 / 3"];
+
+function getTemplateTwoAspectRatio(photo, index) {
+  const id = String(photo?.id || photo?.name || index || "");
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return TEMPLATE_TWO_RATIOS[hash % TEMPLATE_TWO_RATIOS.length];
+}
+
 function syncDocumentTitle() {
   const tagline = String(currentShareContext.tagline || "").trim();
   const studioName = String(currentShareContext.studioName || "").trim();
@@ -1143,6 +1158,19 @@ function getCardAspectRatio(card) {
 function layoutGalleryMasonry() {
   if (!galleryEl || !galleryEl.children.length) {
     clearGalleryRowObserver();
+    return;
+  }
+
+  if (isTemplateTwoActive()) {
+    Array.from(galleryEl.querySelectorAll(".photo-card")).forEach((card) => {
+      card.style.position = "";
+      card.style.width = "";
+      card.style.left = "";
+      card.style.top = "";
+      card.style.height = "";
+    });
+    galleryEl.style.height = "auto";
+    setupGalleryRowReveal();
     return;
   }
 
@@ -1641,15 +1669,19 @@ function renderCoverChrome() {
     <div class="cover-actions" aria-label="Album actions">
       <button id="cover-face-button" type="button" class="cover-action-button" aria-label="Find photos by face">
         <img class="cover-action-image" src="/assets/icons/Face-detection.svg?v=20260501a" alt="" aria-hidden="true" />
+        <span class="cover-action-label">Find me</span>
       </button>
       <button id="cover-presentation-button" type="button" class="cover-action-button" aria-label="Open album presentation">
         <img class="cover-action-image" src="/assets/icons/Present.svg?v=20260424b" alt="" aria-hidden="true" />
+        <span class="cover-action-label">Present</span>
       </button>
       <button id="cover-share-button" type="button" class="cover-action-button" aria-label="Share album">
         <img class="cover-action-image" src="/assets/icons/Share.svg?v=20260424b" alt="" aria-hidden="true" />
+        <span class="cover-action-label">Share</span>
       </button>
       <button id="cover-download-all-button" type="button" class="cover-action-button cover-action-desktop-only" aria-label="Download all photos">
         <img class="cover-action-image" src="/assets/icons/Download.svg?v=20260424b" alt="" aria-hidden="true" />
+        <span class="cover-action-label">Download all</span>
       </button>
     </div>
   `;
@@ -1702,6 +1734,11 @@ function syncCoverPhotoHeightForViewport() {
   if (!coverPhotoEl || !screenGallery?.classList.contains("active")) {
     return;
   }
+  if (isTemplateTwoActive()) {
+    coverPhotoEl.style.removeProperty("height");
+    coverPhotoEl.style.removeProperty("min-height");
+    return;
+  }
   const mobileLikeViewport = window.matchMedia("(max-width: 1100px)").matches;
   if (!mobileLikeViewport) {
     coverPhotoEl.style.removeProperty("height");
@@ -1711,6 +1748,201 @@ function syncCoverPhotoHeightForViewport() {
   const viewportHeight = Math.max(window.innerHeight || 0, 520);
   coverPhotoEl.style.height = `${viewportHeight}px`;
   coverPhotoEl.style.minHeight = `${viewportHeight}px`;
+}
+
+function initializeCustomCursor() {
+  if (window.__carnivalCustomCursorMounted) {
+    return;
+  }
+  window.__carnivalCustomCursorMounted = true;
+
+  if (window.matchMedia?.("(hover: none)")?.matches) {
+    return;
+  }
+
+  const POLA_LIFE = 1200;
+  const HUES = [22, 38, 320, 280, 200, 160];
+  const hoverSelector = 'a, button, [role="button"], input, textarea, select, label, [data-cursor="hover"]';
+
+  let seed = 0;
+  let hovering = false;
+  let visible = false;
+  let snap = false;
+  let snapTimeout = 0;
+  let raf = 0;
+  const polas = [];
+
+  const styleEl = document.createElement("style");
+  styleEl.textContent = `
+  html.cursor-none-mode,
+  html.cursor-none-mode body,
+  html.cursor-none-mode * { cursor: none !important; }
+`;
+
+  const polaroidLayer = document.createElement("div");
+  polaroidLayer.setAttribute("aria-hidden", "true");
+  Object.assign(polaroidLayer.style, {
+    position: "fixed",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "99998",
+  });
+
+  const reticle = document.createElement("div");
+  reticle.setAttribute("aria-hidden", "true");
+  Object.assign(reticle.style, {
+    position: "fixed",
+    left: "0",
+    top: "0",
+    width: "18px",
+    height: "18px",
+    pointerEvents: "none",
+    zIndex: "99999",
+    opacity: "0",
+    transition: "width 180ms cubic-bezier(.2,.8,.2,1), height 180ms cubic-bezier(.2,.8,.2,1), opacity 200ms",
+    mixBlendMode: "difference",
+  });
+
+  reticle.innerHTML = `
+    <svg viewBox="0 0 24 24" width="100%" height="100%" style="display:block;overflow:visible">
+      <circle data-cursor-ring cx="12" cy="12" r="11" fill="none" stroke="white" stroke-width="1" opacity="0.95"></circle>
+      <g data-cursor-grid opacity="0" style="transition:opacity 180ms ease" stroke="white" stroke-width="0.5">
+        <line x1="4" y1="8" x2="20" y2="8"></line>
+        <line x1="4" y1="16" x2="20" y2="16"></line>
+        <line x1="8" y1="4" x2="8" y2="20"></line>
+        <line x1="16" y1="4" x2="16" y2="20"></line>
+      </g>
+      <circle data-cursor-dot cx="12" cy="12" r="1.4" fill="white"></circle>
+    </svg>
+  `;
+
+  const ring = reticle.querySelector("[data-cursor-ring]");
+  const grid = reticle.querySelector("[data-cursor-grid]");
+  const dot = reticle.querySelector("[data-cursor-dot]");
+
+  const syncReticleVisual = () => {
+    const size = snap ? 14 : hovering ? 22 : 18;
+    reticle.style.width = `${size}px`;
+    reticle.style.height = `${size}px`;
+    reticle.style.opacity = visible ? "1" : "0";
+    ring?.setAttribute("stroke-width", hovering ? "1.4" : "1");
+    grid?.setAttribute("opacity", hovering ? "0.7" : "0");
+    dot?.setAttribute("r", hovering ? "0.9" : "1.4");
+  };
+
+  const spawnPolaroid = (event) => {
+    const hue = HUES[Math.floor(Math.random() * HUES.length)];
+    const pola = {
+      id: seed,
+      x: event.clientX,
+      y: event.clientY,
+      rot: (Math.random() - 0.5) * 30,
+      hue,
+      born: performance.now(),
+      node: document.createElement("div"),
+      inner: document.createElement("div"),
+    };
+    seed += 1;
+
+    Object.assign(pola.node.style, {
+      position: "absolute",
+      left: `${pola.x}px`,
+      top: `${pola.y}px`,
+      width: "26px",
+      height: "32px",
+      background: "white",
+      borderRadius: "2px",
+      padding: "2px",
+      paddingBottom: "6px",
+      boxShadow: "0 6px 14px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.1)",
+      transform: `translate(-50%, -50%) rotate(${pola.rot}deg) scale(0.6)`,
+      opacity: "1",
+    });
+    Object.assign(pola.inner.style, {
+      width: "100%",
+      height: "100%",
+      borderRadius: "1px",
+      background: `linear-gradient(135deg, hsl(${pola.hue},80%,60%), hsl(${(pola.hue + 60) % 360},80%,45%))`,
+    });
+    pola.node.appendChild(pola.inner);
+
+    polas.push(pola);
+    while (polas.length > 6) {
+      const old = polas.shift();
+      old?.node.remove();
+    }
+    polaroidLayer.appendChild(pola.node);
+  };
+
+  const onMove = (event) => {
+    reticle.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0) translate(-50%, -50%)`;
+    const nextVisible = true;
+    const target = event.target instanceof Element ? event.target : null;
+    const nextHovering = Boolean(target?.closest(hoverSelector));
+    if (visible !== nextVisible || hovering !== nextHovering) {
+      visible = nextVisible;
+      hovering = nextHovering;
+      syncReticleVisual();
+    }
+  };
+
+  const onDown = (event) => {
+    snap = true;
+    syncReticleVisual();
+    window.clearTimeout(snapTimeout);
+    snapTimeout = window.setTimeout(() => {
+      snap = false;
+      syncReticleVisual();
+    }, 180);
+    spawnPolaroid(event);
+  };
+
+  const onLeave = () => {
+    visible = false;
+    syncReticleVisual();
+  };
+
+  const tick = () => {
+    const now = performance.now();
+    for (let index = polas.length - 1; index >= 0; index -= 1) {
+      const pola = polas[index];
+      const age = (now - pola.born) / POLA_LIFE;
+      const t = Math.min(1, Math.max(0, age));
+      if (now - pola.born >= POLA_LIFE) {
+        pola.node.remove();
+        polas.splice(index, 1);
+        continue;
+      }
+      const opacity = 1 - t * t;
+      const lift = -40 * t;
+      const scale = 0.6 + Math.min(t * 4, 1) * 0.4;
+      pola.node.style.transform = `translate(-50%, calc(-50% + ${lift}px)) rotate(${pola.rot}deg) scale(${scale})`;
+      pola.node.style.opacity = String(opacity);
+    }
+    raf = window.requestAnimationFrame(tick);
+  };
+
+  document.head.appendChild(styleEl);
+  document.body.appendChild(polaroidLayer);
+  document.body.appendChild(reticle);
+  document.documentElement.classList.add("cursor-none-mode");
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mousedown", onDown);
+  document.addEventListener("mouseleave", onLeave);
+  raf = window.requestAnimationFrame(tick);
+
+  window.__carnivalCustomCursorCleanup = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mousedown", onDown);
+    document.removeEventListener("mouseleave", onLeave);
+    window.cancelAnimationFrame(raf);
+    window.clearTimeout(snapTimeout);
+    document.documentElement.classList.remove("cursor-none-mode");
+    reticle.remove();
+    polaroidLayer.remove();
+    styleEl.remove();
+    window.__carnivalCustomCursorMounted = false;
+  };
 }
 
 function clearFaceFilter({ silent = false } = {}) {
@@ -2436,7 +2668,13 @@ function buildFolderTabButton(folder) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `folder-tab${folder.id === selectedFolderId ? " selected" : ""}`;
-  button.textContent = folder.name;
+  const label = document.createElement("span");
+  label.className = "folder-tab-label";
+  label.textContent = folder.name;
+  const count = document.createElement("span");
+  count.className = "folder-tab-count";
+  count.textContent = String((folder.images || []).length);
+  button.append(label, count);
   button.addEventListener("click", () => {
     selectedFolderId = folder.id;
     renderFolderTabs(currentFolders);
@@ -2600,6 +2838,9 @@ function renderGallery(photoItems, options = {}) {
 
       const span = getMasonryTileSpan(photo, index);
       card.dataset.aspectRatio = String(span.aspectRatio);
+      if (isTemplateTwoActive()) {
+        card.style.aspectRatio = getTemplateTwoAspectRatio(photo, index);
+      }
 
       const image = document.createElement("img");
       image.src = photo.thumbnailUrl || photo.url;
@@ -3766,6 +4007,7 @@ window.CarnivalGallery = {
 
 updateDurationControls();
 syncPendingSharedSelectionFromLocation();
+initializeCustomCursor();
 void initializeBootLoader();
 if (
   !window.CarnivalStudioPublicRoute &&

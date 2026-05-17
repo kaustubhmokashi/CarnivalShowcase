@@ -888,6 +888,7 @@ function getGalleryOptionsForPage(page, extraOptions = {}) {
     pageUrl: getPageUrl(page),
     pairingCode: page.pairingCode || "",
     eventDateRange: formatEventDateRange(page),
+    template: normalizeAlbumTemplateId(page.template),
     branding: page.branding || getProfileBranding(),
     folderRemapById:
       page && typeof page.folderRemapById === "object" && page.folderRemapById
