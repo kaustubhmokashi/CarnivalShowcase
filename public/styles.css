@@ -5067,6 +5067,58 @@ html[data-gallery-template="template-2"] .empty-sequence {
   color: rgba(255, 255, 255, 0.6);
 }
 
+html[data-gallery-template="template-2"] .gallery-screen.loading .workspace-stage {
+  position: relative;
+  background: #0a0a0a;
+}
+
+html[data-gallery-template="template-2"] .gallery-screen.loading .workspace-stage::before,
+html[data-gallery-template="template-2"] .gallery-screen.loading .workspace-stage::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+}
+
+html[data-gallery-template="template-2"] .gallery-screen.loading .workspace-stage::before {
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.14) 48%, rgba(255, 255, 255, 0.06) 100%),
+    #0a0a0a;
+  background-size: 100% 100%, 220% 100%, 100% 100%;
+  animation: templateTwoSkeletonSweep 1.45s linear infinite;
+}
+
+html[data-gallery-template="template-2"] .gallery-screen.loading .workspace-stage::after {
+  left: 24px;
+  right: 24px;
+  bottom: 40px;
+  z-index: 2;
+  height: min(35vh, 280px);
+  border-radius: 16px 16px 0 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 34%, transparent 34% 100%) 0 0 / 100% 16px no-repeat,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 64%, transparent 64% 100%) 0 44px / 100% 44px no-repeat,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 42%, transparent 42% 100%) 0 112px / 100% 18px no-repeat;
+  opacity: 0.78;
+}
+
+html[data-gallery-template="template-2"] .gallery-screen.loading .loading-indicator {
+  z-index: 4;
+  color: rgba(255, 255, 255, 0.82);
+  mix-blend-mode: normal;
+}
+
+@keyframes templateTwoSkeletonSweep {
+  0% {
+    background-position: 0 0, 120% 0, 0 0;
+  }
+  100% {
+    background-position: 0 0, -120% 0, 0 0;
+  }
+}
+
 html[data-gallery-template="template-2"] .folder-tabs-shell {
   position: sticky;
   top: 0;
