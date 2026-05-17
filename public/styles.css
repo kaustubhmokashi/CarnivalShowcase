@@ -5329,25 +5329,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   overflow-y: auto;
 }
 
-.studio-sidebar-close {
-  position: static;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  height: auto;
-  margin: 0 0 26px;
-  padding: 6px;
-  border: 0;
-  background: transparent;
-  color: #171717;
-}
-
-.studio-sidebar-close .icon-mask {
-  width: 18px;
-  height: 18px;
-}
-
 .studio-sidebar-logo-link {
   display: inline-flex;
   align-items: center;
@@ -5368,53 +5349,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-sidebar-logo-link.is-empty {
   display: none;
-}
-
-.studio-sidebar-identity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  margin-bottom: 20px;
-  border: 1px solid #e5e5e5;
-  border-radius: 18px;
-  background: #fafafa;
-}
-
-.studio-sidebar-avatar {
-  display: grid;
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-}
-
-.studio-sidebar-avatar-logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-
-.studio-sidebar-eyebrow {
-  margin: 0 0 4px;
-  color: #737373;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.studio-sidebar .studio-sidebar-name {
-  display: block;
-  margin: 0;
-  color: #171717;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
 }
 
 .studio-sidebar-nav {
