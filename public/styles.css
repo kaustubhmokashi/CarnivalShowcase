@@ -5587,6 +5587,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .saved-page-open-button {
+  min-width: 92px;
   padding-inline: 16px;
   background: #171717;
   border-color: #171717;
