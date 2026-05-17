@@ -5353,46 +5353,43 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-sidebar-nav {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin-top: 0;
 }
 
 .studio-sidebar-tab {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   justify-content: flex-start;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 12px;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 14px;
   border: 0;
   background: transparent;
-  color: #737373;
-  font-size: 13px;
-  font-weight: 850;
-  letter-spacing: 0.12em;
+  color: #404040;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-align: left;
-  text-transform: uppercase;
+  text-transform: none;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .studio-sidebar-tab-svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
 }
 
-.studio-sidebar-tab:hover,
-.studio-sidebar-tab.active {
+.studio-sidebar-tab:hover {
   background: #f5f5f5;
-  color: #171717;
+  color: #404040;
 }
 
-.studio-sidebar-tab.active::after {
-  content: "";
-  width: 32px;
-  height: 1px;
-  margin-left: auto;
-  background: currentColor;
+.studio-sidebar-tab.active {
+  background: #171717;
+  color: #ffffff;
 }
 
 .studio-sidebar-favicon {
