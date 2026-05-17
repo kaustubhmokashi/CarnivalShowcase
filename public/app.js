@@ -115,6 +115,7 @@ let currentLikeContext = {
   unlikeEndpoint: "/api/public-page/unlike",
   payload: {},
 };
+let currentPublicTemplate = "template-1";
 let currentSlideshowOptions = {
   shareEnabled: true,
 };
@@ -694,6 +695,8 @@ function normalizePhotoLikesMap(value) {
 }
 
 function setPublicPageContext(options = {}) {
+  currentPublicTemplate = normalizePublicTemplateId(options.template);
+  applyPublicTemplate();
   currentPublicPageId = String(options.publicPageId || "").trim();
   currentPhotoLikes = normalizePhotoLikesMap(options.photoLikes);
   likedPhotoSessionIds = new Set();
@@ -713,6 +716,22 @@ function setPublicPageContext(options = {}) {
     pairingCode: String(options.pairingCode || "").trim(),
   };
   syncDocumentTitle();
+}
+
+function normalizePublicTemplateId(value) {
+  const templateId = String(value || "").trim();
+  return templateId === "template-2" ? "template-2" : "template-1";
+}
+
+function applyPublicTemplate() {
+  const templateId = normalizePublicTemplateId(currentPublicTemplate);
+  const root = document.documentElement;
+  if (root) {
+    root.dataset.galleryTemplate = templateId;
+  }
+  if (screenGallery) {
+    screenGallery.dataset.galleryTemplate = templateId;
+  }
 }
 
 function syncDocumentTitle() {

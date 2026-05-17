@@ -156,6 +156,7 @@ const wizardMediaList = document.getElementById("wizard-media-list");
 const wizardMediaNext = document.getElementById("wizard-media-next");
 const wizardMediaStatus = document.getElementById("wizard-media-status");
 const wizardTemplateStep = document.getElementById("wizard-template-step");
+const wizardTemplateCards = Array.from(document.querySelectorAll(".template-card[data-template-id]"));
 const wizardCreatePage = document.getElementById("wizard-create-page");
 const wizardTemplateStatus = document.getElementById("wizard-template-status");
 const screenEventPublic = document.getElementById("screen-event-public");
@@ -177,6 +178,10 @@ const eventPresentLoader = document.getElementById("event-present-loader");
 const eventPresentLoaderAnimationEl = document.getElementById("event-present-loader-animation");
 const eventPresentExitButton = document.getElementById("event-present-exit");
 const STUDIO_PROFILE_CACHE_KEY = "carnival_studio_profile_cache";
+const ALBUM_TEMPLATE_OPTIONS = Object.freeze({
+  "template-1": "Template 1",
+  "template-2": "Template 2",
+});
 
 let app = null;
 let auth = null;
@@ -434,6 +439,30 @@ function createEmptyWizardState() {
     includeYoutubeVideosFolder: false,
     youtubeLinks: [],
   };
+}
+
+function normalizeAlbumTemplateId(value) {
+  const templateId = String(value || "").trim();
+  return ALBUM_TEMPLATE_OPTIONS[templateId] ? templateId : "template-1";
+}
+
+function getAlbumTemplateLabel(templateId) {
+  return ALBUM_TEMPLATE_OPTIONS[normalizeAlbumTemplateId(templateId)] || "Template 1";
+}
+
+function syncTemplateCardsUI() {
+  const selectedTemplate = normalizeAlbumTemplateId(wizardState.template);
+  wizardTemplateCards.forEach((card) => {
+    const cardTemplateId = String(card.dataset.templateId || "").trim();
+    const isSelected = cardTemplateId === selectedTemplate;
+    card.classList.toggle("selected", isSelected);
+    card.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
+}
+
+function selectAlbumTemplate(templateId) {
+  wizardState.template = normalizeAlbumTemplateId(templateId);
+  syncTemplateCardsUI();
 }
 
 function normalizeHexColor(value, fallback) {
@@ -4765,6 +4794,7 @@ function openCreateWizard(options = {}) {
   setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
   setStudioStatus(wizardTemplateStatus, "");
+  syncTemplateCardsUI();
   studioDashboardPanel.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
   createPagePanel.classList.remove("hidden");
@@ -4787,7 +4817,7 @@ function openEditWizard(page, options = {}) {
     eventStartDate: page.eventStartDate || "",
     eventEndDate: page.eventEndDate || "",
     pairingCode: page.pairingCode || "",
-    template: page.template || "template-1",
+    template: normalizeAlbumTemplateId(page.template),
     selectedCover: page.coverFileId
       ? {
           id: page.coverFileId,
@@ -4840,6 +4870,7 @@ function openEditWizard(page, options = {}) {
   setStudioStatus(wizardYoutubeStatus, "");
   setStudioStatus(wizardMediaStatus, "");
   setStudioStatus(wizardTemplateStatus, `Pairing code stays ${wizardState.pairingCode}.`);
+  syncTemplateCardsUI();
   studioDashboardPanel.classList.add("hidden");
   connectDomainPanel?.classList.add("hidden");
   createPagePanel.classList.remove("hidden");
@@ -4999,7 +5030,7 @@ async function createPageRecord() {
     branding,
     customDomain: branding.customDomain || "",
     template: wizardState.template,
-    templateLabel: "Template 1",
+    templateLabel: getAlbumTemplateLabel(wizardState.template),
     coverFileId: wizardState.selectedCover?.id || "",
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
@@ -5062,7 +5093,7 @@ async function updatePageRecord() {
     branding,
     customDomain: nextCustomDomain,
     template: wizardState.template,
-    templateLabel: "Template 1",
+    templateLabel: getAlbumTemplateLabel(wizardState.template),
     coverFileId: wizardState.selectedCover?.id || "",
     coverImageUrl: wizardState.selectedCover?.url || "",
     coverThumbnailUrl: wizardState.selectedCover?.thumbnailUrl || "",
@@ -5983,6 +6014,16 @@ wizardCreatePage?.addEventListener("click", async () => {
   } catch (error) {
     setStudioStatus(wizardTemplateStatus, error.message, true);
   }
+});
+
+wizardTemplateCards.forEach((card) => {
+  if (card.dataset.bound === "true") {
+    return;
+  }
+  card.addEventListener("click", () => {
+    selectAlbumTemplate(card.dataset.templateId || "template-1");
+  });
+  card.dataset.bound = "true";
 });
 
 if (getEffectivePathname().startsWith("/studio") || getEffectivePathname() === "/login") {

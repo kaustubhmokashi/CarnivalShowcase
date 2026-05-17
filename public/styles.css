@@ -4572,14 +4572,28 @@ input[type="checkbox"]:checked {
   flex-wrap: wrap;
 }
 
-.template-card {
+.template-card-list {
   width: min(460px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.template-card {
+  width: 100%;
   display: grid;
   gap: 10px;
   padding: 22px;
   color: #000000;
   text-align: left;
   border: 1px solid #000000;
+  background: #ffffff;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.template-card.selected {
+  border-width: 2px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .template-card span {
@@ -4590,6 +4604,19 @@ input[type="checkbox"]:checked {
 .template-card small {
   color: rgba(0, 0, 0, 0.62);
   line-height: 1.6;
+}
+
+html[data-gallery-template="template-2"] .gallery-grid {
+  gap: 14px;
+  padding-inline: 14px;
+}
+
+html[data-gallery-template="template-2"] .gallery-grid .photo-card img {
+  border-radius: 14px;
+}
+
+html[data-gallery-template="template-2"] .folder-tabs {
+  padding-inline: 18px;
 }
 
 @media (max-width: 900px) {

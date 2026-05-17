@@ -413,10 +413,16 @@
 
             <div id="wizard-template-step" class="studio-panel wizard-step hidden">
               <h2>Select a template.</h2>
-              <button id="template-one-card" type="button" class="template-card selected" aria-pressed="true">
-                <span>Template 1</span>
-                <small>Current full-width cover and packed grid layout.</small>
-              </button>
+              <div class="template-card-list" role="listbox" aria-label="Album templates">
+                <button type="button" class="template-card selected" data-template-id="template-1" aria-pressed="true">
+                  <span>Template 1</span>
+                  <small>Current full-width cover and packed grid layout.</small>
+                </button>
+                <button type="button" class="template-card" data-template-id="template-2" aria-pressed="false">
+                  <span>Template 2</span>
+                  <small>Roomier layout with softer corners and wider spacing.</small>
+                </button>
+              </div>
               <button id="wizard-create-page" type="button" class="studio-primary-button">Create album</button>
               <p id="wizard-template-status" class="studio-status"></p>
             </div>
