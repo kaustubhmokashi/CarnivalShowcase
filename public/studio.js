@@ -63,6 +63,7 @@ const adminTabs = Array.from(document.querySelectorAll("[data-admin-filter]"));
 const studioDashboardPanel = document.getElementById("studio-dashboard-panel");
 const studioSidebar = document.getElementById("studio-sidebar");
 const studioSidebarName = document.getElementById("studio-sidebar-name");
+const studioSidebarNameCard = document.getElementById("studio-sidebar-name-card");
 const studioSidebarLogoLink = document.getElementById("studio-sidebar-logo-link");
 const studioSidebarLogo = document.getElementById("studio-sidebar-logo");
 const studioSidebarTabs = Array.from(document.querySelectorAll("[data-studio-section]"));
@@ -101,6 +102,8 @@ const savedEventsTable = document.getElementById("saved-events-table");
 const studioToast = document.getElementById("studio-toast");
 const createPageButton = document.getElementById("create-page-button");
 const createEventButton = document.getElementById("create-event-button");
+const createPageButtonHead = document.getElementById("create-page-button-head");
+const createEventButtonHead = document.getElementById("create-event-button-head");
 const linkApprovalNotice = document.getElementById("link-approval-notice");
 const createPagePanel = document.getElementById("create-page-panel");
 const createEventPanel = document.getElementById("create-event-panel");
@@ -614,6 +617,9 @@ function hydrateStudioSettingsForms() {
       <span>STUDIO NAME :</span>
       <strong>${escapeMarkup(currentProfile?.studioName || "Studio")}</strong>
     `;
+  }
+  if (studioSidebarNameCard) {
+    studioSidebarNameCard.textContent = currentProfile?.studioName || "Studio";
   }
   if (studioSidebarLogo && studioSidebarLogoLink) {
     studioSidebarLogoLink.classList.toggle("is-empty", !logoSource);
@@ -1489,6 +1495,31 @@ async function ensureUserShell(user) {
   }
 }
 
+function getSavedPagePhotoCount(page) {
+  const directCount = Number(page?.albumSnapshotMediaCount || page?.photoCount || page?.mediaCount || 0);
+  if (Number.isFinite(directCount) && directCount > 0) {
+    return Math.floor(directCount);
+  }
+  const folders = Array.isArray(page?.snapshot?.folders) ? page.snapshot.folders : [];
+  const folderCount = folders.reduce((sum, folder) => {
+    const count = Number(folder?.photoCount || folder?.mediaCount || folder?.images?.length || 0);
+    return sum + (Number.isFinite(count) ? count : 0);
+  }, 0);
+  return Math.max(0, Math.floor(folderCount));
+}
+
+function formatDateLabel(value) {
+  const time = getDateValueMs(value);
+  if (!time) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(time));
+}
+
 function renderSavedPagesTable() {
   if (!savedPages.length) {
     savedPagesTable.innerHTML = '<p class="studio-empty">No albums yet.</p>';
@@ -1505,8 +1536,11 @@ function renderSavedPagesTable() {
     card.className = "saved-page-card";
     const pageUrl = getPageUrl(page);
     const thumbnail = page.coverThumbnailUrl || page.coverImageUrl || "";
+    const photoCount = getSavedPagePhotoCount(page);
+    const createdLabel = formatDateLabel(page.createdAt);
     card.innerHTML = `
       <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">
+        ${photoCount ? `<span class="saved-page-count-badge">${photoCount} photo${photoCount === 1 ? "" : "s"}</span>` : ""}
         ${faceStatusBadge ? `
           <span class="saved-page-face-status-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">
             ${faceStatusBadge.iconClass ? `<span class="saved-page-icon icon-mask ${escapeMarkup(faceStatusBadge.iconClass)}" aria-hidden="true"></span>` : ""}
@@ -1517,8 +1551,12 @@ function renderSavedPagesTable() {
       </a>
       <div class="saved-page-content">
         <h2>${escapeMarkup(page.tagline || page.pageName || "Untitled page")}</h2>
-        <p class="saved-page-pairing">${escapeMarkup(page.pairingCode || "")}</p>
+        <p class="saved-page-pairing">${escapeMarkup(createdLabel || page.pairingCode || "")}</p>
+        ${createdLabel && page.pairingCode ? `<p class="saved-page-code">Code ${escapeMarkup(page.pairingCode)}</p>` : ""}
         <div class="saved-page-actions" aria-label="Page actions">
+          <button type="button" class="saved-page-icon-button saved-page-open-button" data-action="open" aria-label="Open album">
+            <span>Open</span>
+          </button>
           <button
             type="button"
             class="saved-page-icon-button ${isFaceDetectionRunning ? "is-disabled" : ""}"
@@ -1544,6 +1582,9 @@ function renderSavedPagesTable() {
         </div>
       </div>
     `;
+    card.querySelector('[data-action="open"]')?.addEventListener("click", () => {
+      window.open(pageUrl, "_blank", "noopener,noreferrer");
+    });
     card.querySelector('[data-action="copy"]')?.addEventListener("click", async () => {
       try {
         await copyTextToClipboard(pageUrl);
@@ -2868,17 +2909,16 @@ async function deleteAdminLink(link) {
 }
 
 function updateLinkCreationGate() {
-  if ((!createPageButton && !createEventButton) || !linkApprovalNotice) {
+  if ((!createPageButton && !createEventButton && !createPageButtonHead && !createEventButtonHead) || !linkApprovalNotice) {
     return;
   }
 
   const status = getAccountStatus(currentProfile);
-  if (createPageButton) {
-    createPageButton.disabled = status !== "active";
-  }
-  if (createEventButton) {
-    createEventButton.disabled = status !== "active";
-  }
+  [createPageButton, createEventButton, createPageButtonHead, createEventButtonHead].forEach((button) => {
+    if (button) {
+      button.disabled = status !== "active";
+    }
+  });
   linkApprovalNotice.classList.toggle("hidden", status === "active");
   if (status === "new") {
     linkApprovalNotice.textContent = "Awaiting Admin approval for link creation";
@@ -5718,7 +5758,11 @@ studioNameForm?.addEventListener("submit", async (event) => {
 });
 
 createPageButton?.addEventListener("click", openCreateWizard);
+createPageButtonHead?.addEventListener("click", openCreateWizard);
 createEventButton?.addEventListener("click", () => {
+  openCreateEventPanel();
+});
+createEventButtonHead?.addEventListener("click", () => {
   openCreateEventPanel();
 });
 closeCreatePageButton?.addEventListener("click", goBackInWizard);

@@ -184,10 +184,20 @@
                 aria-label="Close studio menu"
               >
                 <span class="icon-mask icon-close" aria-hidden="true"></span>
+                <span class="studio-sidebar-close-text">Exit Studio</span>
               </button>
               <a id="studio-sidebar-logo-link" href="/" class="studio-sidebar-logo-link is-empty" aria-label="Studio homepage">
                 <img id="studio-sidebar-logo" class="studio-sidebar-logo" alt="" />
               </a>
+              <div class="studio-sidebar-identity" aria-label="Current studio">
+                <div class="studio-sidebar-avatar" aria-hidden="true">
+                  <img class="studio-sidebar-avatar-logo" src="/favicon.svg?v=20260424b" alt="" />
+                </div>
+                <div>
+                  <p class="studio-sidebar-eyebrow">Workspace</p>
+                  <p id="studio-sidebar-name-card" class="studio-sidebar-name">Studio</p>
+                </div>
+              </div>
               <div class="studio-sidebar-actions">
                 <button id="create-page-button" type="button" class="studio-primary-button studio-sidebar-primary-action">
                   Create Album
@@ -208,7 +218,14 @@
             <div class="studio-dashboard-content">
               <section id="studio-pages-section" class="studio-dashboard-section active">
                 <div class="studio-dashboard-head">
-                  <h1>My Albums</h1>
+                  <div>
+                    <p class="studio-section-kicker">Gallery workspace</p>
+                    <h1>My Albums</h1>
+                    <p class="studio-section-copy">Create, share, edit, and manage every published album.</p>
+                  </div>
+                  <button id="create-page-button-head" type="button" class="studio-primary-button studio-head-action">
+                    New Album
+                  </button>
                 </div>
                 <p id="link-approval-notice" class="studio-approval-notice hidden"></p>
 
@@ -219,7 +236,14 @@
 
               <section id="studio-events-section" class="studio-dashboard-section">
                 <div class="studio-dashboard-head">
-                  <h1>Events</h1>
+                  <div>
+                    <p class="studio-section-kicker">Live moments</p>
+                    <h1>Events</h1>
+                    <p class="studio-section-copy">Run live uploads, moderation, presentation mode, and event QR codes.</p>
+                  </div>
+                  <button id="create-event-button-head" type="button" class="studio-primary-button studio-head-action">
+                    New Event
+                  </button>
                 </div>
                 <div id="saved-events-table" class="saved-pages-grid">
                   <p class="studio-empty">No events yet.</p>
@@ -228,7 +252,11 @@
 
               <section id="studio-branding-section" class="studio-dashboard-section">
                 <div class="studio-dashboard-head">
-                  <h1>Branding</h1>
+                  <div>
+                    <p class="studio-section-kicker">Presentation layer</p>
+                    <h1>Branding</h1>
+                    <p class="studio-section-copy">Tune the shared look for your studio, public pages, and share messages.</p>
+                  </div>
                 </div>
                 <form id="studio-branding-form" class="studio-panel studio-settings-form">
                   <label class="studio-field-row">
@@ -264,7 +292,11 @@
 
               <section id="studio-account-section" class="studio-dashboard-section">
                 <div class="studio-dashboard-head">
-                  <h1>Account</h1>
+                  <div>
+                    <p class="studio-section-kicker">Studio settings</p>
+                    <h1>Account</h1>
+                    <p class="studio-section-copy">Manage your studio name, Drive connection, domains, and account lifecycle.</p>
+                  </div>
                 </div>
                 <form id="studio-account-form" class="studio-panel studio-settings-form">
                   <label>
