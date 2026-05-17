@@ -5304,11 +5304,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-dashboard {
   display: flex;
   min-height: 100vh;
-  background:
-    linear-gradient(rgba(23, 23, 23, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 23, 23, 0.035) 1px, transparent 1px),
-    #fafafa;
-  background-size: 32px 32px;
+  background: #fafafa;
   color: #171717;
 }
 
@@ -5337,27 +5333,19 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   position: static;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
   width: auto;
   height: auto;
   margin: 0 0 26px;
-  padding: 8px 0;
+  padding: 6px;
   border: 0;
   background: transparent;
   color: #171717;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
 }
 
 .studio-sidebar-close .icon-mask {
   width: 18px;
   height: 18px;
-}
-
-.studio-sidebar-close-text {
-  display: inline-block;
 }
 
 .studio-sidebar-logo-link {
@@ -5429,22 +5417,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   line-height: 1.2;
 }
 
-.studio-sidebar-actions {
-  display: grid;
-  gap: 12px;
-  margin: 0 0 24px;
-}
-
-.studio-sidebar-actions .studio-primary-button,
-.studio-sidebar-actions .studio-secondary-button {
-  width: 100%;
-  min-height: 50px;
-  padding: 0 18px;
-  border-radius: 0;
-  font-size: 12px;
-  letter-spacing: 0.28em;
-}
-
 .studio-sidebar-nav {
   display: grid;
   gap: 6px;
@@ -5454,6 +5426,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-sidebar-tab {
   display: flex;
   align-items: center;
+  gap: 12px;
   justify-content: flex-start;
   min-height: 44px;
   padding: 0 14px;
@@ -5466,6 +5439,12 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   letter-spacing: 0.12em;
   text-align: left;
   text-transform: uppercase;
+}
+
+.studio-sidebar-tab-svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 .studio-sidebar-tab:hover,

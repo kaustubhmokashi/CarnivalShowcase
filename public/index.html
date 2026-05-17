@@ -184,7 +184,6 @@
                 aria-label="Close studio menu"
               >
                 <span class="icon-mask icon-close" aria-hidden="true"></span>
-                <span class="studio-sidebar-close-text">Exit Studio</span>
               </button>
               <a id="studio-sidebar-logo-link" href="/" class="studio-sidebar-logo-link is-empty" aria-label="Studio homepage">
                 <img id="studio-sidebar-logo" class="studio-sidebar-logo" alt="" />
@@ -198,19 +197,23 @@
                   <p id="studio-sidebar-name-card" class="studio-sidebar-name">Studio</p>
                 </div>
               </div>
-              <div class="studio-sidebar-actions">
-                <button id="create-page-button" type="button" class="studio-primary-button studio-sidebar-primary-action">
-                  Create Album
-                </button>
-                <button id="create-event-button" type="button" class="studio-secondary-button studio-sidebar-secondary-action">
-                  Create Event
-                </button>
-              </div>
               <nav class="studio-sidebar-nav">
-                <button type="button" class="studio-sidebar-tab active" data-studio-section="pages">My Albums</button>
-                <button type="button" class="studio-sidebar-tab" data-studio-section="events">Events</button>
-                <button type="button" class="studio-sidebar-tab" data-studio-section="branding">Branding</button>
-                <button type="button" class="studio-sidebar-tab" data-studio-section="account">Account</button>
+                <button type="button" class="studio-sidebar-tab active" data-studio-section="pages">
+                  <svg class="studio-sidebar-tab-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                  <span>My Albums</span>
+                </button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="events">
+                  <svg class="studio-sidebar-tab-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <span>Events</span>
+                </button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="branding">
+                  <svg class="studio-sidebar-tab-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-1.7-1.3-3-3-3h-1.2a1.8 1.8 0 0 1 0-3.6h.6A3.6 3.6 0 0 0 12 3Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="7.8" cy="11.8" r="1" fill="currentColor"/><circle cx="10.8" cy="8.8" r="1" fill="currentColor"/><circle cx="14.2" cy="8.8" r="1" fill="currentColor"/></svg>
+                  <span>Branding</span>
+                </button>
+                <button type="button" class="studio-sidebar-tab" data-studio-section="account">
+                  <svg class="studio-sidebar-tab-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <span>Account</span>
+                </button>
               </nav>
               <img class="studio-sidebar-favicon" src="/favicon.svg?v=20260424b" alt="Carnival Stories" />
             </aside>
