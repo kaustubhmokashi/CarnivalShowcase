@@ -1508,17 +1508,82 @@ async function ensureUserShell(user) {
   }
 }
 
-function getSavedPagePhotoCount(page) {
-  const directCount = Number(page?.albumSnapshotMediaCount || page?.photoCount || page?.mediaCount || 0);
+function getSavedPageMediaItems(page) {
+  const snapshot = page?.snapshot || {};
+  const folders = Array.isArray(snapshot.folders) ? snapshot.folders : [];
+  const folderItems = folders.flatMap((folder) => (Array.isArray(folder?.images) ? folder.images : []));
+  const rootItems = Array.isArray(snapshot.images) ? snapshot.images : [];
+  return [...folderItems, ...rootItems];
+}
+
+function isSavedPageVideoItem(item) {
+  const mimeType = String(item?.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("video/")) {
+    return true;
+  }
+
+  const name = String(item?.name || item?.url || item?.thumbnailUrl || "").toLowerCase();
+  return /\.(mp4|mov|m4v|webm|avi|mkv)(\?|#|$)/.test(name);
+}
+
+function getSavedPageVideoCount(page) {
+  const directCount = Number(page?.videoCount || page?.albumSnapshotVideoCount || 0);
   if (Number.isFinite(directCount) && directCount > 0) {
     return Math.floor(directCount);
   }
+
+  const items = getSavedPageMediaItems(page);
+  const youtubeCount = Array.isArray(page?.youtubeLinks) ? page.youtubeLinks.length : 0;
+  return items.filter(isSavedPageVideoItem).length + youtubeCount;
+}
+
+function getSavedPagePhotoCount(page) {
+  const photoCount = Number(page?.photoCount || 0);
+  if (Number.isFinite(photoCount) && photoCount > 0) {
+    return Math.floor(photoCount);
+  }
+
+  const directCount = Number(page?.albumSnapshotMediaCount || page?.mediaCount || 0);
+  if (Number.isFinite(directCount) && directCount > 0) {
+    return Math.max(0, Math.floor(directCount) - getSavedPageVideoCount(page));
+  }
   const folders = Array.isArray(page?.snapshot?.folders) ? page.snapshot.folders : [];
   const folderCount = folders.reduce((sum, folder) => {
-    const count = Number(folder?.photoCount || folder?.mediaCount || folder?.images?.length || 0);
-    return sum + (Number.isFinite(count) ? count : 0);
+    const count = Number(folder?.photoCount || 0);
+    if (Number.isFinite(count) && count > 0) {
+      return sum + count;
+    }
+    const items = Array.isArray(folder?.images) ? folder.images : [];
+    const mediaCount = Number(folder?.mediaCount || items.length || 0);
+    const videoCount = items.filter(isSavedPageVideoItem).length;
+    const derivedCount = mediaCount - videoCount;
+    return sum + (Number.isFinite(derivedCount) ? Math.max(0, derivedCount) : 0);
   }, 0);
   return Math.max(0, Math.floor(folderCount));
+}
+
+function formatAlbumCardDate(value) {
+  const time = getDateValueMs(value);
+  if (!time) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(time));
+}
+
+function getAlbumDateRange(page) {
+  const start = page?.eventStartDate || page?.startDate || page?.dateStart || page?.createdAt || "";
+  const end = page?.eventEndDate || page?.endDate || page?.dateEnd || page?.createdAt || "";
+  const startLabel = formatAlbumCardDate(start);
+  const endLabel = formatAlbumCardDate(end);
+
+  return {
+    start: startLabel || formatDateLabel(start),
+    end: endLabel || formatDateLabel(end),
+  };
 }
 
 function formatDateLabel(value) {
@@ -1546,37 +1611,50 @@ function renderSavedPagesTable() {
     const isFaceDetectionRunning = faceDetection.status === "queued" || faceDetection.status === "processing";
     const faceStatusBadge = getFaceStatusBadge(faceDetection);
     const card = document.createElement("article");
-    card.className = "saved-page-card";
+    card.className = "saved-page-card saved-album-card";
     const pageUrl = getPageUrl(page);
     const thumbnail = page.coverThumbnailUrl || page.coverImageUrl || "";
     const photoCount = getSavedPagePhotoCount(page);
+    const videoCount = getSavedPageVideoCount(page);
     const createdLabel = formatDateLabel(page.createdAt);
+    const dateRange = getAlbumDateRange(page);
+    const dateRangeHtml = dateRange.start
+      ? `<p class="saved-page-date-range">
+          <span>${escapeMarkup(dateRange.start)}</span>
+          ${dateRange.end && dateRange.end !== dateRange.start ? `<span class="saved-page-date-separator">to.</span><span>${escapeMarkup(dateRange.end)}</span>` : ""}
+        </p>`
+      : "";
     card.innerHTML = `
-      <a class="saved-page-thumb" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">
-        ${photoCount ? `<span class="saved-page-count-badge">${photoCount} photo${photoCount === 1 ? "" : "s"}</span>` : ""}
+      <div class="saved-page-thumb" aria-label="${escapeMarkup(page.pageName || "Album preview")}">
+        <span class="saved-page-media-stack" aria-label="Album media count">
+          <span class="saved-page-media-badge">
+            <span class="saved-page-media-icon saved-page-media-icon-image" aria-hidden="true"></span>
+            <span>${escapeMarkup(String(photoCount))}</span>
+          </span>
+          <span class="saved-page-media-badge">
+            <span class="saved-page-media-icon saved-page-media-icon-video" aria-hidden="true"></span>
+            <span>${escapeMarkup(String(videoCount))}</span>
+          </span>
+        </span>
         ${faceStatusBadge ? `
-          <span class="saved-page-face-status-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">
+          <span class="saved-page-selfie-badge" title="${escapeMarkup(faceStatusBadge.tooltip)}">
             ${faceStatusBadge.iconClass ? `<span class="saved-page-icon icon-mask ${escapeMarkup(faceStatusBadge.iconClass)}" aria-hidden="true"></span>` : ""}
-            <span>${escapeMarkup(faceStatusBadge.label)}</span>
+            <span>Selfie Enabled</span>
           </span>
         ` : ""}
+        ${page.pairingCode ? `
+          <button type="button" class="saved-page-code-badge" data-pairing-copy aria-label="Copy pairing code ${escapeMarkup(page.pairingCode)}">
+            <span>Pairing code :</span>
+            <strong>${escapeMarkup(page.pairingCode)}</strong>
+          </button>
+        ` : ""}
         ${thumbnail ? `<img src="${escapeMarkup(thumbnail)}" alt="" loading="lazy" />` : ""}
-      </a>
+      </div>
       <div class="saved-page-content">
         <h2>${escapeMarkup(page.tagline || page.pageName || "Untitled page")}</h2>
-        <p class="saved-page-pairing">${escapeMarkup(createdLabel || page.pairingCode || "")}</p>
-        ${createdLabel && page.pairingCode ? `<p class="saved-page-code">Code ${escapeMarkup(page.pairingCode)}</p>` : ""}
+        ${dateRangeHtml || `<p class="saved-page-pairing">${escapeMarkup(createdLabel || "")}</p>`}
         <div class="saved-page-actions" aria-label="Page actions">
-          <button
-            type="button"
-            class="saved-page-icon-button ${isFaceDetectionRunning ? "is-disabled" : ""}"
-            data-action="face-detection"
-            aria-label="Face detection"
-            ${isFaceDetectionRunning ? "disabled" : ""}
-            title="${canUseFacePicker ? "Open face picker" : (isFaceDetectionRunning ? "Face detection in progress" : "Start face detection")}"
-          >
-            <span class="saved-page-icon icon-mask icon-face-detection" aria-hidden="true"></span>
-          </button>
+          <a class="saved-page-open-button" href="${escapeMarkup(pageUrl)}" target="_blank" rel="noreferrer noopener" aria-label="Open ${escapeMarkup(page.pageName || "page")} in a new tab">Open</a>
           <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share page link">
             <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
           </button>
@@ -1592,6 +1670,14 @@ function renderSavedPagesTable() {
         </div>
       </div>
     `;
+    card.querySelector("[data-pairing-copy]")?.addEventListener("click", async () => {
+      try {
+        await copyTextToClipboard(page.pairingCode || "");
+        showStudioToast("Pairing code copied to clipboard");
+      } catch (error) {
+        showStudioToast("Could not copy pairing code");
+      }
+    });
     card.querySelector('[data-action="copy"]')?.addEventListener("click", async () => {
       try {
         await copyTextToClipboard(pageUrl);
