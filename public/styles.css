@@ -2799,7 +2799,7 @@ input[type="checkbox"]:checked {
   top: 18px;
   right: 24px;
   z-index: 20;
-  display: grid;
+  display: none;
   justify-items: end;
   gap: 18px;
 }
@@ -4629,6 +4629,7 @@ input[type="checkbox"]:checked {
   }
 
   .studio-floating-actions {
+    display: grid;
     position: static;
     width: min(100%, 720px);
     max-width: 100%;
@@ -5317,12 +5318,12 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   top: 0;
   z-index: 20;
   display: flex;
-  flex: 0 0 256px;
+  flex: 0 0 272px;
   flex-direction: column;
-  width: 256px;
-  min-width: 256px;
+  width: 272px;
+  min-width: 272px;
   height: 100vh;
-  padding: 18px 16px 24px;
+  padding: 22px 18px 26px;
   background: #ffffff;
   border-right: 1px solid #e5e5e5;
   box-shadow: none;
@@ -5335,7 +5336,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   width: 100%;
   max-width: none;
   height: auto;
-  margin: 0 0 24px;
+  margin: 0 0 28px;
 }
 
 .studio-sidebar-logo {
@@ -5355,7 +5356,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 0 0 28px;
+  margin: 0 0 30px;
   padding: 0 8px;
 }
 
@@ -5484,14 +5485,14 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 32px 40px;
+  padding: 24px clamp(32px, 4vw, 56px) 56px;
   overflow: auto;
 }
 
 .studio-dashboard-section {
   display: none;
-  width: min(100%, 1152px);
-  gap: 24px;
+  width: min(100%, 1180px);
+  gap: 28px;
 }
 
 .studio-dashboard-section.active {
@@ -5500,16 +5501,16 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-dashboard-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  margin: 0 0 24px;
+  gap: 28px;
+  margin: 0 0 34px;
 }
 
 .studio-dashboard-head h1 {
   margin: 0;
   color: #171717;
-  font-size: 28px;
+  font-size: 34px;
   line-height: 1.1;
   letter-spacing: 0;
 }
@@ -5525,24 +5526,25 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-section-copy {
   max-width: 600px;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: #525252;
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0;
   line-height: 1.5;
 }
 
 .studio-head-action {
   flex: 0 0 auto;
-  min-height: 44px;
-  padding-inline: 22px;
+  min-height: 46px;
+  min-width: 184px;
+  padding-inline: 28px;
   border-radius: 999px;
 }
 
 .saved-pages-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 26px;
   width: 100%;
   max-width: none;
   margin: 0;
@@ -5554,9 +5556,9 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   min-width: 0;
   overflow: hidden;
   border: 1px solid #e5e5e5;
-  border-radius: 18px;
+  border-radius: 20px;
   background: #ffffff;
-  box-shadow: 0 18px 45px rgba(23, 23, 23, 0.06);
+  box-shadow: 0 24px 70px rgba(23, 23, 23, 0.08);
 }
 
 .saved-page-thumb {
@@ -5609,15 +5611,15 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .saved-page-content {
   display: grid;
   gap: 14px;
-  padding: 18px;
+  padding: 20px 22px 22px;
 }
 
 .saved-page-content h2 {
   margin: 0;
   color: #171717;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 850;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.2;
 }
 
@@ -5643,17 +5645,17 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .saved-page-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
+  gap: 10px;
+  margin: 4px 0 0;
 }
 
 .saved-page-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 0 12px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 14px;
   border: 1px solid #e5e5e5;
   border-radius: 999px;
   background: #ffffff;
@@ -5665,8 +5667,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .saved-page-open-button {
-  min-width: 92px;
-  padding-inline: 16px;
+  min-width: 116px;
+  padding-inline: 20px;
   background: #171717;
   border-color: #171717;
   color: #ffffff;
@@ -5800,7 +5802,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 @media (max-width: 1023px) {
   .studio-dashboard-content {
-    padding: 32px 24px;
+    padding: 24px 24px 32px;
   }
 
   .saved-pages-grid {
@@ -5829,7 +5831,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
   .studio-dashboard-content {
     min-height: 100dvh;
-    padding: 96px 18px 32px;
+    padding: 80px 18px 32px;
   }
 
   .studio-dashboard-head {
