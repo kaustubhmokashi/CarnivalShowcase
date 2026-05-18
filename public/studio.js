@@ -3542,12 +3542,12 @@ async function loadPublicEvent(slug) {
   screenEventPublic?.classList.add("active");
   document.body.classList.remove("studio-scroll-lock");
   document.title = [event.name || "Event", "CarnivalStories"].join(" | ");
-  const eventLogoSource = resolveStudioLogoSource(event.logoLink) || PRODUCT_LOGO_PATH;
+  const eventLogoSource = resolveStudioLogoSource(event.logoLink);
   if (eventPublicLogo && eventPublicLogoLink) {
     eventPublicLogoLink.classList.toggle("is-empty", !eventLogoSource);
     eventPublicLogo.hidden = !eventLogoSource;
     eventPublicLogo.src = eventLogoSource;
-    eventPublicLogo.alt = event.logoLink ? `${event.name || "Event"} logo` : "Carnival Stories";
+    eventPublicLogo.alt = eventLogoSource ? `${event.name || "Event"} logo` : "";
     eventPublicLogoLink.href = event.homepageLink || "/";
   }
   const uploadIsLive = event.phase === "live";
