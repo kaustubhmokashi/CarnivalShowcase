@@ -5330,24 +5330,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   overflow-y: auto;
 }
 
-.studio-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  margin: 0 0 26px;
-  color: #666666;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1;
-  text-decoration: none;
-}
-
-.studio-back-link:hover {
-  color: #171717;
-}
-
 .studio-sidebar-logo-link {
   display: inline-flex;
   align-items: center;
@@ -5518,6 +5500,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .studio-dashboard-content {
+  display: flex;
+  justify-content: center;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
@@ -5529,6 +5513,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: none;
   width: min(100%, 1072px);
   gap: 0;
+  margin-inline: auto;
 }
 
 .studio-dashboard-section.active {
