@@ -5517,8 +5517,14 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   width: 24px;
   height: 24px;
   background: currentColor;
-  mask: url("/assets/studio-sign-out.svg") center / 24px 24px no-repeat;
-  -webkit-mask: url("/assets/studio-sign-out.svg") center / 24px 24px no-repeat;
+  -webkit-mask-image: url("/assets/studio-sign-out.svg");
+  mask-image: url("/assets/studio-sign-out.svg");
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 24px 24px;
+  mask-size: 24px 24px;
 }
 
 .studio-sidebar-sign-out:hover {
