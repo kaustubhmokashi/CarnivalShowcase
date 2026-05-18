@@ -5373,7 +5373,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 0;
   padding: 0 8px;
 }
 
@@ -5464,8 +5464,10 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .studio-sidebar-footer {
-  display: grid;
-  gap: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
   margin: auto 0 0;
 }
 
@@ -5496,7 +5498,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   width: 42px;
   height: 42px;
   object-fit: contain;
-  align-self: end;
+  align-self: flex-start;
 }
 
 .studio-dashboard-content {
