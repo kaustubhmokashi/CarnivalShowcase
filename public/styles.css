@@ -5362,14 +5362,14 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   place-items: center;
   border: 1px solid #ececec;
   border-radius: 12px;
-  background: #f2f2f2;
+  background: transparent;
   overflow: hidden;
 }
 
 .studio-sidebar-avatar-logo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .studio-sidebar-avatar-initial {
