@@ -3036,11 +3036,76 @@ async function loadSavedPages({ includeQueueRecovery = true } = {}) {
     .map((pageDoc) => ({ id: pageDoc.id, ...pageDoc.data() }))
     .sort((left, right) => getDateValueMs(right.createdAt) - getDateValueMs(left.createdAt));
   try {
+    await attachAlbumDashboardCounts();
+  } catch (error) {
+    console.warn("Album dashboard counts attach skipped:", error);
+  }
+  try {
     await attachFaceQueuePositions();
   } catch (error) {
     console.warn("Face status attach skipped:", error);
   }
   renderSavedPagesTable();
+}
+
+async function attachAlbumDashboardCounts() {
+  if (!savedPages.length) {
+    return;
+  }
+
+  savedPages = await Promise.all(savedPages.map(async (page) => {
+    try {
+      const publicPageId = getPrimaryPublicPageId(page);
+      if (!publicPageId) {
+        return page;
+      }
+
+      const publicPageRef = doc(db, collections.publicPages, publicPageId);
+      const publicPageSnapshot = await getDoc(publicPageRef);
+      if (!publicPageSnapshot.exists()) {
+        return page;
+      }
+
+      const publicPage = publicPageSnapshot.data() || {};
+      let photoCount = Number(page.photoCount || publicPage.photoCount || 0);
+      let videoCount = Number(page.videoCount || publicPage.videoCount || 0);
+
+      if ((!photoCount || !videoCount) && Number(publicPage.albumSnapshotChunkCount || 0) > 0) {
+        const chunkSnapshot = await getDocs(collection(publicPageRef, ALBUM_SNAPSHOT_SUBCOLLECTION));
+        let chunkPhotoCount = 0;
+        let chunkVideoCount = 0;
+        chunkSnapshot.forEach((chunkDoc) => {
+          const folders = Array.isArray(chunkDoc.data()?.folders) ? chunkDoc.data().folders : [];
+          folders.forEach((folder) => {
+            const images = Array.isArray(folder?.images) ? folder.images : [];
+            const mediaCount = Number(folder?.mediaCount || images.length || 0);
+            const folderPhotoCount = Number(folder?.photoCount || 0)
+              || images.filter((item) => !isSavedPageVideoItem(item)).length;
+            chunkPhotoCount += Math.max(0, folderPhotoCount);
+            chunkVideoCount += Math.max(0, mediaCount - folderPhotoCount);
+          });
+        });
+        photoCount = photoCount || chunkPhotoCount;
+        videoCount = videoCount || chunkVideoCount;
+      }
+
+      const youtubeCount = Array.isArray(page.youtubeLinks || publicPage.youtubeLinks)
+        ? (page.youtubeLinks || publicPage.youtubeLinks).length
+        : 0;
+      const mediaCount = Number(page.albumSnapshotMediaCount || publicPage.albumSnapshotMediaCount || 0);
+      photoCount = photoCount || Math.max(0, mediaCount - videoCount - youtubeCount);
+
+      return {
+        ...page,
+        albumSnapshotMediaCount: mediaCount,
+        photoCount: Math.max(0, Math.floor(photoCount || 0)),
+        videoCount: Math.max(0, Math.floor((videoCount || 0) + youtubeCount)),
+      };
+    } catch (error) {
+      console.warn("Album card counts skipped:", error);
+      return page;
+    }
+  }));
 }
 
 async function attachFaceQueuePositions() {
