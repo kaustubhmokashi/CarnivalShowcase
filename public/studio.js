@@ -100,10 +100,6 @@ const connectDomainStatus = document.getElementById("connect-domain-status");
 const closeConnectDomainButton = document.getElementById("close-connect-domain");
 const savedPagesTable = document.getElementById("saved-pages-table");
 const savedEventsTable = document.getElementById("saved-events-table");
-const studioMetricAlbums = document.getElementById("studio-metric-albums");
-const studioMetricPhotos = document.getElementById("studio-metric-photos");
-const studioMetricEvents = document.getElementById("studio-metric-events");
-const studioMetricCodes = document.getElementById("studio-metric-codes");
 const studioToast = document.getElementById("studio-toast");
 const createPageButton = document.getElementById("create-page-button");
 const createEventButton = document.getElementById("create-event-button");
@@ -1531,35 +1527,7 @@ function formatDateLabel(value) {
   }).format(new Date(time));
 }
 
-function formatCompactNumber(value) {
-  return new Intl.NumberFormat(undefined, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(Number(value) || 0);
-}
-
-function updateStudioMetrics() {
-  const albumCount = savedPages.length;
-  const photoCount = savedPages.reduce((sum, page) => sum + getSavedPagePhotoCount(page), 0);
-  const eventCount = savedEvents.length;
-  const pairingCodeCount = savedPages.filter((page) => String(page?.pairingCode || "").trim()).length;
-
-  if (studioMetricAlbums) {
-    studioMetricAlbums.textContent = formatCompactNumber(albumCount);
-  }
-  if (studioMetricPhotos) {
-    studioMetricPhotos.textContent = formatCompactNumber(photoCount);
-  }
-  if (studioMetricEvents) {
-    studioMetricEvents.textContent = formatCompactNumber(eventCount);
-  }
-  if (studioMetricCodes) {
-    studioMetricCodes.textContent = formatCompactNumber(pairingCodeCount);
-  }
-}
-
 function renderSavedPagesTable() {
-  updateStudioMetrics();
   if (!savedPages.length) {
     savedPagesTable.innerHTML = '<p class="studio-empty">No albums yet.</p>';
     return;
@@ -2194,7 +2162,6 @@ async function ensureEventQrPngDataUrl(event) {
 }
 
 function renderSavedEventsTable() {
-  updateStudioMetrics();
   if (!savedEventsTable) {
     return;
   }
