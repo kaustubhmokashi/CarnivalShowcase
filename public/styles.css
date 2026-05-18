@@ -5726,11 +5726,11 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  min-height: 32px;
-  padding: 0 9px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 12px;
   border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   color: #171717;
   font-size: 13px;
@@ -5758,8 +5758,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .saved-page-icon {
-  width: 15px;
-  height: 15px;
+  width: 19px;
+  height: 19px;
 }
 
 .saved-event-card .saved-page-thumb {

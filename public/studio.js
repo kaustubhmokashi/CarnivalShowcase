@@ -1586,9 +1586,6 @@ function renderSavedPagesTable() {
         <p class="saved-page-pairing">${escapeMarkup(createdLabel || page.pairingCode || "")}</p>
         ${createdLabel && page.pairingCode ? `<p class="saved-page-code">Code ${escapeMarkup(page.pairingCode)}</p>` : ""}
         <div class="saved-page-actions" aria-label="Page actions">
-          <button type="button" class="saved-page-icon-button saved-page-open-button" data-action="open" aria-label="Open album">
-            <span>Open</span>
-          </button>
           <button
             type="button"
             class="saved-page-icon-button ${isFaceDetectionRunning ? "is-disabled" : ""}"
@@ -1614,9 +1611,6 @@ function renderSavedPagesTable() {
         </div>
       </div>
     `;
-    card.querySelector('[data-action="open"]')?.addEventListener("click", () => {
-      window.open(pageUrl, "_blank", "noopener,noreferrer");
-    });
     card.querySelector('[data-action="copy"]')?.addEventListener("click", async () => {
       try {
         await copyTextToClipboard(pageUrl);
