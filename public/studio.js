@@ -1621,7 +1621,7 @@ function renderSavedPagesTable() {
     const dateRangeHtml = dateRange.start
       ? `<p class="saved-page-date-range">
           <span>${escapeMarkup(dateRange.start)}</span>
-          ${dateRange.end && dateRange.end !== dateRange.start ? `<span class="saved-page-date-separator">to.</span><span>${escapeMarkup(dateRange.end)}</span>` : ""}
+          ${dateRange.end && dateRange.end !== dateRange.start ? `<span class="saved-page-date-separator">to</span><span>${escapeMarkup(dateRange.end)}</span>` : ""}
         </p>`
       : "";
     card.innerHTML = `
