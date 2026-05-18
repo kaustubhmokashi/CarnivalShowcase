@@ -5704,11 +5704,11 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .saved-page-code {
   margin: 0;
-  color: #737373;
-  font-size: 13px;
-  font-weight: 450;
-  letter-spacing: 0;
-  text-transform: none;
+  color: #171717;
+  font-size: 16px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .saved-page-code {
