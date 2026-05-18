@@ -5318,10 +5318,10 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   top: 0;
   z-index: 20;
   display: flex;
-  flex: 0 0 366px;
+  flex: 0 0 292px;
   flex-direction: column;
-  width: 366px;
-  min-width: 366px;
+  width: 292px;
+  min-width: 292px;
   height: 100vh;
   padding: 40px 16px;
   background: #ffffff;
@@ -5412,7 +5412,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-sidebar-nav {
   display: grid;
   gap: 8px;
-  width: 334px;
+  width: 260px;
   margin: 87px 0 0;
 }
 
@@ -5421,7 +5421,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   align-items: center;
   gap: 16px;
   justify-content: flex-start;
-  width: 334px;
+  width: 260px;
   height: 44px;
   min-height: 44px;
   padding: 0 16px;
@@ -5443,28 +5443,37 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   width: 24px;
   height: 24px;
   background: currentColor;
-  mask: var(--studio-sidebar-icon) center / 24px 24px no-repeat;
-  -webkit-mask: var(--studio-sidebar-icon) center / 24px 24px no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 24px 24px;
+  mask-size: 24px 24px;
 }
 
 .studio-sidebar-tab-icon-albums {
-  --studio-sidebar-icon: url("/assets/studio-nav-albums.svg");
+  -webkit-mask-image: url("/assets/studio-nav-albums.svg");
+  mask-image: url("/assets/studio-nav-albums.svg");
 }
 
 .studio-sidebar-tab-icon-events {
-  --studio-sidebar-icon: url("/assets/studio-nav-events.svg");
+  -webkit-mask-image: url("/assets/studio-nav-events.svg");
+  mask-image: url("/assets/studio-nav-events.svg");
 }
 
 .studio-sidebar-tab-icon-brands {
-  --studio-sidebar-icon: url("/assets/studio-nav-brands.svg");
+  -webkit-mask-image: url("/assets/studio-nav-brands.svg");
+  mask-image: url("/assets/studio-nav-brands.svg");
 }
 
 .studio-sidebar-tab-icon-account {
-  --studio-sidebar-icon: url("/assets/studio-nav-account.svg");
+  -webkit-mask-image: url("/assets/studio-nav-account.svg");
+  mask-image: url("/assets/studio-nav-account.svg");
 }
 
 .studio-sidebar-tab-icon-admin {
-  --studio-sidebar-icon: url("/assets/studio-nav-admin.svg");
+  -webkit-mask-image: url("/assets/studio-nav-admin.svg");
+  mask-image: url("/assets/studio-nav-admin.svg");
 }
 
 .studio-sidebar-tab:hover {
@@ -5483,7 +5492,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   grid-template-columns: 1fr 24px;
   align-items: center;
   gap: 12px;
-  width: 334px;
+  width: 260px;
   margin: auto 0 0;
 }
 
@@ -6079,7 +6088,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   .studio-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
-    width: min(92vw, 366px);
+    width: min(92vw, 292px);
     min-width: 0;
     height: 100dvh;
     transform: translateX(-105%);
@@ -6093,7 +6102,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   .studio-sidebar-nav,
   .studio-sidebar-footer,
   .studio-sidebar-tab {
-    width: min(334px, calc(92vw - 32px));
+    width: min(260px, calc(92vw - 32px));
   }
 
   .studio-dashboard-content {
