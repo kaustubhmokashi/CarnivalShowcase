@@ -1628,11 +1628,11 @@ function renderSavedPagesTable() {
       <div class="saved-page-thumb" aria-label="${escapeMarkup(page.pageName || "Album preview")}">
         <span class="saved-page-media-stack" aria-label="Album media count">
           <span class="saved-page-media-badge">
-            <span class="saved-page-media-icon saved-page-media-icon-image" aria-hidden="true"></span>
+            <img class="saved-page-media-icon" src="/assets/studio-card-image.svg" alt="" aria-hidden="true" />
             <span>${escapeMarkup(String(photoCount))}</span>
           </span>
           <span class="saved-page-media-badge">
-            <span class="saved-page-media-icon saved-page-media-icon-video" aria-hidden="true"></span>
+            <img class="saved-page-media-icon" src="/assets/studio-card-video.svg" alt="" aria-hidden="true" />
             <span>${escapeMarkup(String(videoCount))}</span>
           </span>
         </span>

@@ -5442,30 +5442,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   flex: 0 0 24px;
   width: 24px;
   height: 24px;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 24px 24px;
+  object-fit: contain;
   filter: none;
-}
-
-.studio-sidebar-tab-icon-albums {
-  background-image: url("/assets/studio-nav-albums.svg");
-}
-
-.studio-sidebar-tab-icon-events {
-  background-image: url("/assets/studio-nav-events.svg");
-}
-
-.studio-sidebar-tab-icon-brands {
-  background-image: url("/assets/studio-nav-brands.svg");
-}
-
-.studio-sidebar-tab-icon-account {
-  background-image: url("/assets/studio-nav-account.svg");
-}
-
-.studio-sidebar-tab-icon-admin {
-  background-image: url("/assets/studio-nav-admin.svg");
 }
 
 .studio-sidebar-tab:hover {
@@ -5508,11 +5486,14 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .studio-sidebar-sign-out::before {
-  content: "";
+  content: none;
+}
+
+.studio-sidebar-sign-out-icon {
   display: block;
   width: 24px;
   height: 24px;
-  background: url("/assets/studio-sign-out.svg") center / 24px 24px no-repeat;
+  object-fit: contain;
 }
 
 .studio-sidebar-sign-out:hover {
@@ -5692,19 +5673,10 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 }
 
 .saved-page-media-icon {
+  display: block;
   width: 14px;
   height: 14px;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 14px 14px;
-}
-
-.saved-page-media-icon-image {
-  background-image: url("/assets/studio-card-image.svg");
-}
-
-.saved-page-media-icon-video {
-  background-image: url("/assets/studio-card-video.svg");
+  object-fit: contain;
 }
 
 .saved-page-selfie-badge {
