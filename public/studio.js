@@ -67,6 +67,7 @@ const studioSidebarNameCard = document.getElementById("studio-sidebar-name-card"
 const studioSidebarLogoLink = document.getElementById("studio-sidebar-logo-link");
 const studioSidebarLogo = document.getElementById("studio-sidebar-logo");
 const studioSidebarAvatarLogo = document.getElementById("studio-sidebar-avatar-logo");
+const studioSidebarAvatarInitial = document.getElementById("studio-sidebar-avatar-initial");
 const studioSidebarTabs = Array.from(document.querySelectorAll("[data-studio-section]"));
 const studioPagesSection = document.getElementById("studio-pages-section");
 const studioEventsSection = document.getElementById("studio-events-section");
@@ -634,6 +635,11 @@ function hydrateStudioSettingsForms() {
     studioSidebarAvatarLogo.hidden = !faviconSource;
     studioSidebarAvatarLogo.src = faviconSource || "";
     studioSidebarAvatarLogo.alt = faviconSource ? `${currentProfile?.studioName || "Studio"} favicon` : "";
+  }
+  if (studioSidebarAvatarInitial) {
+    const studioInitial = String(currentProfile?.studioName || "Studio").trim().charAt(0) || "S";
+    studioSidebarAvatarInitial.textContent = studioInitial.toUpperCase();
+    studioSidebarAvatarInitial.hidden = Boolean(faviconSource);
   }
   if (createEventLogo && createEventLogoLink) {
     createEventLogoLink.classList.toggle("is-empty", !eventLogoSource);
@@ -5432,6 +5438,15 @@ openStudioLoginButton?.addEventListener("click", () => {
 
 studioSidebarTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
+    if (tab.dataset.studioSection === "admin") {
+      if (isAdminEmail(currentUser?.email)) {
+        showStudioView("admin");
+        void loadAdminAccounts();
+        return;
+      }
+      showStudioToast("Admin tools are not enabled for this studio.");
+      return;
+    }
     showStudioDashboardSection(tab.dataset.studioSection);
   });
 });
