@@ -66,6 +66,7 @@ const studioSidebarName = document.getElementById("studio-sidebar-name");
 const studioSidebarNameCard = document.getElementById("studio-sidebar-name-card");
 const studioSidebarLogoLink = document.getElementById("studio-sidebar-logo-link");
 const studioSidebarLogo = document.getElementById("studio-sidebar-logo");
+const studioSidebarAvatarLogo = document.getElementById("studio-sidebar-avatar-logo");
 const studioSidebarTabs = Array.from(document.querySelectorAll("[data-studio-section]"));
 const studioPagesSection = document.getElementById("studio-pages-section");
 const studioEventsSection = document.getElementById("studio-events-section");
@@ -595,6 +596,7 @@ function setColorInputs(hexInput, pickerInput, value) {
 function hydrateStudioSettingsForms() {
   const branding = getProfileBranding();
   const logoSource = resolveStudioLogoSource(branding.logoLink);
+  const faviconSource = resolveStudioFaviconSource(branding.faviconLink);
   const eventLogoSource = logoSource || PRODUCT_LOGO_PATH;
   setColorInputs(brandingBackgroundHex, brandingBackgroundPicker, branding.backgroundColor);
   setColorInputs(brandingAccentHex, brandingAccentPicker, branding.accentColor);
@@ -631,6 +633,11 @@ function hydrateStudioSettingsForms() {
     studioSidebarLogo.src = logoSource || "";
     studioSidebarLogo.alt = logoSource ? `${currentProfile?.studioName || "Studio"} logo` : "";
     studioSidebarLogoLink.href = branding.homepageLink || "/";
+  }
+  if (studioSidebarAvatarLogo) {
+    studioSidebarAvatarLogo.hidden = !faviconSource;
+    studioSidebarAvatarLogo.src = faviconSource || "";
+    studioSidebarAvatarLogo.alt = faviconSource ? `${currentProfile?.studioName || "Studio"} favicon` : "";
   }
   if (createEventLogo && createEventLogoLink) {
     createEventLogoLink.classList.toggle("is-empty", !eventLogoSource);
