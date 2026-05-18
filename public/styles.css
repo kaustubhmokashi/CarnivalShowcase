@@ -5507,13 +5507,13 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 32px 40px 56px;
+  padding: 40px 40px 56px;
   overflow: auto;
 }
 
 .studio-dashboard-section {
   display: none;
-  width: min(100%, 1072px);
+  width: min(100%, 1084px);
   gap: 0;
   margin-inline: auto;
 }
@@ -5528,15 +5528,16 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   justify-content: space-between;
   gap: 24px;
   margin: 0 0 30px;
+  padding-left: 32px;
 }
 
 .studio-dashboard-head h1 {
   margin: 0;
   color: #171717;
-  font-size: 27px;
-  font-weight: 760;
-  line-height: 1.15;
-  letter-spacing: -0.045em;
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .studio-section-kicker {
@@ -5550,10 +5551,10 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-section-copy {
   max-width: 520px;
-  margin: 8px 0 0;
-  color: #686868;
-  font-size: 14px;
-  font-weight: 450;
+  margin: 5px 0 0;
+  color: #707070;
+  font-size: 16px;
+  font-weight: 300;
   letter-spacing: 0;
   line-height: 1.35;
 }
@@ -5577,9 +5578,87 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   line-height: 1;
 }
 
+#create-page-button-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 16px 11px;
+  border-radius: 6px;
+  background: #000000;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+}
+
+#create-page-button-head::before {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin-right: 0;
+  background-color: currentColor;
+  -webkit-mask: url("assets/plus.svg") center / 16px 16px no-repeat;
+  mask: url("assets/plus.svg") center / 16px 16px no-repeat;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.studio-pages-head-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.studio-album-search {
+  position: relative;
+  display: inline-flex;
+  width: 287px;
+  height: 40px;
+}
+
+.studio-album-search input {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #ececec;
+  border-radius: 6px;
+  background: #ffffff url("assets/magnifying-glass.svg") no-repeat 16px center;
+  background-size: 16px 16px;
+  padding: 0 12px 0 48px;
+  color: #222222;
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.studio-album-search input::placeholder {
+  color: #707070;
+}
+
+.studio-album-search input:focus {
+  outline: none;
+  border-color: #d8d8d8;
+}
+
 .saved-pages-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
   gap: 20px;
   width: 100%;
   max-width: none;
@@ -5604,6 +5683,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .saved-album-card {
   width: min(100%, 330px);
+  height: 386px;
+  min-height: 386px;
   border: 1px solid #ececec;
   border-radius: 12px;
   box-shadow: 0 0 16px 0 rgba(0, 0, 0, 0.04);
@@ -5659,7 +5740,9 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   align-items: center;
   border-radius: 8px;
   font-family: "Work Sans", sans-serif;
-  line-height: 1;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
 }
 
 .saved-page-media-badge {
@@ -5668,8 +5751,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   padding: 4px 8px;
   background: #ffffff;
   color: #0a0a0a;
-  font-size: 16px;
-  font-weight: 600;
 }
 
 .saved-page-media-icon {
@@ -5689,8 +5770,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   padding: 4px 8px;
   background: rgba(0, 0, 0, 0.32);
   color: #ffffff;
-  font-size: 16px;
-  font-weight: 400;
 }
 
 .saved-page-selfie-badge .saved-page-icon {
@@ -5710,8 +5789,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   border: 0;
   background: rgba(0, 0, 0, 0.32);
   color: #ffffff;
-  font-size: 16px;
-  font-weight: 400;
   cursor: pointer;
 }
 
@@ -5890,7 +5967,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   color: #ffffff;
   font-family: "Work Sans", sans-serif;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 300;
   line-height: 1;
   text-decoration: none;
 }
@@ -6074,10 +6151,20 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 24px;
+    padding-left: 0;
+  }
+
+  .studio-pages-head-controls {
+    width: 100%;
+  }
+
+  .studio-album-search {
+    flex: 1 1 auto;
+    width: auto;
   }
 
   .studio-head-action {
-    width: 100%;
+    width: auto;
   }
 
   .saved-pages-grid {

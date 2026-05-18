@@ -106,6 +106,7 @@ const createPageButton = document.getElementById("create-page-button");
 const createEventButton = document.getElementById("create-event-button");
 const createPageButtonHead = document.getElementById("create-page-button-head");
 const createEventButtonHead = document.getElementById("create-event-button-head");
+const studioAlbumSearchInput = document.getElementById("studio-album-search");
 const linkApprovalNotice = document.getElementById("link-approval-notice");
 const createPagePanel = document.getElementById("create-page-panel");
 const createEventPanel = document.getElementById("create-event-panel");
@@ -194,6 +195,7 @@ let db = null;
 let currentUser = null;
 let currentProfile = null;
 let savedPages = [];
+let savedPagesSearchQuery = "";
 let savedEvents = [];
 let allAccounts = [];
 let allAdminLinks = [];
@@ -1599,13 +1601,33 @@ function formatDateLabel(value) {
 }
 
 function renderSavedPagesTable() {
+  const totalAlbums = savedPages.length;
+  const query = String(savedPagesSearchQuery || "").trim().toLowerCase();
+  const filteredPages = !query
+    ? savedPages
+    : savedPages.filter((page) => {
+      const pageName = String(page?.pageName || "").toLowerCase();
+      const tagline = String(page?.tagline || "").toLowerCase();
+      const pairingCode = String(page?.pairingCode || "").toLowerCase();
+      return pageName.includes(query) || tagline.includes(query) || pairingCode.includes(query);
+    });
+
+  if (studioAlbumSearchInput) {
+    studioAlbumSearchInput.placeholder = `Search in ${totalAlbums} albums...`;
+  }
+
   if (!savedPages.length) {
     savedPagesTable.innerHTML = '<p class="studio-empty">No albums yet.</p>';
     return;
   }
 
+  if (!filteredPages.length) {
+    savedPagesTable.innerHTML = '<p class="studio-empty">No matching albums.</p>';
+    return;
+  }
+
   savedPagesTable.innerHTML = "";
-  savedPages.forEach((page) => {
+  filteredPages.forEach((page) => {
     const faceDetection = normalizeFaceDetectionState(page?.faceDetection);
     const canUseFacePicker = faceDetection.status === "completed";
     const isFaceDetectionRunning = faceDetection.status === "queued" || faceDetection.status === "processing";
@@ -5926,6 +5948,10 @@ studioNameForm?.addEventListener("submit", async (event) => {
 
 createPageButton?.addEventListener("click", openCreateWizard);
 createPageButtonHead?.addEventListener("click", openCreateWizard);
+studioAlbumSearchInput?.addEventListener("input", () => {
+  savedPagesSearchQuery = String(studioAlbumSearchInput.value || "");
+  renderSavedPagesTable();
+});
 createEventButton?.addEventListener("click", () => {
   openCreateEventPanel();
 });

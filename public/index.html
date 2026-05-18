@@ -221,12 +221,18 @@
               <section id="studio-pages-section" class="studio-dashboard-section active">
                 <div class="studio-dashboard-head">
                   <div>
-                    <h1>Your shoots</h1>
-                    <p class="studio-section-copy">Every album, every gallery, one shelf.</p>
+                    <h1>Albums</h1>
+                    <p class="studio-section-copy">All the photoshoots at one place, one shelf.</p>
                   </div>
-                  <button id="create-page-button-head" type="button" class="studio-primary-button studio-head-action">
-                    New Album
-                  </button>
+                  <div class="studio-pages-head-controls">
+                    <label class="studio-album-search" for="studio-album-search">
+                      <span class="sr-only">Search albums</span>
+                      <input id="studio-album-search" type="search" autocomplete="off" placeholder="Search in 0 albums..." />
+                    </label>
+                    <button id="create-page-button-head" type="button" class="studio-primary-button studio-head-action">
+                      New Album
+                    </button>
+                  </div>
                 </div>
                 <p id="link-approval-notice" class="studio-approval-notice hidden"></p>
 
