@@ -5504,6 +5504,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-dashboard-content {
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
@@ -5522,6 +5523,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-dashboard-section.active {
   display: grid;
   align-content: start;
+  align-self: start;
 }
 
 .studio-dashboard-head {
@@ -5693,6 +5695,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 #saved-pages-table {
   grid-template-columns: repeat(3, 330px);
   justify-content: space-between;
+  align-content: start;
+  align-items: start;
 }
 
 .saved-page-card {
