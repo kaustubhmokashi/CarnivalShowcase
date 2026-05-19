@@ -5532,8 +5532,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: #f3f3f3;
-  padding: 8px 0 18px;
+  background: transparent;
+  padding: 0 0 18px;
 }
 
 .studio-dashboard-head h1 {
@@ -6201,8 +6201,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
     position: sticky;
     top: 0;
     z-index: 20;
-    background: #f3f3f3;
-    padding: 8px 0 14px;
+    background: transparent;
+    padding: 0 0 14px;
   }
 
   .studio-pages-head-controls {
