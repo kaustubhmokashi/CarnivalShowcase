@@ -5596,15 +5596,11 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   text-transform: none;
 }
 
-#create-page-button-head::before {
-  content: "";
+#create-page-button-head .studio-head-action-icon {
   display: block;
   width: 16px;
   height: 16px;
-  margin-right: 0;
-  background-color: currentColor;
-  -webkit-mask: url("assets/plus.svg") center / 16px 16px no-repeat;
-  mask: url("assets/plus.svg") center / 16px 16px no-repeat;
+  object-fit: contain;
 }
 
 .sr-only {
@@ -5632,13 +5628,23 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   height: 40px;
 }
 
+.studio-album-search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .studio-album-search input {
   width: 100%;
   height: 100%;
   border: 1px solid #ececec;
   border-radius: 6px;
-  background: #ffffff url("assets/magnifying-glass.svg") no-repeat 16px center;
-  background-size: 16px 16px;
+  background: #ffffff;
   padding: 0 12px 0 48px;
   color: #222222;
   font-size: 16px;
