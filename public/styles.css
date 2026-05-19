@@ -5570,14 +5570,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   text-transform: none;
 }
 
-.studio-head-action::before {
-  content: "+";
-  margin-right: 12px;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1;
-}
-
 #create-page-button-head {
   display: inline-flex;
   align-items: center;
