@@ -109,7 +109,7 @@ button {
 
 button:focus-visible,
 input:focus-visible,
-label:focus-within {
+label:focus-within:not(.studio-album-search) {
   outline: 3px solid #000000;
   outline-offset: 3px;
 }
@@ -5503,11 +5503,11 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-dashboard-content {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 40px 40px 56px 0;
+  padding: 40px 40px 56px;
   overflow: auto;
 }
 
@@ -5515,7 +5515,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: none;
   width: min(100%, 1084px);
   gap: 0;
-  margin-inline: 0;
+  margin-inline: auto;
   padding-left: 32px;
 }
 
@@ -5618,6 +5618,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: inline-flex;
   width: 287px;
   height: 40px;
+  outline: none;
+  box-shadow: none;
 }
 
 .studio-album-search-icon {
@@ -5652,18 +5654,24 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-album-search input:focus {
   outline: none;
-  border-color: #d8d8d8;
+  border-color: #ececec;
   box-shadow: none;
 }
 
 .studio-album-search input:focus-visible {
-  outline: none;
-  box-shadow: none;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .studio-album-search:focus-within .studio-album-search-icon {
   opacity: 1;
   filter: brightness(0) saturate(100%);
+}
+
+.studio-album-search:focus-within {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 .saved-pages-grid {
@@ -5678,7 +5686,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 #saved-pages-table {
   grid-template-columns: repeat(3, 330px);
-  justify-content: start;
+  justify-content: space-between;
 }
 
 .saved-page-card {
@@ -6116,7 +6124,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 @media (max-width: 1023px) {
   .studio-dashboard-content {
-    padding: 24px 24px 32px 0;
+    justify-content: flex-start;
+    padding: 24px 24px 32px;
   }
 
   .saved-pages-grid {
