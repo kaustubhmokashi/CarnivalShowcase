@@ -2288,21 +2288,21 @@ function renderSavedEventsTable() {
   savedEventsTable.innerHTML = "";
   savedEvents.forEach((event) => {
     const card = document.createElement("article");
-    card.className = "saved-page-card saved-event-card";
+    card.className = "saved-page-card saved-album-card saved-event-card";
     const phaseLabel = formatEventPhaseLabel(event.phase);
     const palette = getEventCardPalette(event);
     const eventBackgroundUrl = String(event?.backgroundUrl || "").trim();
+    const pairingCode = String(event?.code || "").trim();
     card.innerHTML = `
-      <div class="saved-page-thumb saved-event-thumb" style="--event-card-bg:${escapeMarkup(palette.background)};--event-card-text:${escapeMarkup(palette.text)};">
-        <p class="saved-event-thumb-title">${escapeMarkup(event.name || "Untitled event")}</p>
+      <div class="saved-page-thumb" style="--event-card-bg:${escapeMarkup(palette.background)};--event-card-text:${escapeMarkup(palette.text)};">
         <div class="saved-event-badge saved-event-badge-${escapeMarkup(String(event.phase || "upcoming"))}">${escapeMarkup(phaseLabel)}</div>
+        <button type="button" class="saved-page-code-badge" data-pairing-copy="${escapeMarkup(pairingCode)}" aria-label="Copy pairing code ${escapeMarkup(pairingCode)}">
+          <span>Pairing code :</span><strong>${escapeMarkup(pairingCode || "N/A")}</strong>
+        </button>
       </div>
-      <div class="saved-page-content">
-        <div class="saved-event-meta">
-          <h2>${escapeMarkup(event.name || "Untitled event")}</h2>
-          <p class="saved-page-pairing">${escapeMarkup(event.code || "")}</p>
-          <p class="saved-event-schedule">${escapeMarkup(formatEventSchedule(event))}</p>
-        </div>
+      <div class="saved-page-content saved-event-content">
+        <h2>${escapeMarkup(event.name || "Untitled event")}</h2>
+        <p class="saved-event-schedule">${escapeMarkup(formatEventSchedule(event))}</p>
         <div class="saved-page-actions saved-event-actions" aria-label="Event actions">
           <button type="button" class="saved-page-icon-button saved-page-share-button" data-action="share" aria-label="Share event">
             <span class="saved-page-icon icon-mask icon-share" aria-hidden="true"></span>
@@ -2328,6 +2328,14 @@ function renderSavedEventsTable() {
         </div>
       </div>
     `;
+    card.querySelector("[data-pairing-copy]")?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pairingCode);
+        showStudioToast("Pairing code copied");
+      } catch (error) {
+        showStudioToast("Could not copy pairing code");
+      }
+    });
     card.querySelector('[data-action="present"]')?.addEventListener("click", () => {
       window.open(getEventPresentUrl(event), "_blank", "noopener,noreferrer");
     });
@@ -2361,7 +2369,7 @@ function renderSavedEventsTable() {
     card.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
       await deleteEvent(event);
     });
-    const eventThumb = card.querySelector(".saved-event-thumb");
+    const eventThumb = card.querySelector(".saved-page-thumb");
     if (eventThumb) {
       eventThumb.style.setProperty("--event-card-image", eventBackgroundUrl ? `url("${eventBackgroundUrl}")` : "none");
     }
