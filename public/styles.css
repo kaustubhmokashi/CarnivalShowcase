@@ -5503,11 +5503,11 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-dashboard-content {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 1;
   min-width: 0;
   min-height: 100vh;
-  padding: 40px 40px 56px;
+  padding: 40px 40px 56px 0;
   overflow: auto;
 }
 
@@ -5515,7 +5515,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   display: none;
   width: min(100%, 1084px);
   gap: 0;
-  margin-inline: auto;
+  margin-inline: 0;
+  padding-left: 32px;
 }
 
 .studio-dashboard-section.active {
@@ -5528,7 +5529,6 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   justify-content: space-between;
   gap: 24px;
   margin: 0 0 30px;
-  padding-left: 32px;
 }
 
 .studio-dashboard-head h1 {
@@ -5629,6 +5629,8 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
   transform: translateY(-50%);
   object-fit: contain;
   pointer-events: none;
+  opacity: 0.55;
+  filter: none;
 }
 
 .studio-album-search input {
@@ -5651,6 +5653,17 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 .studio-album-search input:focus {
   outline: none;
   border-color: #d8d8d8;
+  box-shadow: none;
+}
+
+.studio-album-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.studio-album-search:focus-within .studio-album-search-icon {
+  opacity: 1;
+  filter: brightness(0) saturate(100%);
 }
 
 .saved-pages-grid {
@@ -5665,7 +5678,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 #saved-pages-table {
   grid-template-columns: repeat(3, 330px);
-  justify-content: center;
+  justify-content: start;
 }
 
 .saved-page-card {
@@ -6103,7 +6116,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 @media (max-width: 1023px) {
   .studio-dashboard-content {
-    padding: 24px 24px 32px;
+    padding: 24px 24px 32px 0;
   }
 
   .saved-pages-grid {
@@ -6145,11 +6158,14 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
     padding: 80px 18px 32px;
   }
 
+  .studio-dashboard-section {
+    padding-left: 0;
+  }
+
   .studio-dashboard-head {
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 24px;
-    padding-left: 0;
   }
 
   .studio-pages-head-controls {
