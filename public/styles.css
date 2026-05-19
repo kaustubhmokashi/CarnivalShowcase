@@ -5521,6 +5521,7 @@ html[data-gallery-template="template-2"] .slideshow-like-action {
 
 .studio-dashboard-section.active {
   display: grid;
+  align-content: start;
 }
 
 .studio-dashboard-head {
